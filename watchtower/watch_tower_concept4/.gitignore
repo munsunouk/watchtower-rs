@@ -1,8 +1,0 @@
-target/
-Cargo.lock
-
-### macOS ###
-# General
-.DS_Store
-.AppleDouble
-.LSOverride
