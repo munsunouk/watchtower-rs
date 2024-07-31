@@ -55,16 +55,5 @@ pub async fn call_contract<'a>(
         &expected_value_index,
     )?;
 
-    // let result = if let Token::Tuple(tokens) = token {
-    //     parse_decode_token(
-    //         &tokens,
-    //         &output_param_type,
-    //         &rule_filter,
-    //         &expected_value_index,
-    //     )?
-    // } else {
-    //     return Err(anyhow::anyhow!("Failed to extract value"));
-    // };
-
     Ok(result)
 }

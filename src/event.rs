@@ -13,6 +13,7 @@ pub async fn event_contract<'a>(
     contract_address: &Address,
     abi: &Abi,
     block_number: u64,
+    event_index: usize,
     rule_filter: &'a [&str],
     expected_value_index: &str,
 ) -> anyhow::Result<Vec<Option<String>>> {
@@ -35,7 +36,7 @@ pub async fn event_contract<'a>(
 
     let input_param_types_cloned = input_param_types.clone();
 
-    let input_param_type = input_param_types_cloned.get(0).unwrap();
+    let input_param_type = input_param_types_cloned.get(event_index).unwrap();
     let parsing_input_param_type = ParamType::Tuple(input_param_types);
 
     let logs: Vec<Log> = client.get_logs(&filter).await?;

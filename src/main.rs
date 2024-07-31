@@ -15,8 +15,8 @@ async fn main() -> anyhow::Result<()> {
     let node = "https://public-01.testnet.bifrostnetwork.com/rpc";
 
     let contract_call_rules = vec![
+        //BIFI
         ContractCallRule::new(
-            //BIFI
             "0xb871966e866F684681f9F44A69BF19652C0c462c",
             "./src/abi/callproxy.json",
             vec![],
@@ -26,8 +26,8 @@ async fn main() -> anyhow::Result<()> {
             "uint256",
             "<",
         )?,
+        //EVERDEX
         ContractCallRule::new(
-            //EVERDEX
             "0xD9d3BA810e6F015d1cE6b69d93dfD6bbA7f3c423",
             "./src/abi/poolinfo.json",
             vec!["0x8cfcBc421334263ed3A2f62B49Ee7A471Ade7aBb"],
@@ -44,7 +44,13 @@ async fn main() -> anyhow::Result<()> {
         ContractEventRule::new(
             "0x0218371b18340aBD460961bdF3Bd5F01858dAB53",
             "./src/abi/socket.json",
-            vec!["0.0.0-00014a34", "0.2.0-0000bfc0"],
+            0,
+            vec![
+                "0.0.0-00014a34",
+                "0.2.0-0000bfc0",
+                "0.3.0-00000008ffffffff00014a34c96971f6f5a1d20efcd465b1163812a955b414a3",
+                "0.3.1-0000000000000000000000000000000000000000000000000000000000000000",
+            ],
             "0.3.4",
             "100000000",
             "uint256",
@@ -54,7 +60,12 @@ async fn main() -> anyhow::Result<()> {
         ContractEventRule::new(
             "0xc292D9d5c31D5246cfAC67ba91202bbCF0AA8108",
             "./src/abi/socket.json",
-            vec!["0.0.0-00002711", "0.2.0-0000bfc0"],
+            0,
+            vec![
+                "0.0.0-00002711",
+                "0.2.0-0000bfc0",
+                "0.3.0-000000030000000100002711ffffffffffffffffffffffffffffffffffffffff",
+            ],
             "0.3.4",
             "100000000",
             "uint256",
@@ -96,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
 
         let contract_address = contract_event_rule.address;
         let abi = contract_event_rule.abi;
+        let event_index = contract_event_rule.event_index;
         let rule_filter = contract_event_rule.rule_filter;
         let expected_value_index = contract_event_rule.expected_value_index;
 
@@ -104,6 +116,7 @@ async fn main() -> anyhow::Result<()> {
             &contract_address,
             &abi,
             block_number,
+            event_index,
             &rule_filter,
             &expected_value_index,
         )

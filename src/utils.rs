@@ -54,6 +54,7 @@ impl ContractCallRule {
 pub struct ContractEventRule {
     pub address: Address,
     pub abi: Abi,
+    pub event_index: usize,
     pub rule_filter: Vec<&'static str>,
     pub expected_value_index: &'static str,
     expected_value: &'static str,
@@ -65,6 +66,7 @@ impl ContractEventRule {
     pub fn new(
         raw_address: &'static str,
         abi_path: &'static str,
+        event_index: usize,
         rule_filter: Vec<&'static str>,
         expected_value_index: &'static str,
         expected_value: &'static str,
@@ -80,6 +82,7 @@ impl ContractEventRule {
         Ok(Self {
             address,
             abi,
+            event_index,
             rule_filter,
             expected_value_index,
             expected_value,
