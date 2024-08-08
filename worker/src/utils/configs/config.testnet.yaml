@@ -1,0 +1,12 @@
+evm_providers:
+  - name: "bifrost-testnet"
+    id: 49088
+    provider: "https://public-01.testnet.bifrostnetwork.com/rpc"
+    block_confirmations: 5
+
+sentry_config:
+  environment: "testnet"
+  dsn: "https://sentry.io/api/49088/store/"
+
+postgres_config:
+  url: "postgres://root:secret@localhost:5432/postgres"
