@@ -17,7 +17,6 @@ pub const INVALID_CONFIG_FILE_STRUCTURE: &str =
 
 pub const INVALID_SENTRY_CLIENT_PARAMS: &str = "Invalid params to build Sentry client";
 
-#[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum DatabaseError {
     #[error("Database insert error {0}")]
@@ -30,6 +29,4 @@ pub enum DatabaseError {
     GenericCreateError(String),
     #[error("Database init error {0}")]
     GenericInitError(String),
-    #[error("Database delete error {0}")]
-    GenericDeleteError(String),
 }

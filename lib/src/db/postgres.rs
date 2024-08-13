@@ -1,10 +1,10 @@
 use crate::utils::error::DatabaseError;
 use sqlx::postgres::PgRow;
-use sqlx::{pool::Pool, Executor, PgPool, Postgres}; // Added `use sqlx::Row;`
+use sqlx::{pool::Pool, Executor, PgPool, Postgres};
 
 use crate::utils::constants::{
-    DB_SCHEMA_LOAD, DB_TABLE_NAME, INSERT_CONTRACT_CALL_LOG, INSERT_CONTRACT_EVENT_BLOCK_LOG,
-    INSERT_CONTRACT_EVENT_LOG, INSERT_RPC_LOG, SCHEMA,
+    DB_SCHEMA_LOAD, DB_TABLE_NAME, INSERT_CONTRACT_CALL_LOG, INSERT_CONTRACT_EVENT_BLOCK_LOGS,
+    INSERT_CONTRACT_EVENT_LOG, INSERT_RPC_LOG, SCHEMA, SELECT_JOIN_EVENT_RULE_CHAIN_ID,
 };
 
 ///Postgres's Pool type for the DatabasePool
@@ -85,13 +85,11 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_contract_event_block_log(
+    pub async fn insert_contract_event_block_logs(
         &self,
-        id: i32,
         block_number: i32,
     ) -> Result<(), DatabaseError> {
-        sqlx::query(INSERT_CONTRACT_EVENT_BLOCK_LOG)
-            .bind(id)
+        sqlx::query(INSERT_CONTRACT_EVENT_BLOCK_LOGS)
             .bind(block_number)
             .execute(&self.pool)
             .await
@@ -99,8 +97,17 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn load(&self, table_name: &str) -> Result<Vec<PgRow>, DatabaseError> {
+    pub async fn select_table(&self, table_name: &str) -> Result<Vec<PgRow>, DatabaseError> {
         let result = sqlx::query(&DB_SCHEMA_LOAD.replace(DB_TABLE_NAME, table_name))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| DatabaseError::GenericSelectError(err.to_string()))?;
+
+        Ok(result)
+    }
+
+    pub async fn select_join_event_rule_chain_id(&self) -> Result<Vec<PgRow>, DatabaseError> {
+        let result = sqlx::query(SELECT_JOIN_EVENT_RULE_CHAIN_ID)
             .fetch_all(&self.pool)
             .await
             .map_err(|err| DatabaseError::GenericSelectError(err.to_string()))?;
@@ -111,9 +118,10 @@ impl PostgresClient {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::constants::SAMPLE_DATA;
+    use crate::utils::constants::{INSERT_RPC_RULE_DATA, SAMPLE_DATA};
 
     use super::*;
+    use sqlx::Row;
     use tracing_subscriber;
 
     const DB_URL: &str = "postgres://root:secret@localhost:5432/postgres";
@@ -125,6 +133,26 @@ mod tests {
         let client = PostgresClient::new(DB_URL).await?;
 
         client.initiate().await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_insert_rpc_rule_data() -> Result<(), DatabaseError> {
+        tracing_subscriber::fmt::init();
+
+        let client = PostgresClient::new(DB_URL).await?;
+
+        let mut conn = client
+            .pool
+            .acquire()
+            .await
+            .map_err(|err| DatabaseError::GenericAquire(err.to_string()))?;
+
+        let _ = conn
+            .execute(INSERT_RPC_RULE_DATA)
+            .await
+            .map_err(|err| DatabaseError::GenericInitError(err.to_string()))?;
 
         Ok(())
     }
@@ -178,15 +206,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_insert_contract_event_block_log() -> Result<(), DatabaseError> {
+    async fn test_insert_contract_event_block_logs() -> Result<(), DatabaseError> {
         tracing_subscriber::fmt::init();
 
         let client = PostgresClient::new(DB_URL).await?;
 
         let _ = client
-            .insert_contract_event_block_log(2, 19115020)
+            .insert_contract_event_block_logs(19157523)
             .await
             .map_err(|err| DatabaseError::GenericInitError(err.to_string()))?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_select_join_event_rule_chain_id() -> Result<(), DatabaseError> {
+        tracing_subscriber::fmt::init();
+
+        let client = PostgresClient::new(DB_URL).await?;
+
+        let result = client.select_join_event_rule_chain_id().await?;
+
+        println!("{:?}", result.get(0).unwrap().columns());
 
         Ok(())
     }

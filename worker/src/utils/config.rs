@@ -23,10 +23,8 @@ pub struct EVMProvider {
     pub id: ChainID,
     /// Endpoint provider URL.
     pub provider: String,
-    /// Number of block confirmations.
-    pub block_confirmations: u64,
-    /// Batch size for get logs requests.
-    pub get_logs_batch_size: Option<u64>,
+    /// Check interval.
+    pub check_interval: u64,
 }
 
 /// Configuration for Sentry.

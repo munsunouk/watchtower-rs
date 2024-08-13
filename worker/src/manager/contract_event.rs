@@ -52,17 +52,9 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
         loop {
             let msg = self.receiver.lock().await.recv().await.unwrap();
 
-            let contract_event = self.contract_events.get(&msg.rule_id).unwrap();
-            let input_param_type = contract_event.get_raw_input_param_type().unwrap();
-            let parsing_input_param_type = contract_event.get_input_param_type().unwrap();
-
             if msg.event_logs.is_empty() {
-                self.send_contract_event_block_log(
-                    &contract_event.client.get_chain_name(),
-                    msg.rule_id.try_into().unwrap(),
-                    msg.block_number.try_into().unwrap(),
-                )
-                .await;
+                self.insert_contract_event_block_logs(msg.block_number.try_into().unwrap())
+                    .await;
 
                 continue;
             }
@@ -70,77 +62,87 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
             let mut stream = tokio_stream::iter(msg.event_logs);
 
             while let Some(log) = stream.next().await {
-                if !contract_event.is_target_event(&log.topics[contract_event.rule.event_index]) {
-                    continue;
-                }
+                for (_, event) in self.contract_events.iter() {
+                    if event.is_target_event(&log.topics[event.rule.event_index]) {
+                        let contract_event = self.contract_events.get(&event.rule.id).unwrap();
+                        let input_param_type = contract_event.get_raw_input_param_type().unwrap();
+                        let parsing_input_param_type =
+                            contract_event.get_input_param_type().unwrap();
 
-                let token = Token::Tuple(decode(&[input_param_type.clone()], &log.data).unwrap());
+                        let token =
+                            Token::Tuple(decode(&[input_param_type.clone()], &log.data).unwrap());
 
-                let decoded_token = parse_decode_token(
-                    &token,
-                    &parsing_input_param_type,
-                    &contract_event.rule.rule_filter,
-                    &contract_event.rule.expected_value_index,
-                    &contract_event.rule.expected_value,
-                    &contract_event.rule.comparator,
-                )
-                .unwrap();
+                        let decoded_token = parse_decode_token(
+                            &token,
+                            &parsing_input_param_type,
+                            &contract_event.rule.rule_filter,
+                            &contract_event.rule.expected_value_index,
+                            &contract_event.rule.expected_value,
+                            &contract_event.rule.comparator,
+                        )
+                        .unwrap();
 
-                if decoded_token.is_some() {
-                    let tx_log = format!("{:?}", log.transaction_hash.unwrap());
+                        if let Some(decoded_value) = decoded_token {
+                            let tx_log = format!("{:?}", log.transaction_hash.unwrap());
 
-                    self.send_contract_event_log(
-                        &contract_event.client.get_chain_name(),
-                        msg.rule_id.try_into().unwrap(),
-                        &decoded_token.unwrap(),
-                        &tx_log,
-                    )
-                    .await;
+                            self.insert_contract_event_log(
+                                event.rule.id.try_into().unwrap(),
+                                &decoded_value,
+                                &tx_log,
+                            )
+                            .await;
+
+                            tracing::warn!(
+                                "[Rule ID : {}] ⚠️ [Value : {}]",
+                                event.rule.id,
+                                decoded_value
+                            );
+                        }
+                    }
                 }
             }
 
-            self.send_contract_event_block_log(
-                &contract_event.client.get_chain_name(),
-                msg.rule_id.try_into().unwrap(),
-                msg.block_number.try_into().unwrap(),
-            )
-            .await;
+            self.insert_contract_event_block_logs(msg.block_number.try_into().unwrap())
+                .await;
         }
     }
 
-    async fn send_contract_event_block_log(
-        &self,
-        chain_name: &str,
-        rule_id: i32,
-        block_number: i32,
-    ) {
+    /// Inserts a contract event block log into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - The block number associated with the contract event.
+    async fn insert_contract_event_block_logs(&self, block_number: i32) {
         self.db_client
-            .insert_contract_event_block_log(rule_id, block_number)
+            .insert_contract_event_block_logs(block_number)
             .await
             .unwrap_or_else(|err| {
+                let chain_id = self.contract_events.values().next().unwrap().rule.chain_id;
+
                 tracing::error!(
-                    "[{}] ❗️ [{}] [Error: {}]",
-                    chain_name,
+                    "[Chain ID :{}] ❗️ [Error: {}] [Details: {}]",
+                    chain_id,
                     INVALID_CONTRACT_EVENT_LOG,
                     err
                 );
             });
     }
 
-    async fn send_contract_event_log(
-        &self,
-        chain_name: &str,
-        rule_id: i32,
-        value: &str,
-        tx_log: &str,
-    ) {
+    /// Inserts a contract event log into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `rule_id` - The ID of the rule associated with the contract event.
+    /// * `value` - The value to be logged.
+    /// * `tx_log` - The transaction log associated with the contract event.
+    async fn insert_contract_event_log(&self, rule_id: i32, value: &str, tx_log: &str) {
         self.db_client
             .insert_contract_event_log(value, tx_log, rule_id)
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(
-                    "[{}] ❗️ [{}] [Error: {}]",
-                    chain_name,
+                    "[Rule ID : {}] ❗️ [Error : {}] [Details : {}]",
+                    rule_id,
                     INVALID_CONTRACT_EVENT_LOG,
                     err
                 );

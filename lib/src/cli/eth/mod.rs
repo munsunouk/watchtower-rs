@@ -101,7 +101,9 @@ impl<T: JsonRpcClient> EthClient<T> {
 
         while retries_remaining > 0 {
             match raw_call.call().await {
-                Ok(result) => return Ok(result),
+                Ok(result) => {
+                    return Ok(result);
+                }
                 Err(error) => {
                     // retry on error
                     retries_remaining = retries_remaining.saturating_sub(1);

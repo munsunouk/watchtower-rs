@@ -1,8 +1,3 @@
--- Insert sample data into rpc_rule
-INSERT INTO rpc_call_rule (id, name, url, expected_value, comparator, check_interval, created_at, updated_at)
-VALUES 
-(1, 'public_bifrost_testnet_node1', 'https://public-01.testnet.bifrostnetwork.com/rpc', '200', '==', 60, '2024-08-02', '2024-08-02');
-
 -- Insert sample data into contract_call_rule
 INSERT INTO contract_call_rule (id, name, chain_id, address, abi, method_params, rule_filter, expected_value_index, expected_value, comparator, check_interval, created_at, updated_at)
 VALUES 
@@ -159,7 +154,7 @@ VALUES
 ', '{0x8cfcBc421334263ed3A2f62B49Ee7A471Ade7aBb}', '{}', '0.2', '160304504480', '<', 15, '2024-08-02', '2024-08-02');
 
 -- Insert sample data into contract_event_rule
-INSERT INTO contract_event_rule (id, name, chain_id, address, abi, event_index, rule_filter, expected_value_index, expected_value, comparator, check_interval, created_at, updated_at)
+INSERT INTO contract_event_rule (id, name, chain_id, address, abi, event_index, rule_filter, expected_value_index, expected_value, comparator, created_at, updated_at)
 VALUES 
 (1, 'Bifrost_CCCP_USDC_min_check', 49088, '0x0218371b18340aBD460961bdF3Bd5F01858dAB53', '[
   {
@@ -259,7 +254,7 @@ VALUES
     "type": "event"
   }
 ]
-', 0, '{0.0.0-000014a34, 0.2.0-000bfc0, 0.3.0-00000008ffffffff00014a34c96971f6f5a1d20efcd465b1163812a955b414a3, 0.3.1-0000000000000000000000000000000000000000000000000000000000000000}', '0.3.4', '999500001', '<', 15, '2024-08-02', '2024-08-02'),
+', 0, '{0.0.0-000014a34, 0.2.0-000bfc0, 0.3.0-00000008ffffffff00014a34c96971f6f5a1d20efcd465b1163812a955b414a3, 0.3.1-0000000000000000000000000000000000000000000000000000000000000000}', '0.3.4', '999500001', '<', '2024-08-02', '2024-08-02'),
 (2, 'Bifrost_BRP_BTC_min_check', 49088, '0xc292D9d5c31D5246cfAC67ba91202bbCF0AA8108', '[
   {
     "anonymous": false,
@@ -358,7 +353,7 @@ VALUES
     "type": "event"
   }
 ]
-', 0, '{0.0.0-00002711, 0.2.0-0000bfc0, 0.3.0-000000030000000100002711ffffffffffffffffffffffffffffffffffffffff}', '0.3.4', '999500001', '<', 15, '2024-08-02', '2024-08-02');
+', 0, '{0.0.0-00002711, 0.2.0-0000bfc0, 0.3.0-000000030000000100002711ffffffffffffffffffffffffffffffffffffffff}', '0.3.4', '999500001', '<', '2024-08-02', '2024-08-02');
 
 -- Insert sample data into contract_event_block_log
 INSERT INTO contract_event_block_log (id, block_number) VALUES (1, 19115020), (2, 19115020);

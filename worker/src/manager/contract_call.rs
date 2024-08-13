@@ -64,31 +64,37 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
             .unwrap();
 
             if decoded_token.is_some() {
-                self.send_contract_call_log(
-                    &contract_call.client.get_chain_name(),
+                self.insert_contract_call_log(
                     msg.rule_id.try_into().unwrap(),
-                    &decoded_token.unwrap(),
+                    &decoded_token.clone().unwrap(),
                     msg.block_number.try_into().unwrap(),
                 )
-                .await
+                .await;
+
+                tracing::warn!(
+                    "[Rule ID : {}] ⚠️ [Value : {}]",
+                    msg.rule_id,
+                    &decoded_token.unwrap()
+                );
             }
         }
     }
 
-    async fn send_contract_call_log(
-        &self,
-        chain_name: &str,
-        rule_id: i32,
-        decoded_token: &str,
-        block_number: i32,
-    ) {
+    /// Inserts a contract call log into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `rule_id` - The ID of the rule associated with the contract call.
+    /// * `decoded_token` - The decoded token value to be logged.
+    /// * `block_number` - The block number associated with the contract call.
+    async fn insert_contract_call_log(&self, rule_id: i32, decoded_token: &str, block_number: i32) {
         self.db_client
             .insert_contract_call_log(decoded_token, block_number, rule_id)
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(
-                    "[{}] ❗️ [{}] [Error: {}]",
-                    chain_name,
+                    "[Rule ID : {}] ❗️ [{}] [Error : {}]",
+                    rule_id,
                     INVALID_CONTRACT_CALL_LOG,
                     err
                 );

@@ -39,7 +39,6 @@ CREATE TABLE contract_event_rule (
     expected_value_index VARCHAR NOT NULL,
     expected_value VARCHAR NOT NULL,
     comparator VARCHAR NOT NULL,
-    check_interval INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -43,15 +43,13 @@ pub struct ContractEventRawMessage {
     /// The detected transaction logs from the target contracts.
     pub event_logs: Vec<Log>,
     pub block_number: U64,
-    pub rule_id: RuleID,
 }
 
 impl ContractEventRawMessage {
-    pub fn new(event_logs: Vec<Log>, block_number: U64, rule_id: RuleID) -> Self {
+    pub fn new(event_logs: Vec<Log>, block_number: U64) -> Self {
         Self {
             event_logs,
             block_number,
-            rule_id,
         }
     }
 }

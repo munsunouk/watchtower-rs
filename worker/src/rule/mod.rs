@@ -23,9 +23,16 @@ use ethers::{
 
 use anyhow::Result;
 
+use crate::utils::constants::ADDRESS_COMPARATOR_TYPE;
+use crate::utils::constants::BOOL_COMPARATOR_TYPE;
+use crate::utils::constants::BYTES_COMPARATOR_TYPE;
 use crate::utils::constants::COMPARATOR_EQUAL;
+use crate::utils::constants::FIXED_BYTES_COMPARATOR_TYPE;
+use crate::utils::constants::INT_COMPARATOR_TYPE;
 use crate::utils::constants::INVALID_TOKEN_VALUE;
 use crate::utils::constants::INVALID_TYPE_ABI;
+use crate::utils::constants::STRING_COMPARATOR_TYPE;
+use crate::utils::constants::UINT_COMPARATOR_TYPE;
 
 /// Parses a JSON value into an ABI.
 ///
@@ -75,7 +82,7 @@ pub fn parse_to_address(input: String) -> Address {
 /// # Returns
 ///
 /// A `Schedule` instance.
-fn set_schedule(check_interval: usize) -> Schedule {
+pub fn set_schedule(check_interval: usize) -> Schedule {
     Schedule::from_str(&format!("*/{} * * * * *", check_interval)).unwrap()
 }
 
@@ -151,14 +158,14 @@ pub fn encode_token(params: Vec<String>, param_type: &ParamType) -> Token {
     }
 
     match param_type {
-        ParamType::String => Token::String(params[0].clone()),
-        ParamType::Address => Token::Address(params[0].parse::<Address>().unwrap()),
-        ParamType::Bool => Token::Bool(params[0].parse::<bool>().unwrap()),
-        ParamType::Uint(_) => Token::Uint(params[0].parse::<Uint>().unwrap()),
-        ParamType::Int(_) => Token::Int(params[0].parse::<Int>().unwrap()),
-        ParamType::Bytes => Token::Bytes(hex::decode(&params[0]).unwrap()),
+        ParamType::String => Token::String(params.get(0).unwrap().clone()),
+        ParamType::Address => Token::Address(params.get(0).unwrap().parse::<Address>().unwrap()),
+        ParamType::Bool => Token::Bool(params.get(0).unwrap().parse::<bool>().unwrap()),
+        ParamType::Uint(_) => Token::Uint(params.get(0).unwrap().parse::<Uint>().unwrap()),
+        ParamType::Int(_) => Token::Int(params.get(0).unwrap().parse::<Int>().unwrap()),
+        ParamType::Bytes => Token::Bytes(hex::decode(&params.get(0).unwrap()).unwrap()),
         ParamType::FixedBytes(size) => {
-            let bytes = hex::decode(&params[0]).unwrap();
+            let bytes = hex::decode(&params.get(0).unwrap()).unwrap();
             assert_eq!(bytes.len(), *size);
             Token::FixedBytes(bytes)
         }
@@ -188,6 +195,62 @@ pub fn encode_token(params: Vec<String>, param_type: &ParamType) -> Token {
     }
 }
 
+pub fn check_type_comparator(value: &Token, comparator: &str) -> bool {
+    match value {
+        Token::Uint(_) => {
+            if UINT_COMPARATOR_TYPE.contains(&comparator) {
+                true
+            } else {
+                false
+            }
+        }
+        Token::Int(_) => {
+            if INT_COMPARATOR_TYPE.contains(&comparator) {
+                true
+            } else {
+                false
+            }
+        }
+        Token::Address(_) => {
+            if ADDRESS_COMPARATOR_TYPE.contains(&comparator) {
+                true
+            } else {
+                false
+            }
+        }
+        Token::Bool(_) => {
+            if BOOL_COMPARATOR_TYPE.contains(&comparator) {
+                true
+            } else {
+                false
+            }
+        }
+        Token::String(_) => {
+            if STRING_COMPARATOR_TYPE.contains(&comparator) {
+                true
+            } else {
+                false
+            }
+        }
+        Token::Bytes(_) => {
+            if BYTES_COMPARATOR_TYPE.contains(&comparator) {
+                true
+            } else {
+                false
+            }
+        }
+
+        Token::FixedBytes(_) => {
+            if FIXED_BYTES_COMPARATOR_TYPE.contains(&comparator) {
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
 /// Compares two values based on a comparator.
 ///
 /// # Arguments
@@ -205,11 +268,11 @@ pub fn parse_compare<T: PartialOrd + ToString>(
     comparator: &str,
 ) -> Option<String> {
     match comparator {
+        "==" if value == expected_value => Some(value.to_string()),
         ">" if value > expected_value => Some(value.to_string()),
         ">=" if value >= expected_value => Some(value.to_string()),
         "<" if value < expected_value => Some(value.to_string()),
         "<=" if value <= expected_value => Some(value.to_string()),
-        "==" if value == expected_value => Some(value.to_string()),
         "!=" if value != expected_value => Some(value.to_string()),
         _ => None,
     }
@@ -229,19 +292,45 @@ pub fn parse_compare<T: PartialOrd + ToString>(
 pub fn compare_token(token: &Token, expected_value: String, comparator: String) -> Option<String> {
     match token {
         Token::Uint(value) => {
+            if !check_type_comparator(token, &comparator) {
+                return None;
+            }
+
             let expected_value = expected_value.parse::<Uint>().unwrap();
             parse_compare(value, &expected_value, &comparator)
         }
         Token::Int(value) => {
+            if !check_type_comparator(token, &comparator) {
+                return None;
+            }
             let expected_value = expected_value.parse::<Int>().unwrap();
             parse_compare(value, &expected_value, &comparator)
         }
         Token::Bool(value) => {
+            if !check_type_comparator(token, &comparator) {
+                return None;
+            }
             let expected_value = expected_value.parse::<bool>().unwrap();
             parse_compare(value, &expected_value, &comparator)
         }
-        Token::String(value) => parse_compare(value, &expected_value, &comparator),
+        Token::String(value) => {
+            if !check_type_comparator(token, &comparator) {
+                return None;
+            }
+            parse_compare(value, &expected_value, &comparator)
+        }
+        Token::Address(value) => {
+            if !check_type_comparator(token, &comparator) {
+                return None;
+            }
+            let expected_value = expected_value.parse::<Address>().unwrap();
+
+            parse_compare(value, &expected_value, &comparator)
+        }
         Token::Bytes(value) | Token::FixedBytes(value) => {
+            if !check_type_comparator(token, &comparator) {
+                return None;
+            }
             let parsing_value = hex::encode(&value);
             parse_compare(&parsing_value, &expected_value, &comparator)
         }
@@ -285,25 +374,24 @@ pub fn decode_token(
     match param_type {
         ParamType::Tuple(inner_types) => {
             if let Token::Tuple(tokens) = token {
-                if let Some(inner_type) = inner_types.get(*index) {
-                    if let Some(inner_token) = tokens.get(*index) {
-                        return decode_token(inner_token, inner_type, rest);
-                    }
-                }
+                let inner_type = inner_types.get(*index).unwrap();
+                let inner_token = tokens.get(*index).unwrap();
+
+                return decode_token(inner_token, inner_type, rest);
             }
         }
         ParamType::Array(inner_type) => {
             if let Token::Array(array_tokens) = token {
-                if let Some(inner_token) = array_tokens.get(*index) {
-                    return decode_token(inner_token, inner_type, rest);
-                }
+                let inner_token = array_tokens.get(*index).unwrap();
+
+                return decode_token(inner_token, inner_type, rest);
             }
         }
         ParamType::FixedArray(inner_type, _) => {
             if let Token::FixedArray(array_tokens) = token {
-                if let Some(inner_token) = array_tokens.get(*index) {
-                    return decode_token(inner_token, inner_type, rest);
-                }
+                let inner_token = array_tokens.get(*index).unwrap();
+
+                return decode_token(inner_token, inner_type, rest);
             }
         }
         _ => {}
@@ -336,6 +424,7 @@ pub fn parse_decode_token<'a>(
     let parsed_rule_filter = parse_rule_filter(rule_filter);
     let parsed_expected_value_index_key = parse_expected_value_index(expected_value_index);
 
+    // Rule Filter Decoding
     for (parsed_rule_key, parsed_rule_value) in parsed_rule_filter {
         if let Some(value) = decode_token(&token, &param_type, &parsed_rule_key) {
             let comparator = COMPARATOR_EQUAL;
@@ -348,6 +437,7 @@ pub fn parse_decode_token<'a>(
         }
     }
 
+    // Expected Value Decoding
     if let Some(value) = decode_token(&token, &param_type, &parsed_expected_value_index_key) {
         return Ok(compare_token(
             &value,

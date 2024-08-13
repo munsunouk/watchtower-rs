@@ -1,42 +1,81 @@
+use std::collections::HashMap;
+
 use cron::Schedule;
 use ethers::{
     providers::JsonRpcClient,
-    types::{BlockNumber, Filter, Log, U64},
+    types::{Address, BlockNumber, Filter, Log, U64},
 };
 
 use tokio::sync::mpsc::UnboundedSender;
+use watch_tower_lib::cli::eth::EthClient;
 
-use crate::rule::contract_event::ContractEvent;
-use crate::utils::traits::PeriodicWorker;
+use crate::utils::{constants::RuleID, traits::Fetcher};
 use crate::utils::{constants::BOOTSTRAP_BLOCK_CHUNK_SIZE, msg::ContractEventRawMessage};
+use crate::{
+    rule::{contract_event::ContractEvent, set_schedule},
+    utils::constants::NEXT_BLOCK,
+};
 
 use anyhow::Result;
 
 /// The essential task that listens and fetches new events.
 #[derive(Clone)]
 pub struct ContractEventFetcher<T> {
+    /// The client of the chain.
+    client: EthClient<T>,
     /// The contract event.
-    pub contract_event: ContractEvent<T>,
+    contract_events: HashMap<RuleID, ContractEvent<T>>,
     /// The channel sending event messages.
-    pub sender: UnboundedSender<ContractEventRawMessage>,
-    /// The block waiting for enough confirmations.
+    sender: UnboundedSender<ContractEventRawMessage>,
+    /// the block numbers of RuleID by ChainId
+    from_block_numbers: HashMap<RuleID, U64>,
+    /// The chain interval.
+    chain_interval: u64,
+    // The block from which to start fetching.
     from_block: U64,
 }
 
 #[async_trait::async_trait]
-impl<T: JsonRpcClient> PeriodicWorker for ContractEventFetcher<T> {
-    /// Returns the schedule for the periodic worker.
+impl<T: JsonRpcClient> Fetcher for ContractEventFetcher<T> {
+    /// Returns the schedule for the fetcher.
     fn schedule(&self) -> Schedule {
-        self.contract_event.rule.check_interval.clone()
+        set_schedule(self.chain_interval.try_into().unwrap())
     }
 
-    /// Starts the event handler. Reads every new mined block of the connected chain and starts to
-    /// publish to the event channel.
+    /// Runs the fetcher, fetching contract events at scheduled intervals.
     async fn run(&mut self) {
         self.initialize().await;
         loop {
             self.wait_until_next_time().await;
-            self.process_confirmed_block().await;
+            self.process().await;
+        }
+    }
+
+    /// Processes the contract event, fetching the latest block number and sending the contract event log.
+    async fn process(&mut self) {
+        let from = self.from_block;
+        let to = self.get_latest_block_number().await;
+
+        if from > to {
+            return;
+        }
+
+        let target_logs = self.get_event_logs(from, to).await;
+
+        if let Ok(target_logs) = target_logs {
+            self.sender
+                .send(ContractEventRawMessage::new(target_logs, to))
+                .unwrap();
+
+            let chain_id = self.get_client().await.get_chain_id();
+
+            tracing::info!(
+                "[Chain ID :{}] ✨ [Block Number :({:?} … {:?})]",
+                chain_id,
+                from,
+                to
+            );
+            self.replace_from_block(to);
         }
     }
 }
@@ -54,119 +93,32 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
     ///
     /// A new instance of `ContractEventFetcher`.
     pub fn new(
-        contract_event: ContractEvent<T>,
+        client: EthClient<T>,
+        contract_events: HashMap<RuleID, ContractEvent<T>>,
         sender: UnboundedSender<ContractEventRawMessage>,
-        waiting_block: U64,
+        from_blocks: HashMap<RuleID, U64>,
+        chain_interval: u64,
     ) -> Self {
         Self {
+            client,
             sender,
-            contract_event,
-            from_block: waiting_block,
+            contract_events,
+            from_block_numbers: from_blocks,
+            chain_interval,
+            from_block: U64::from(0),
         }
     }
 
     /// Initializes the event handler.
     async fn initialize(&mut self) {
-        let _ = self.contract_event.client.verify_chain_id().await;
-
-        let latest_block = self
-            .contract_event
-            .client
-            .get_latest_block_number()
-            .await
-            .unwrap();
-
-        // Initialize waiting block to the latest block
-        if self.from_block == U64::default() || self.from_block >= latest_block {
-            self.from_block = latest_block;
-
-            tracing::info!(
-                "[{}] 💤 Idle, best: #{:?}",
-                &self.contract_event.client.get_chain_name(),
-                self.from_block
-            );
-        } else {
-            self.bootstrap().await;
-        }
+        // Prevent chain id mismatch in DB
+        let _ = self.get_client().await.verify_chain_id().await;
+        let oldest_block = self.get_oldest_block();
+        self.from_block = *oldest_block;
     }
 
-    /// Processes confirmed blocks and sends the result through the channel.
-    async fn process_confirmed_block(&mut self) {
-        let from = self.from_block;
-        let to = from.saturating_add(U64::from(1u64));
-
-        let filter = Filter::new()
-            .from_block(BlockNumber::from(from))
-            .to_block(BlockNumber::from(to))
-            .address(self.contract_event.rule.address);
-
-        let target_logs = self.contract_event.fetch_event(filter).await;
-
-        if let Ok(target_logs) = target_logs {
-            self.sender
-                .send(ContractEventRawMessage::new(
-                    target_logs,
-                    to,
-                    self.contract_event.rule.id,
-                ))
-                .unwrap();
-
-            self.replace_from_block(to);
-
-            if from < to {
-                tracing::info!(
-                    "[{}] ✨ Imported #({:?} … {:?})",
-                    &self.contract_event.client.get_chain_name(),
-                    from,
-                    to
-                );
-            } else {
-                tracing::info!(
-                    "[{}] ✨ Imported #{:?}",
-                    &self.contract_event.client.get_chain_name(),
-                    self.from_block
-                );
-            }
-        }
-    }
-
-    /// Bootstrap the event handler by fetching all the events from the waiting block to the latest
-    /// block.
-    async fn bootstrap(&mut self) {
-        let from = self.from_block;
-
-        let to = self
-            .contract_event
-            .client
-            .get_latest_block_number()
-            .await
-            .unwrap();
-
-        let target_logs = self.get_bootstrap_events(from, to).await;
-
-        if let Ok(target_logs) = target_logs {
-            if !target_logs.is_empty() {
-                self.sender
-                    .send(ContractEventRawMessage::new(
-                        target_logs,
-                        to,
-                        self.contract_event.rule.id,
-                    ))
-                    .unwrap();
-
-                tracing::info!(
-                    "[{}] ✨ Imported #({:?} … {:?})",
-                    &self.contract_event.client.get_chain_name(),
-                    from,
-                    to
-                );
-            }
-
-            self.replace_from_block(to);
-        }
-    }
-
-    async fn get_bootstrap_events(&self, mut from: U64, to: U64) -> Result<Vec<Log>> {
+    /// Fetches events from the given block range.
+    async fn get_event_logs(&self, mut from: U64, to: U64) -> Result<Vec<Log>> {
         let mut logs = vec![];
         // Split from_block into smaller chunks
         while from <= to {
@@ -174,21 +126,46 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
 
             let filter = Filter::new()
                 .from_block(BlockNumber::from(from))
-                .to_block(BlockNumber::from(to))
-                .address(self.contract_event.rule.address);
+                .to_block(BlockNumber::from(chunk_to_block))
+                .address(self.get_addresses());
 
-            let target_logs_chunk = self.contract_event.fetch_event(filter).await.unwrap();
+            let target_logs_chunk = self.get_client().await.get_logs(&filter).await.unwrap();
             logs.extend(target_logs_chunk);
 
-            from = chunk_to_block + 1;
+            from = chunk_to_block + NEXT_BLOCK;
         }
 
         Ok(logs)
     }
 
+    async fn get_latest_block_number(&self) -> U64 {
+        self.get_client()
+            .await
+            .get_latest_block_number()
+            .await
+            .unwrap()
+    }
+
+    async fn get_client(&self) -> &EthClient<T> {
+        &self.client
+    }
+
+    fn get_oldest_block(&self) -> &U64 {
+        self.from_block_numbers.values().min().unwrap()
+    }
+
+    fn get_addresses(&self) -> Vec<Address> {
+        self.contract_events
+            .values()
+            .map(|event| event.rule.address)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     /// Increment the waiting block.
     #[inline]
     fn replace_from_block(&mut self, to: U64) {
-        self.from_block = to;
+        self.from_block = to.saturating_add(U64::from(1));
     }
 }

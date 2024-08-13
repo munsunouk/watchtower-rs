@@ -1,44 +1,47 @@
-use crate::fetcher::rpc_call::RpcCallFetcher;
-use crate::manager::contract_event::ContractEventManager;
-use crate::manager::rpc_call::RpcCallManager;
-use crate::rule::contract_event::ContractEventBlockLog;
-use crate::rule::rpc_call::RpcCallRule;
-use crate::rule::RpcCall;
-use crate::utils::config::EVMProvider;
-use crate::utils::msg::RpcCallRawMessage;
-use crate::utils::traits::PeriodicWorker;
 use anyhow::Result;
 use ethers::providers::{Http, JsonRpcClient, Provider};
 use ethers::types::U64;
+use futures::future::join_all;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, Mutex};
+use tokio::task::JoinHandle;
 use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use watch_tower_lib::cli::eth::{EthClient, ProviderMetadata};
 use watch_tower_lib::db::postgres::PostgresClient;
-use watch_tower_lib::utils::constants::{ChainID, DEFAULT_GET_LOGS_BATCH_SIZE};
+use watch_tower_lib::utils::constants::ChainID;
 use watch_tower_lib::utils::error::{
     INVALID_CONFIG_FILE_PATH, INVALID_CONFIG_FILE_STRUCTURE, INVALID_PROVIDER_URL,
 };
 
-use crate::utils::constants::{
-    RuleID, DB_CONTRACT_CALL_RULE, DB_CONTRACT_EVENT_BLOCK_LOG, DB_CONTRACT_EVENT_RULE,
-    DB_RPC_CALL_RULE, SQLX_QUERY_OFF, TIME_FORMAT,
-};
+use crate::utils::constants::{DEFAULT_BLOCK_NUMBER, DEFAULT_CHECK_INTERVAL};
 use crate::{
-    fetcher::{contract_call::ContractCallFetcher, contract_event::ContractEventFetcher},
-    manager::contract_call::ContractCallManager,
+    fetcher::{
+        contract_call::ContractCallFetcher, contract_event::ContractEventFetcher,
+        rpc_call::RpcCallFetcher,
+    },
+    manager::{
+        contract_call::ContractCallManager, contract_event::ContractEventManager,
+        rpc_call::RpcCallManager,
+    },
     rule::{
-        contract_call::ContractCallRule, contract_event::ContractEventRule, ContractCall,
-        ContractEvent,
+        contract_call::ContractCallRule,
+        contract_event::{ContractEventBlockLog, ContractEventRule},
+        rpc_call::RpcCallRule,
+        ContractCall, ContractEvent, RpcCall,
     },
     utils::{
-        config::Configuration,
-        msg::{ContractCallRawMessage, ContractEventRawMessage},
+        config::{Configuration, EVMProvider},
+        constants::{
+            RuleID, DB_CONTRACT_CALL_RULE, DB_CONTRACT_EVENT_RULE, DB_RPC_CALL_RULE,
+            SQLX_QUERY_WARN, TIME_FORMAT,
+        },
+        msg::{ContractCallRawMessage, ContractEventRawMessage, RpcCallRawMessage},
+        traits::Fetcher,
     },
 };
 
@@ -46,15 +49,15 @@ use crate::{
 pub struct Runner {
     /// Fetchers for RPC calls.
     pub rpc_call_fetchers: Vec<RpcCallFetcher>,
-    /// Manager for RPC calls.
-    pub rpc_call_manager: RpcCallManager,
     /// Fetchers for contract calls.
     pub contract_call_fetchers: Vec<ContractCallFetcher<Http>>,
     /// Fetchers for contract events.
     pub contract_event_fetchers: Vec<ContractEventFetcher<Http>>,
-    /// Manager for contract calls.
-    pub contract_call_manager: ContractCallManager<Http>,
+    /// Manager for RPC calls.
+    pub rpc_call_manager: RpcCallManager,
     /// Manager for contract events.
+    pub contract_call_manager: ContractCallManager<Http>,
+    /// Manager for contract calls.
     pub contract_event_manager: ContractEventManager<Http>,
 }
 
@@ -71,18 +74,19 @@ impl Runner {
     pub async fn new(config_path: &str) -> Self {
         Self::set_log();
 
-        // Channel
+        //Channel
         let (rpc_call_sender, rpc_call_receiver) = Self::set_rpc_call_channel();
         let (contract_call_sender, contract_call_receiver) = Self::set_contract_call_channel();
         let (contract_event_sender, contract_event_receiver) = Self::set_contract_event_channel();
 
-        // Config
+        //Config
         let config: Configuration = Self::set_config(config_path).unwrap();
+        let chain_intervals = Self::set_chain_intervals(config.clone().evm_providers);
 
         //DB
         let db_client = Self::set_db(&config.postgres_config.url).await.unwrap();
 
-        //DB Rules
+        //DB Rule
         let rpc_call_rules = Self::load_rpc_call_rules(&db_client).await;
         let contract_call_rules = Self::load_contract_call_rules(&db_client).await;
         let contract_event_rules = Self::load_contract_event_rules(&db_client).await;
@@ -92,33 +96,36 @@ impl Runner {
         let rpc_client = Self::set_client();
         let clients = Self::set_eth_clients(config.evm_providers);
 
-        //Rules
+        //Rule
         let rpc_calls = Self::set_rpc_calls(rpc_call_rules, rpc_client);
         let contract_calls = Self::set_contract_calls(contract_call_rules, clients.clone());
-        let contract_events = Self::set_contract_events(contract_event_rules, clients);
+        let contract_events = Self::set_contract_events(contract_event_rules, clients.clone());
+        let contract_chain_events = Self::set_contract_chain_events(contract_events.clone());
 
         //Fetcher
         let rpc_call_fetchers = Self::set_rpc_call_fetchers(rpc_calls.clone(), rpc_call_sender);
         let contract_call_fetchers =
             Self::set_contract_call_fetchers(contract_calls.clone(), contract_call_sender);
         let contract_event_fetchers = Self::set_contract_event_fetchers(
-            contract_events.clone(),
-            contract_event_blocks.clone(),
+            clients,
+            contract_chain_events,
             contract_event_sender,
+            contract_event_blocks.clone(),
+            chain_intervals,
         );
 
         //Manager
-        let rpc_call_manager: RpcCallManager = Self::set_rpc_call_manager(
+        let rpc_call_manager = Self::set_rpc_call_manager(
             rpc_calls.clone(),
             rpc_call_receiver.clone(),
             db_client.clone(),
         );
-        let contract_call_manager: ContractCallManager<Http> = Self::set_contract_call_manager(
+        let contract_call_manager = Self::set_contract_call_manager(
             contract_calls.clone(),
             contract_call_receiver.clone(),
             db_client.clone(),
         );
-        let contract_event_manager: ContractEventManager<Http> = Self::set_contract_event_manager(
+        let contract_event_manager = Self::set_contract_event_manager(
             contract_events.clone(),
             contract_event_receiver.clone(),
             db_client,
@@ -140,57 +147,10 @@ impl Runner {
     ///
     /// A `Result` indicating the success or failure of the operation.
     pub async fn run(&self) -> Result<()> {
-        let rpc_call_fetchers = self.rpc_call_fetchers.clone();
-        let contract_call_fetchers = self.contract_call_fetchers.clone();
-        let contract_event_fetchers = self.contract_event_fetchers.clone();
-        let mut rpc_call_manager = self.rpc_call_manager.clone();
-        let mut contract_call_manager = self.contract_call_manager.clone();
-        let mut contract_event_manager = self.contract_event_manager.clone();
+        let tasks = self.set_tasks();
 
-        tokio::try_join!(
-            async {
-                for mut fetcher in rpc_call_fetchers {
-                    tokio::spawn(async move {
-                        fetcher.run().await;
-                    });
-                }
-                Ok::<(), anyhow::Error>(())
-            },
-            async {
-                for mut fetcher in contract_call_fetchers {
-                    tokio::spawn(async move {
-                        fetcher.run().await;
-                    });
-                }
-                Ok::<(), anyhow::Error>(())
-            },
-            async {
-                for mut fetcher in contract_event_fetchers {
-                    tokio::spawn(async move {
-                        fetcher.run().await;
-                    });
-                }
-                Ok::<(), anyhow::Error>(())
-            },
-            async {
-                tokio::spawn(async move {
-                    rpc_call_manager.run().await;
-                });
-                Ok::<(), anyhow::Error>(())
-            },
-            async {
-                tokio::spawn(async move {
-                    contract_call_manager.run().await;
-                });
-                Ok::<(), anyhow::Error>(())
-            },
-            async {
-                tokio::spawn(async move {
-                    contract_event_manager.run().await;
-                });
-                Ok::<(), anyhow::Error>(())
-            }
-        )?;
+        // Await all futures
+        join_all(tasks).await;
 
         Ok(())
     }
@@ -205,7 +165,7 @@ impl Runner {
     ///
     /// A vector of `RpcCallRule`.
     pub async fn load_rpc_call_rules(db_client: &PostgresClient) -> Vec<RpcCallRule> {
-        let result = db_client.load(DB_RPC_CALL_RULE).await.unwrap();
+        let result = db_client.select_table(DB_RPC_CALL_RULE).await.unwrap();
 
         let rpc_calls: Vec<RpcCallRule> = result.iter().map(|row| RpcCallRule::from(row)).collect();
         rpc_calls
@@ -221,7 +181,7 @@ impl Runner {
     ///
     /// A vector of `ContractCallRule`.
     pub async fn load_contract_call_rules(db_client: &PostgresClient) -> Vec<ContractCallRule> {
-        let result = db_client.load(DB_CONTRACT_CALL_RULE).await.unwrap();
+        let result = db_client.select_table(DB_CONTRACT_CALL_RULE).await.unwrap();
 
         let contract_calls: Vec<ContractCallRule> = result
             .iter()
@@ -240,7 +200,10 @@ impl Runner {
     ///
     /// A vector of `ContractEventRule`.
     pub async fn load_contract_event_rules(db_client: &PostgresClient) -> Vec<ContractEventRule> {
-        let result = db_client.load(DB_CONTRACT_EVENT_RULE).await.unwrap();
+        let result = db_client
+            .select_table(DB_CONTRACT_EVENT_RULE)
+            .await
+            .unwrap();
 
         let contract_events: Vec<ContractEventRule> = result
             .iter()
@@ -257,19 +220,22 @@ impl Runner {
     ///
     /// # Returns
     ///
-    /// A hashmap of `RuleID` to `U64`.
+    /// A hashmap of `ChainID` to a hashmap of `RuleID` to `U64`.
     pub async fn load_contract_event_block_logs(
         db_client: &PostgresClient,
-    ) -> HashMap<RuleID, U64> {
-        let result = db_client.load(DB_CONTRACT_EVENT_BLOCK_LOG).await.unwrap();
+    ) -> HashMap<ChainID, HashMap<RuleID, U64>> {
+        let result = db_client.select_join_event_rule_chain_id().await.unwrap();
 
-        let contract_events: HashMap<RuleID, U64> = result
-            .iter()
-            .map(|row| {
-                let block_log = ContractEventBlockLog::from(row);
-                (block_log.id, block_log.block_number)
-            })
-            .collect();
+        let mut contract_events: HashMap<ChainID, HashMap<RuleID, U64>> = HashMap::new();
+
+        for row in result {
+            let block_log = ContractEventBlockLog::from(&row);
+            contract_events
+                .entry(block_log.chain_id)
+                .or_insert_with(HashMap::new)
+                .insert(block_log.id, block_log.block_number);
+        }
+
         contract_events
     }
 
@@ -280,26 +246,12 @@ impl Runner {
     /// * `chain_name` - The name of the chain.
     /// * `chain_url` - The URL of the chain.
     /// * `chain_id` - The ID of the chain.
-    /// * `block_confirmations` - The number of block confirmations.
-    /// * `get_logs_batch_size` - The batch size for getting logs.
     ///
     /// # Returns
     ///
     /// A `ProviderMetadata` instance.
-    fn set_metadata(
-        chain_name: String,
-        chain_url: String,
-        chain_id: ChainID,
-        block_confirmations: u64,
-        get_logs_batch_size: Option<u64>,
-    ) -> ProviderMetadata {
-        ProviderMetadata::new(
-            chain_name,
-            chain_url,
-            chain_id,
-            block_confirmations,
-            get_logs_batch_size.unwrap_or(DEFAULT_GET_LOGS_BATCH_SIZE),
-        )
+    fn set_metadata(chain_name: String, chain_url: String, chain_id: ChainID) -> ProviderMetadata {
+        ProviderMetadata::new(chain_name, chain_url, chain_id)
     }
 
     /// Sets the provider.
@@ -350,8 +302,6 @@ impl Runner {
                 provider.name.clone(),
                 provider.provider.clone(),
                 provider.id,
-                provider.block_confirmations,
-                provider.get_logs_batch_size,
             );
 
             let arc_provider = Self::set_provider(&provider.provider);
@@ -370,6 +320,16 @@ impl Runner {
     /// A `Client` instance.
     fn set_client() -> Client {
         Client::new()
+    }
+
+    fn set_chain_intervals(providers: Vec<EVMProvider>) -> HashMap<ChainID, u64> {
+        let mut chain_intervals = HashMap::new();
+
+        for provider in providers {
+            chain_intervals.insert(provider.id, provider.check_interval);
+        }
+
+        chain_intervals
     }
 
     /// Sets an RPC call.
@@ -493,6 +453,22 @@ impl Runner {
                 (rule.id, contract_event)
             })
             .collect()
+    }
+
+    fn set_contract_chain_events(
+        contract_events: HashMap<RuleID, ContractEvent<Http>>,
+    ) -> HashMap<ChainID, HashMap<RuleID, ContractEvent<Http>>> {
+        let mut result: HashMap<ChainID, HashMap<RuleID, ContractEvent<Http>>> = HashMap::new();
+
+        for (rule_id, contract_event) in contract_events {
+            let chain_id = contract_event.rule.chain_id;
+            result
+                .entry(chain_id)
+                .or_insert_with(HashMap::new)
+                .insert(rule_id, contract_event);
+        }
+
+        result
     }
 
     /// Sets the RPC call channel.
@@ -624,12 +600,19 @@ impl Runner {
     ///
     /// A `ContractEventFetcher` instance.
     fn set_contract_event_fetcher<T: JsonRpcClient>(
-        contract_event: ContractEvent<T>,
+        client: EthClient<T>,
+        contract_events: HashMap<RuleID, ContractEvent<T>>,
         contract_event_sender: UnboundedSender<ContractEventRawMessage>,
-        waiting_block_number: U64,
+        from_block_numbers: HashMap<RuleID, U64>,
+        chain_interval: u64,
     ) -> ContractEventFetcher<T> {
-        let event_fetcher =
-            ContractEventFetcher::new(contract_event, contract_event_sender, waiting_block_number);
+        let event_fetcher = ContractEventFetcher::new(
+            client,
+            contract_events,
+            contract_event_sender,
+            from_block_numbers,
+            chain_interval,
+        );
         event_fetcher
     }
 
@@ -645,21 +628,36 @@ impl Runner {
     ///
     /// A vector of `ContractEventFetcher` instances.
     fn set_contract_event_fetchers(
-        contract_events: HashMap<RuleID, ContractEvent<Http>>,
-        contract_event_blocks: HashMap<RuleID, U64>,
+        chain_clients: HashMap<ChainID, EthClient<Http>>,
+        contract_chain_events: HashMap<ChainID, HashMap<RuleID, ContractEvent<Http>>>,
         contract_event_sender: UnboundedSender<ContractEventRawMessage>,
+        contract_event_blocks: HashMap<ChainID, HashMap<RuleID, U64>>,
+        chain_intervals: HashMap<ChainID, u64>,
     ) -> Vec<ContractEventFetcher<Http>> {
-        contract_events
+        contract_chain_events
             .clone()
             .into_iter()
-            .map(|(_, contract_event)| {
-                let waiting_block_number =
-                    contract_event_blocks.get(&contract_event.rule.id).unwrap();
+            .map(|(chain_id, contract_events)| {
+                let mut default_block_numbers = HashMap::new();
+                default_block_numbers.insert(
+                    chain_id.try_into().unwrap(),
+                    U64::from(DEFAULT_BLOCK_NUMBER),
+                );
+                let from_block_numbers = contract_event_blocks
+                    .get(&chain_id)
+                    .unwrap_or(&default_block_numbers);
+                let chain_interval = chain_intervals
+                    .get(&chain_id)
+                    .unwrap_or(&DEFAULT_CHECK_INTERVAL);
+
+                let client = chain_clients.get(&chain_id).unwrap();
 
                 Self::set_contract_event_fetcher(
-                    contract_event,
+                    client.clone(),
+                    contract_events,
                     contract_event_sender.clone(),
-                    *waiting_block_number,
+                    from_block_numbers.clone(),
+                    *chain_interval,
                 )
             })
             .collect()
@@ -741,7 +739,7 @@ impl Runner {
             .with_env_filter(
                 EnvFilter::from_default_env()
                     .add_directive(Level::INFO.into())
-                    .add_directive(SQLX_QUERY_OFF.parse().unwrap()), // Exclude sqlx::query logs
+                    .add_directive(SQLX_QUERY_WARN.parse().unwrap()), // Exclude sqlx::query logs
             )
             .init();
     }
@@ -755,7 +753,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `Result` containing the `PostgresClient` instance.
-    async fn set_db(db_url: &str) -> anyhow::Result<PostgresClient> {
+    async fn set_db(db_url: &str) -> Result<PostgresClient> {
         let client = PostgresClient::new(db_url).await?;
         Ok(client)
     }
@@ -769,11 +767,48 @@ impl Runner {
     /// # Returns
     ///
     /// A `Result` containing the `Configuration` instance.
-    pub fn set_config(spec: &str) -> anyhow::Result<Configuration> {
+    pub fn set_config(spec: &str) -> Result<Configuration> {
         let user_config_file = std::fs::File::open(spec).expect(INVALID_CONFIG_FILE_PATH);
         let user_config: Configuration =
             serde_yaml::from_reader(user_config_file).expect(INVALID_CONFIG_FILE_STRUCTURE);
 
         Ok(user_config)
+    }
+
+    pub fn set_tasks(&self) -> Vec<JoinHandle<()>> {
+        let mut tasks = Vec::new();
+
+        // Add RPC call fetcher tasks
+        for mut fetcher in self.rpc_call_fetchers.clone() {
+            tasks.push(tokio::spawn(async move { fetcher.run().await }));
+        }
+
+        // Add contract call fetcher tasks
+        for mut fetcher in self.contract_call_fetchers.clone() {
+            tasks.push(tokio::spawn(async move { fetcher.run().await }));
+        }
+
+        // Add contract event fetcher tasks
+        for mut fetcher in self.contract_event_fetchers.clone() {
+            tasks.push(tokio::spawn(async move { fetcher.run().await }));
+        }
+
+        // Add manager tasks
+        let mut rpc_call_manager = self.rpc_call_manager.clone();
+        tasks.push(tokio::spawn(async move { rpc_call_manager.run().await }));
+
+        // Add contract call manager task
+        let mut contract_call_manager = self.contract_call_manager.clone();
+        tasks.push(tokio::spawn(
+            async move { contract_call_manager.run().await },
+        ));
+
+        // Add contract event manager task
+        let mut contract_event_manager = self.contract_event_manager.clone();
+        tasks.push(tokio::spawn(
+            async move { contract_event_manager.run().await },
+        ));
+
+        tasks
     }
 }

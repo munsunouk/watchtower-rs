@@ -1,5 +1,4 @@
 use anyhow::{Ok, Result};
-use cron::Schedule;
 use ethers::types::U64;
 use ethers::{
     abi::{Abi, Event, ParamType},
@@ -11,12 +10,12 @@ use sqlx::Row;
 
 use watch_tower_lib::{cli::eth::EthClient, utils::constants::ChainID};
 
-use super::{create_contract, parse_i32_to_usize, parse_to_abi, parse_to_address, set_schedule};
+use super::{create_contract, parse_i32_to_usize, parse_to_abi, parse_to_address};
 
 use crate::utils::constants::{
     RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-    DB_CHECK_INTERVAL_COLUMN, DB_COMPARATOR_COLUMN, DB_EVENT_INDEX_COLUMN,
-    DB_EXPECTED_VALUE_COLUMN, DB_EXPECTED_VALUE_INDEX_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
+    DB_COMPARATOR_COLUMN, DB_EVENT_INDEX_COLUMN, DB_EXPECTED_VALUE_COLUMN,
+    DB_EXPECTED_VALUE_INDEX_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
 };
 
 /// Represents a log of contract events.
@@ -24,6 +23,7 @@ use crate::utils::constants::{
 pub struct ContractEventBlockLog {
     pub id: RuleID,
     pub block_number: U64,
+    pub chain_id: ChainID,
 }
 
 impl ContractEventBlockLog {
@@ -40,6 +40,7 @@ impl ContractEventBlockLog {
         ContractEventBlockLog {
             id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
             block_number: U64::from(parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN))),
+            chain_id: parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)) as ChainID,
         }
     }
 }
@@ -56,7 +57,6 @@ pub struct ContractEventRule {
     pub expected_value_index: String,
     pub expected_value: String,
     pub comparator: String,
-    pub check_interval: Schedule,
 }
 
 impl ContractEventRule {
@@ -80,7 +80,6 @@ impl ContractEventRule {
             expected_value_index: row.get(DB_EXPECTED_VALUE_INDEX_COLUMN),
             expected_value: row.get(DB_EXPECTED_VALUE_COLUMN),
             comparator: row.get(DB_COMPARATOR_COLUMN),
-            check_interval: set_schedule(parse_i32_to_usize(row.get(DB_CHECK_INTERVAL_COLUMN))),
         }
     }
 }
@@ -89,7 +88,6 @@ impl ContractEventRule {
 #[derive(Clone)]
 pub struct ContractEvent<T> {
     pub rule: ContractEventRule,
-    pub client: EthClient<T>,
     contract: Contract<Provider<T>>,
 }
 
@@ -108,11 +106,7 @@ impl<T: JsonRpcClient> ContractEvent<T> {
         let contract: Contract<Provider<T>> =
             create_contract(&rule.address, &rule.abi, client.get_provider());
 
-        Self {
-            rule,
-            client,
-            contract,
-        }
+        Self { rule, contract }
     }
 
     /// Gets the event from the contract ABI.
@@ -179,19 +173,6 @@ impl<T: JsonRpcClient> ContractEvent<T> {
         Ok(parsing_input_param_type)
     }
 
-    /// Fetches the event logs based on the provided filter.
-    ///
-    /// # Arguments
-    ///
-    /// * `filter` - The filter to apply when fetching logs.
-    ///
-    /// # Returns
-    ///
-    /// A result containing a vector of logs.
-    pub async fn fetch_event(&self, filter: Filter) -> Result<Vec<Log>> {
-        self.client.get_logs(&filter).await
-    }
-
     /// Checks if the provided signature matches the target event signature.
     ///
     /// # Arguments
@@ -222,7 +203,7 @@ mod tests {
         let client = PostgresClient::new("postgres://root:secret@localhost:5432/postgres").await?;
 
         // client.initiate().await?;
-        let db_result = client.load("contract_event_rule").await.unwrap();
+        let db_result = client.select_table("contract_event_rule").await.unwrap();
 
         let raw_rule = ContractEventRule::from(&db_result[0]);
 

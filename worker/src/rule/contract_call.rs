@@ -15,7 +15,7 @@ use watch_tower_lib::{cli::eth::EthClient, utils::constants::ChainID};
 use crate::utils::constants::{
     RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_CHAIN_ID_COLUMN, DB_CHECK_INTERVAL_COLUMN,
     DB_COMPARATOR_COLUMN, DB_EXPECTED_VALUE_COLUMN, DB_EXPECTED_VALUE_INDEX_COLUMN, DB_ID_COLUMN,
-    DB_METHOD_PARAMS_COLUMN, DB_RULE_FILTER_COLUMN,
+    DB_METHOD_PARAMS_COLUMN, DB_RULE_FILTER_COLUMN, DEFAULT_FN_INPUT_INDEX,
 };
 
 /// Represents a rule for contract calls.
@@ -126,7 +126,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
         let function_input = function.inputs.clone();
 
         let input_param_type = if !function_input.is_empty() {
-            let input_param = function_input.get(0).unwrap();
+            let input_param = function_input.get(DEFAULT_FN_INPUT_INDEX).unwrap();
 
             input_param.kind.clone()
         } else {
@@ -173,7 +173,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
     /// # Returns
     ///
     /// A result containing the method call token.
-    pub async fn fetch_method_call(&self) -> Result<Token> {
+    pub async fn get_method_call(&self) -> Result<Token> {
         let function_name = self.get_function_name()?;
         let method_params = self.get_method_param_token()?;
 
@@ -182,7 +182,6 @@ impl<T: JsonRpcClient> ContractCall<T> {
             .method::<_, Token>(&function_name, method_params)?;
 
         let request = self.client.contract_call(raw_call, &function_name).await;
-
         request
     }
 }
@@ -201,7 +200,7 @@ mod tests {
         let client = PostgresClient::new("postgres://root:secret@localhost:5432/postgres").await?;
 
         // client.initiate().await?;
-        let db_result = client.load("contract_call_rule").await.unwrap();
+        let db_result = client.select_table("contract_call_rule").await.unwrap();
 
         let raw_rule = ContractCallRule::from(&db_result[0]);
 

@@ -58,25 +58,36 @@ impl RpcCallManager {
             let expected_value = U64::from_dec_str(&rpc_call.rule.expected_value).unwrap();
             let result = parse_compare(&status, &expected_value, &rpc_call.rule.comparator);
 
-            tracing::info!("result: {:?}", result);
-
             if result.is_some() {
-                self.send_rpc_call_log(
-                    &rpc_call.rule.url,
-                    msg.rule_id.try_into().unwrap(),
-                    &status.to_string(),
-                )
-                .await;
+                self.insert_rpc_call_log(msg.rule_id.try_into().unwrap(), &status.to_string())
+                    .await;
+
+                tracing::warn!(
+                    "[Rule ID : {}] ⚠️ [Value : {}]",
+                    msg.rule_id,
+                    &status.to_string()
+                );
             }
         }
     }
 
-    async fn send_rpc_call_log(&self, url: &str, rule_id: i32, value: &str) {
+    /// Inserts an RPC call log into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `rule_id` - The ID of the rule associated with the RPC call.
+    /// * `value` - The value to be logged.
+    async fn insert_rpc_call_log(&self, rule_id: i32, value: &str) {
         self.db_client
             .insert_rpc_call_log(value, rule_id)
             .await
             .unwrap_or_else(|err| {
-                tracing::error!("[{}] ❗️ [{}] [Error: {}]", url, INVALID_RPC_CALL_LOG, err);
+                tracing::error!(
+                    "[Rule ID : {}] ❗️ [Error : {}] [Detail : {}]",
+                    rule_id,
+                    INVALID_RPC_CALL_LOG,
+                    err
+                );
             });
     }
 }

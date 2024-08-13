@@ -2,12 +2,14 @@ use cron::Schedule;
 use tokio::time::sleep;
 
 #[async_trait::async_trait]
-pub trait PeriodicWorker {
+pub trait Fetcher {
     /// Returns the schedule definition.
     fn schedule(&self) -> Schedule;
 
-    /// Starts the periodic worker.
+    /// Starts the fetcher.
     async fn run(&mut self);
+
+    async fn process(&mut self);
 
     /// Wait until it reaches the next schedule.
     async fn wait_until_next_time(&self) {
@@ -16,9 +18,7 @@ pub trait PeriodicWorker {
 
         match sleep_duration.to_std() {
             Ok(sleep_duration) => {
-                tracing::info!("Before sleep: {:?}", sleep_duration);
                 sleep(sleep_duration).await;
-                tracing::info!("After sleep: {:?}", sleep_duration);
             }
             Err(_) => return,
         }

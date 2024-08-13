@@ -2,7 +2,7 @@ evm_providers:
   - name: "bifrost-testnet"
     id: 49088
     provider: "https://public-01.testnet.bifrostnetwork.com/rpc"
-    block_confirmations: 5
+    check_interval: 15
 
 sentry_config:
   environment: "testnet"
