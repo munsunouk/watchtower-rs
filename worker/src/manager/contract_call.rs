@@ -57,9 +57,9 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
                 &msg.call_token,
                 &output_param_type,
                 &contract_call.rule.rule_filter,
-                &contract_call.rule.expected_value_index,
-                &contract_call.rule.expected_value,
-                &contract_call.rule.comparator,
+                &contract_call.rule.rule_filter_comparator,
+                &contract_call.rule.expected_value_filter,
+                &contract_call.rule.expected_value_filter_comparator,
             )
             .unwrap();
 

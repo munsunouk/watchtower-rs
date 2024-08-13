@@ -14,8 +14,9 @@ use super::{create_contract, parse_i32_to_usize, parse_to_abi, parse_to_address}
 
 use crate::utils::constants::{
     RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-    DB_COMPARATOR_COLUMN, DB_EVENT_INDEX_COLUMN, DB_EXPECTED_VALUE_COLUMN,
-    DB_EXPECTED_VALUE_INDEX_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
+    DB_EVENT_INDEX_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
+    DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
+    DB_RULE_FILTER_COMPARATOR_COLUMN,
 };
 
 /// Represents a log of contract events.
@@ -54,9 +55,9 @@ pub struct ContractEventRule {
     pub abi: Abi,
     pub event_index: usize,
     pub rule_filter: Vec<String>,
-    pub expected_value_index: String,
-    pub expected_value: String,
-    pub comparator: String,
+    pub rule_filter_comparator: Vec<String>,
+    pub expected_value_filter: String,
+    pub expected_value_filter_comparator: String,
 }
 
 impl ContractEventRule {
@@ -77,9 +78,9 @@ impl ContractEventRule {
             abi: parse_to_abi(row.get(DB_ABI_COLUMN)),
             event_index: parse_i32_to_usize(row.get(DB_EVENT_INDEX_COLUMN)),
             rule_filter: row.get(DB_RULE_FILTER_COLUMN),
-            expected_value_index: row.get(DB_EXPECTED_VALUE_INDEX_COLUMN),
-            expected_value: row.get(DB_EXPECTED_VALUE_COLUMN),
-            comparator: row.get(DB_COMPARATOR_COLUMN),
+            rule_filter_comparator: row.get(DB_RULE_FILTER_COMPARATOR_COLUMN),
+            expected_value_filter: row.get(DB_EXPECTED_VALUE_FILTER_COLUMN),
+            expected_value_filter_comparator: row.get(DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN),
         }
     }
 }

@@ -13,11 +13,13 @@ pub const DB_BLOCK_NUMBER_COLUMN: &str = "block_number";
 pub const DB_ABI_COLUMN: &str = "abi";
 pub const DB_METHOD_PARAMS_COLUMN: &str = "method_params";
 pub const DB_RULE_FILTER_COLUMN: &str = "rule_filter";
-pub const DB_EXPECTED_VALUE_INDEX_COLUMN: &str = "expected_value_index";
-pub const DB_EXPECTED_VALUE_COLUMN: &str = "expected_value";
-pub const DB_COMPARATOR_COLUMN: &str = "comparator";
+pub const DB_RULE_FILTER_COMPARATOR_COLUMN: &str = "rule_filter_comparator";
+pub const DB_EXPECTED_VALUE_FILTER_COLUMN: &str = "expected_value_filter";
+pub const DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN: &str = "expected_value_filter_comparator";
 pub const DB_CHECK_INTERVAL_COLUMN: &str = "check_interval";
 pub const DB_CHAIN_ID_COLUMN: &str = "chain_id";
+pub const DB_COMPARATOR_COLUMN: &str = "comparator";
+pub const DB_EXPECTED_VALUE_COLUMN: &str = "expected_value";
 
 // Log targets
 pub const INVALID_TYPE_ABI: &str = "invalid type ABI";
@@ -45,9 +47,6 @@ pub const DEFAULT_CHECK_INTERVAL: u64 = 15;
 
 // Next Block - 1 is the next block number
 pub const NEXT_BLOCK: u64 = 1;
-
-// Comparator For Rule Filter
-pub const COMPARATOR_EQUAL: &str = "==";
 
 // Comparator Type Allow by each type
 pub const UINT_COMPARATOR_TYPE: [&str; 6] = ["==", ">", ">=", "<", "<=", "!="];

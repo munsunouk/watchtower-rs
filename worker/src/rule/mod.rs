@@ -12,6 +12,7 @@ pub use rpc_call::RpcCall;
 use cron::Schedule;
 use serde_json::from_str;
 use serde_json::Value;
+use std::iter::zip;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -26,7 +27,6 @@ use anyhow::Result;
 use crate::utils::constants::ADDRESS_COMPARATOR_TYPE;
 use crate::utils::constants::BOOL_COMPARATOR_TYPE;
 use crate::utils::constants::BYTES_COMPARATOR_TYPE;
-use crate::utils::constants::COMPARATOR_EQUAL;
 use crate::utils::constants::FIXED_BYTES_COMPARATOR_TYPE;
 use crate::utils::constants::INT_COMPARATOR_TYPE;
 use crate::utils::constants::INVALID_TOKEN_VALUE;
@@ -119,27 +119,37 @@ pub fn parse_rule_filter(rule_filters: &Vec<String>) -> Vec<(Vec<usize>, String)
         .iter()
         .map(|rule_filter| {
             let parts: Vec<&str> = rule_filter.split('-').collect();
-            let indices: Vec<usize> = parts[0].split('.').map(|s| s.parse().unwrap()).collect();
+            let indices: Vec<usize> = parts
+                .get(0)
+                .unwrap()
+                .split('.')
+                .map(|s| s.parse().unwrap())
+                .collect();
             let value = parts[1].to_string();
             (indices, value)
         })
         .collect()
 }
 
-/// Parses the expected value index.
+/// Parses the expected value filter.
 ///
 /// # Arguments
 ///
-/// * `expected_value_index` - A string representing the expected value index.
+/// * `expected_value_filter` - A string representing the expected value filter.
 ///
 /// # Returns
 ///
-/// A vector of usize values.
-pub fn parse_expected_value_index(expected_value_index: &String) -> Vec<usize> {
-    expected_value_index
+/// A tuple containing a vector of usize values and a string value.
+pub fn parse_expected_value_filter(expected_value_filter: &String) -> (Vec<usize>, String) {
+    let parts: Vec<&str> = expected_value_filter.split('-').collect();
+    let indices: Vec<usize> = parts
+        .get(0)
+        .unwrap()
         .split('.')
         .map(|s| s.parse().unwrap())
-        .collect()
+        .collect();
+    let value = parts[1].to_string();
+    (indices, value)
 }
 
 /// Encodes parameters into a token.
@@ -277,6 +287,41 @@ pub fn parse_compare<T: PartialOrd + ToString>(
         _ => None,
     }
 }
+
+// pub fn parse_compares<T: PartialOrd + ToString>(
+//     value: &Vec<T>,
+//     expected_value: &Vec<T>,
+//     comparator: &Vec<String>,
+//     additional_comparator: &Vec<String>,
+// ) -> Option<String> {
+
+//     let (add_comparator, rest_comparator) = additional_comparator.split_first().unwrap();
+
+//     let comparator_result = match comparator {
+//         "==" if value == expected_value => Some(value.to_string()),
+//         ">" if value > expected_value => Some(value.to_string()),
+//         ">=" if value >= expected_value => Some(value.to_string()),
+//         "<" if value < expected_value => Some(value.to_string()),
+//         "<=" if value <= expected_value => Some(value.to_string()),
+//         "!=" if value != expected_value => Some(value.to_string()),
+//         _ => None,
+//     };
+
+//     if additional_comparator.is_empty() {
+//         return comparator_result;
+//     } else {
+//         let (add_comparator, rest_comparator) = additional_comparator.split_first().unwrap();
+
+//         match add_comparator {
+//             "||" if {
+//                 comparator_result.is_some() => Some(value.to_string())
+//             } else {
+//                 parse_compare(value, expected_value, add_comparator, rest_comparator)
+//             }
+//             "&&" => None,
+//         }
+//     }
+// }
 
 /// Compares a token with an expected value based on a comparator.
 ///
@@ -417,18 +462,19 @@ pub fn parse_decode_token<'a>(
     token: &Token,
     param_type: &ParamType,
     rule_filter: &Vec<String>,
-    expected_value_index: &String,
-    expected_value: &String,
-    comparator: &String,
+    rule_filter_comparator: &Vec<String>,
+    expected_value_filter: &String,
+    expected_value_filter_comparator: &String,
 ) -> Result<Option<String>> {
     let parsed_rule_filter = parse_rule_filter(rule_filter);
-    let parsed_expected_value_index_key = parse_expected_value_index(expected_value_index);
+    let (parsed_expected_value_index_key, expected_value) =
+        parse_expected_value_filter(expected_value_filter);
 
     // Rule Filter Decoding
-    for (parsed_rule_key, parsed_rule_value) in parsed_rule_filter {
+    for ((parsed_rule_key, parsed_rule_value), comparator) in
+        zip(parsed_rule_filter, rule_filter_comparator)
+    {
         if let Some(value) = decode_token(&token, &param_type, &parsed_rule_key) {
-            let comparator = COMPARATOR_EQUAL;
-
             if let None = compare_token(&value, parsed_rule_value, comparator.to_string()) {
                 return Ok(None);
             }
@@ -442,7 +488,7 @@ pub fn parse_decode_token<'a>(
         return Ok(compare_token(
             &value,
             expected_value.to_string(),
-            comparator.to_string(),
+            expected_value_filter_comparator.to_string(),
         ));
     } else {
         return Err(anyhow::anyhow!(INVALID_TOKEN_VALUE));

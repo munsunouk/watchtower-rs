@@ -19,9 +19,9 @@ CREATE TABLE contract_call_rule (
     abi JSON NOT NULL,
     method_params TEXT[] NOT NULL,
     rule_filter TEXT[] NOT NULL,
-    expected_value_index VARCHAR NOT NULL,
-    expected_value VARCHAR NOT NULL,
-    comparator VARCHAR NOT NULL,
+    rule_filter_comparator TEXT[] NOT NULL,
+    expected_value_filter VARCHAR NOT NULL,
+    expected_value_filter_comparator VARCHAR NOT NULL,
     check_interval INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -36,9 +36,9 @@ CREATE TABLE contract_event_rule (
     abi JSON NOT NULL,
     event_index INTEGER NOT NULL,
     rule_filter TEXT[] NOT NULL,
-    expected_value_index VARCHAR NOT NULL,
-    expected_value VARCHAR NOT NULL,
-    comparator VARCHAR NOT NULL,
+    rule_filter_comparator TEXT[] NOT NULL,
+    expected_value_filter VARCHAR NOT NULL,
+    expected_value_filter_comparator VARCHAR NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

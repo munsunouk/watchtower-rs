@@ -76,9 +76,9 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                             &token,
                             &parsing_input_param_type,
                             &contract_event.rule.rule_filter,
-                            &contract_event.rule.expected_value_index,
-                            &contract_event.rule.expected_value,
-                            &contract_event.rule.comparator,
+                            &contract_event.rule.rule_filter_comparator,
+                            &contract_event.rule.expected_value_filter,
+                            &contract_event.rule.expected_value_filter_comparator,
                         )
                         .unwrap();
 
