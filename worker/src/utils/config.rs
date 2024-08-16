@@ -24,7 +24,7 @@ pub struct EVMProvider {
     /// Endpoint provider URL.
     pub provider: String,
     /// Check interval.
-    pub check_interval: u64,
+    pub call_time_interval: u64,
 }
 
 /// Configuration for Sentry.

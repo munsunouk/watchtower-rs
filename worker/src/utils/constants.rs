@@ -16,17 +16,12 @@ pub const DB_RULE_FILTER_COLUMN: &str = "rule_filter";
 pub const DB_RULE_FILTER_COMPARATOR_COLUMN: &str = "rule_filter_comparator";
 pub const DB_EXPECTED_VALUE_FILTER_COLUMN: &str = "expected_value_filter";
 pub const DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN: &str = "expected_value_filter_comparator";
-pub const DB_CHECK_INTERVAL_COLUMN: &str = "check_interval";
+pub const DB_CHECK_BLOCK_INTERVAL_COLUMN: &str = "check_block_interval";
+pub const DB_CALL_TIME_INTERVAL_COLUMN: &str = "call_time_interval";
 pub const DB_CHAIN_ID_COLUMN: &str = "chain_id";
 pub const DB_COMPARATOR_COLUMN: &str = "comparator";
 pub const DB_EXPECTED_VALUE_COLUMN: &str = "expected_value";
-
-// Log targets
-pub const INVALID_TYPE_ABI: &str = "invalid type ABI";
-pub const INVALID_TOKEN_VALUE: &str = "invalid token value";
-pub const INVALID_RPC_CALL_LOG: &str = "invalid rpc call log";
-pub const INVALID_CONTRACT_CALL_LOG: &str = "invalid contract call log";
-pub const INVALID_CONTRACT_EVENT_LOG: &str = "invalid contract event log";
+pub const DB_CONTRACT_CALL_BLOCK_LOG: &str = "contract_call_block_log";
 
 // SQLX Query Warn - Try to avoid SQL Insert Log
 pub const SQLX_QUERY_WARN: &str = "sqlx::query=warn";
@@ -42,11 +37,34 @@ pub const DEFAULT_BLOCK_NUMBER: u64 = 0;
 // Default Function Input Index - 0 is the first input parameter in Tuple
 pub const DEFAULT_FN_INPUT_INDEX: usize = 0;
 
+// Block Offset - ensuring that the block range is inclusive of both the from and to blocks.
+pub const BLOCK_OFFSET: u64 = 1;
+
+// New Block Offset - ensuring that the from block is the next block number
+pub const NEW_BLOCK_OFFSET: u64 = 1;
+
 // Default Check Interval
-pub const DEFAULT_CHECK_INTERVAL: u64 = 15;
+pub const DEFAULT_CALL_TIME_INTERVAL: u64 = 15;
 
 // Next Block - 1 is the next block number
 pub const NEXT_BLOCK: u64 = 1;
+
+// Max Block Length Limit for contract call bootstrap
+pub const MAX_BLOCK_LENGTH_LIMIT: u64 = 10;
+
+// Add Memory Value Order
+pub const ADD_MEMORY_VALUE_ORDER: u64 = 1;
+// Default Memory Value Order
+pub const DEFAULT_MEMORY_VALUE_ORDER: u64 = 0;
+
+// Parsing VALUE Filter
+pub const FILTER_VALUE_SPLIT_CHAR: &str = "-";
+pub const FILTER_INDEX_SPLIT_CHAR: &str = ".";
+pub const FILTER_INDEX: usize = 0;
+pub const FILTER_VALUE: usize = 1;
+
+// Default Param Value - Need to change dynamically
+pub const DEFAULT_PARAM_VALUE: usize = 0;
 
 // Comparator Type Allow by each type
 pub const UINT_COMPARATOR_TYPE: [&str; 6] = ["==", ">", ">=", "<", "<=", "!="];
@@ -62,5 +80,7 @@ pub const CONFIG_PATH: &str = "./src/utils/configs/config.testnet.yaml";
 
 pub type RuleID = usize;
 
-pub static TOKIO_THREADS_TOTAL: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(0));
-pub static TOKIO_THREADS_ALIVE: Lazy<AtomicU64> = Lazy::new(|| AtomicU64::new(0));
+pub static TOKIO_THREADS_TOTAL: Lazy<AtomicU64> =
+    Lazy::new(|| AtomicU64::new(DEFAULT_MEMORY_VALUE_ORDER));
+pub static TOKIO_THREADS_ALIVE: Lazy<AtomicU64> =
+    Lazy::new(|| AtomicU64::new(DEFAULT_MEMORY_VALUE_ORDER));

@@ -22,17 +22,19 @@ use ethers::{
     utils::hex,
 };
 
-use anyhow::Result;
-
 use crate::utils::constants::ADDRESS_COMPARATOR_TYPE;
 use crate::utils::constants::BOOL_COMPARATOR_TYPE;
 use crate::utils::constants::BYTES_COMPARATOR_TYPE;
+use crate::utils::constants::DEFAULT_PARAM_VALUE;
+use crate::utils::constants::FILTER_INDEX;
+use crate::utils::constants::FILTER_INDEX_SPLIT_CHAR;
+use crate::utils::constants::FILTER_VALUE;
+use crate::utils::constants::FILTER_VALUE_SPLIT_CHAR;
 use crate::utils::constants::FIXED_BYTES_COMPARATOR_TYPE;
 use crate::utils::constants::INT_COMPARATOR_TYPE;
-use crate::utils::constants::INVALID_TOKEN_VALUE;
-use crate::utils::constants::INVALID_TYPE_ABI;
 use crate::utils::constants::STRING_COMPARATOR_TYPE;
 use crate::utils::constants::UINT_COMPARATOR_TYPE;
+use crate::utils::error::WorkerError;
 
 /// Parses a JSON value into an ABI.
 ///
@@ -44,7 +46,7 @@ use crate::utils::constants::UINT_COMPARATOR_TYPE;
 ///
 /// An `Abi` instance.
 pub fn parse_to_abi(input: Value) -> Abi {
-    from_str(&input.to_string()).expect(INVALID_TYPE_ABI)
+    from_str(&input.to_string()).expect(&WorkerError::InvalidTypeABI.to_string())
 }
 
 /// Converts an i32 to usize.
@@ -118,14 +120,14 @@ pub fn parse_rule_filter(rule_filters: &Vec<String>) -> Vec<(Vec<usize>, String)
     rule_filters
         .iter()
         .map(|rule_filter| {
-            let parts: Vec<&str> = rule_filter.split('-').collect();
+            let parts: Vec<&str> = rule_filter.split(FILTER_VALUE_SPLIT_CHAR).collect();
             let indices: Vec<usize> = parts
-                .get(0)
+                .get(FILTER_INDEX)
                 .unwrap()
-                .split('.')
+                .split(FILTER_INDEX_SPLIT_CHAR)
                 .map(|s| s.parse().unwrap())
                 .collect();
-            let value = parts[1].to_string();
+            let value = parts.get(FILTER_VALUE).unwrap().to_string();
             (indices, value)
         })
         .collect()
@@ -141,14 +143,16 @@ pub fn parse_rule_filter(rule_filters: &Vec<String>) -> Vec<(Vec<usize>, String)
 ///
 /// A tuple containing a vector of usize values and a string value.
 pub fn parse_expected_value_filter(expected_value_filter: &String) -> (Vec<usize>, String) {
-    let parts: Vec<&str> = expected_value_filter.split('-').collect();
+    let parts: Vec<&str> = expected_value_filter
+        .split(FILTER_VALUE_SPLIT_CHAR)
+        .collect();
     let indices: Vec<usize> = parts
-        .get(0)
+        .get(FILTER_INDEX)
         .unwrap()
-        .split('.')
+        .split(FILTER_INDEX_SPLIT_CHAR)
         .map(|s| s.parse().unwrap())
         .collect();
-    let value = parts[1].to_string();
+    let value = parts.get(FILTER_VALUE).unwrap().to_string();
     (indices, value)
 }
 
@@ -168,14 +172,40 @@ pub fn encode_token(params: Vec<String>, param_type: &ParamType) -> Token {
     }
 
     match param_type {
-        ParamType::String => Token::String(params.get(0).unwrap().clone()),
-        ParamType::Address => Token::Address(params.get(0).unwrap().parse::<Address>().unwrap()),
-        ParamType::Bool => Token::Bool(params.get(0).unwrap().parse::<bool>().unwrap()),
-        ParamType::Uint(_) => Token::Uint(params.get(0).unwrap().parse::<Uint>().unwrap()),
-        ParamType::Int(_) => Token::Int(params.get(0).unwrap().parse::<Int>().unwrap()),
-        ParamType::Bytes => Token::Bytes(hex::decode(&params.get(0).unwrap()).unwrap()),
+        ParamType::String => Token::String(params.get(DEFAULT_PARAM_VALUE).unwrap().clone()),
+        ParamType::Address => Token::Address(
+            params
+                .get(DEFAULT_PARAM_VALUE)
+                .unwrap()
+                .parse::<Address>()
+                .unwrap(),
+        ),
+        ParamType::Bool => Token::Bool(
+            params
+                .get(DEFAULT_PARAM_VALUE)
+                .unwrap()
+                .parse::<bool>()
+                .unwrap(),
+        ),
+        ParamType::Uint(_) => Token::Uint(
+            params
+                .get(DEFAULT_PARAM_VALUE)
+                .unwrap()
+                .parse::<Uint>()
+                .unwrap(),
+        ),
+        ParamType::Int(_) => Token::Int(
+            params
+                .get(DEFAULT_PARAM_VALUE)
+                .unwrap()
+                .parse::<Int>()
+                .unwrap(),
+        ),
+        ParamType::Bytes => {
+            Token::Bytes(hex::decode(&params.get(DEFAULT_PARAM_VALUE).unwrap()).unwrap())
+        }
         ParamType::FixedBytes(size) => {
-            let bytes = hex::decode(&params.get(0).unwrap()).unwrap();
+            let bytes = hex::decode(&params.get(DEFAULT_PARAM_VALUE).unwrap()).unwrap();
             assert_eq!(bytes.len(), *size);
             Token::FixedBytes(bytes)
         }
@@ -205,6 +235,16 @@ pub fn encode_token(params: Vec<String>, param_type: &ParamType) -> Token {
     }
 }
 
+/// Checks if the type comparator is valid.
+///
+/// # Arguments
+///
+/// * `value` - The token to check.
+/// * `comparator` - The comparator string.
+///
+/// # Returns
+///
+/// A boolean indicating if the type comparator is valid.
 pub fn check_type_comparator(value: &Token, comparator: &str) -> bool {
     match value {
         Token::Uint(_) => {
@@ -287,41 +327,6 @@ pub fn parse_compare<T: PartialOrd + ToString>(
         _ => None,
     }
 }
-
-// pub fn parse_compares<T: PartialOrd + ToString>(
-//     value: &Vec<T>,
-//     expected_value: &Vec<T>,
-//     comparator: &Vec<String>,
-//     additional_comparator: &Vec<String>,
-// ) -> Option<String> {
-
-//     let (add_comparator, rest_comparator) = additional_comparator.split_first().unwrap();
-
-//     let comparator_result = match comparator {
-//         "==" if value == expected_value => Some(value.to_string()),
-//         ">" if value > expected_value => Some(value.to_string()),
-//         ">=" if value >= expected_value => Some(value.to_string()),
-//         "<" if value < expected_value => Some(value.to_string()),
-//         "<=" if value <= expected_value => Some(value.to_string()),
-//         "!=" if value != expected_value => Some(value.to_string()),
-//         _ => None,
-//     };
-
-//     if additional_comparator.is_empty() {
-//         return comparator_result;
-//     } else {
-//         let (add_comparator, rest_comparator) = additional_comparator.split_first().unwrap();
-
-//         match add_comparator {
-//             "||" if {
-//                 comparator_result.is_some() => Some(value.to_string())
-//             } else {
-//                 parse_compare(value, expected_value, add_comparator, rest_comparator)
-//             }
-//             "&&" => None,
-//         }
-//     }
-// }
 
 /// Compares a token with an expected value based on a comparator.
 ///
@@ -465,7 +470,7 @@ pub fn parse_decode_token<'a>(
     rule_filter_comparator: &Vec<String>,
     expected_value_filter: &String,
     expected_value_filter_comparator: &String,
-) -> Result<Option<String>> {
+) -> Result<Option<String>, WorkerError> {
     let parsed_rule_filter = parse_rule_filter(rule_filter);
     let (parsed_expected_value_index_key, expected_value) =
         parse_expected_value_filter(expected_value_filter);
@@ -479,7 +484,7 @@ pub fn parse_decode_token<'a>(
                 return Ok(None);
             }
         } else {
-            return Err(anyhow::anyhow!(INVALID_TOKEN_VALUE));
+            return Err(WorkerError::InvalidTokenValue.into());
         }
     }
 
@@ -491,7 +496,7 @@ pub fn parse_decode_token<'a>(
             expected_value_filter_comparator.to_string(),
         ));
     } else {
-        return Err(anyhow::anyhow!(INVALID_TOKEN_VALUE));
+        return Err(WorkerError::InvalidTokenValue.into());
     }
 }
 
@@ -501,7 +506,7 @@ mod tests {
     use tracing_subscriber::fmt::init;
 
     #[test]
-    fn test_compare_token() -> anyhow::Result<()> {
+    fn test_compare_token() -> Result<(), WorkerError> {
         init();
 
         let result = compare_token(

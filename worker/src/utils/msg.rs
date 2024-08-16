@@ -20,18 +20,15 @@ impl RpcCallRawMessage {
 #[derive(Clone, Debug)]
 /// The message format passed through the block channel.
 pub struct ContractCallRawMessage {
-    /// The processed block number.
-    pub block_number: U64,
-    /// The detected transaction logs from the target contracts.
-    pub call_token: Token,
+    /// The call result from the target contracts with block number.
+    pub block_tokens: Vec<(Token, U64)>,
     pub rule_id: RuleID,
 }
 
 impl ContractCallRawMessage {
-    pub fn new(block_number: U64, call_token: Token, rule_id: RuleID) -> Self {
+    pub fn new(block_tokens: Vec<(Token, U64)>, rule_id: RuleID) -> Self {
         Self {
-            block_number,
-            call_token,
+            block_tokens,
             rule_id,
         }
     }

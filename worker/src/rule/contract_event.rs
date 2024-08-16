@@ -1,4 +1,3 @@
-use anyhow::{Ok, Result};
 use ethers::types::U64;
 use ethers::{
     abi::{Abi, Event, ParamType},
@@ -18,6 +17,7 @@ use crate::utils::constants::{
     DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
     DB_RULE_FILTER_COMPARATOR_COLUMN,
 };
+use crate::utils::error::WorkerError;
 
 /// Represents a log of contract events.
 #[derive(Clone, Debug)]
@@ -27,7 +27,7 @@ pub struct ContractEventBlockLog {
     pub chain_id: ChainID,
 }
 
-impl ContractEventBlockLog {
+impl From<&PgRow> for ContractEventBlockLog {
     /// Creates a `ContractEventBlockLog` from a database row.
     ///
     /// # Arguments
@@ -37,7 +37,7 @@ impl ContractEventBlockLog {
     /// # Returns
     ///
     /// A new instance of `ContractEventBlockLog`.
-    pub fn from(row: &PgRow) -> Self {
+    fn from(row: &PgRow) -> Self {
         ContractEventBlockLog {
             id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
             block_number: U64::from(parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN))),
@@ -60,7 +60,7 @@ pub struct ContractEventRule {
     pub expected_value_filter_comparator: String,
 }
 
-impl ContractEventRule {
+impl From<&PgRow> for ContractEventRule {
     /// Creates a `ContractEventRule` from a database row.
     ///
     /// # Arguments
@@ -70,7 +70,7 @@ impl ContractEventRule {
     /// # Returns
     ///
     /// A new instance of `ContractEventRule`.
-    pub fn from(row: &PgRow) -> Self {
+    fn from(row: &PgRow) -> Self {
         ContractEventRule {
             id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
             chain_id: parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)) as ChainID,
@@ -115,7 +115,7 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     /// # Returns
     ///
     /// A result containing a reference to the event.
-    pub fn get_event(&self) -> Result<&Event> {
+    pub fn get_event(&self) -> Result<&Event, WorkerError> {
         let abi = self.contract.abi();
 
         let event = abi.events().next().unwrap();
@@ -128,7 +128,7 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     /// # Returns
     ///
     /// A result containing the event signature as `H256`.
-    pub fn get_event_signature(&self) -> Result<H256> {
+    pub fn get_event_signature(&self) -> Result<H256, WorkerError> {
         let event = self.get_event()?;
 
         let signature = event.signature();
@@ -141,7 +141,7 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     /// # Returns
     ///
     /// A result containing the raw input parameter type.
-    pub fn get_raw_input_param_type(&self) -> Result<ParamType> {
+    pub fn get_raw_input_param_type(&self) -> Result<ParamType, WorkerError> {
         let event: &Event = self.get_event()?;
 
         let event_input = event.inputs.clone();
@@ -161,7 +161,7 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     /// # Returns
     ///
     /// A result containing the input parameter type.
-    pub fn get_input_param_type(&self) -> Result<ParamType> {
+    pub fn get_input_param_type(&self) -> Result<ParamType, WorkerError> {
         let event = self.get_event()?;
 
         let event_input = event.inputs.clone();
@@ -195,10 +195,10 @@ mod tests {
     use super::*;
     use tracing_subscriber;
 
-    use watch_tower_lib::db::postgres::PostgresClient;
+    use watch_tower_lib::{db::postgres::PostgresClient, utils::error::DatabaseError};
 
     #[tokio::test]
-    async fn test_postgres_client() -> anyhow::Result<()> {
+    async fn test_postgres_client() -> Result<(), DatabaseError> {
         tracing_subscriber::fmt::init();
 
         let client = PostgresClient::new("postgres://root:secret@localhost:5432/postgres").await?;

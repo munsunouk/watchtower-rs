@@ -1,4 +1,4 @@
-INSERT INTO rpc_call_rule (id, name, url, expected_value, comparator, check_interval, created_at, updated_at)
+INSERT INTO rpc_call_rule (id, name, url, expected_value, comparator, call_time_interval, created_at, updated_at)
 VALUES 
 (1, 'private-mainnet', 'https://private.mainnet.thebifrost.io/rpc', '200', '!=', 15, '2024-08-09', '2024-08-09'),
 (2, 'private-testnet', 'https://private.testnet.thebifrost.io/rpc', '200', '!=', 15, '2024-08-09', '2024-08-09'),

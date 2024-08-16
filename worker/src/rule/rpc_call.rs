@@ -4,10 +4,11 @@ use ethers::types::U64;
 use reqwest::{Client, StatusCode};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
+use watch_tower_lib::utils::error::ClientError;
 
 use crate::utils::constants::{
-    RuleID, DB_CHECK_INTERVAL_COLUMN, DB_COMPARATOR_COLUMN, DB_EXPECTED_VALUE_COLUMN, DB_ID_COLUMN,
-    DB_URL_COLUMN,
+    RuleID, DB_CALL_TIME_INTERVAL_COLUMN, DB_COMPARATOR_COLUMN, DB_EXPECTED_VALUE_COLUMN,
+    DB_ID_COLUMN, DB_URL_COLUMN,
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,10 +28,10 @@ pub struct RpcCallRule {
     pub url: String,
     pub expected_value: String,
     pub comparator: String,
-    pub check_interval: Schedule,
+    pub call_time_interval: Schedule,
 }
 
-impl RpcCallRule {
+impl From<&PgRow> for RpcCallRule {
     /// Creates an `RpcCallRule` from a database row.
     ///
     /// # Arguments
@@ -40,13 +41,15 @@ impl RpcCallRule {
     /// # Returns
     ///
     /// A new instance of `RpcCallRule`.
-    pub fn from(row: &PgRow) -> Self {
+    fn from(row: &PgRow) -> Self {
         RpcCallRule {
             id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
             url: row.get(DB_URL_COLUMN),
             expected_value: row.get(DB_EXPECTED_VALUE_COLUMN),
             comparator: row.get(DB_COMPARATOR_COLUMN),
-            check_interval: set_schedule(parse_i32_to_usize(row.get(DB_CHECK_INTERVAL_COLUMN))),
+            call_time_interval: set_schedule(parse_i32_to_usize(
+                row.get(DB_CALL_TIME_INTERVAL_COLUMN),
+            )),
         }
     }
 }
@@ -99,7 +102,7 @@ impl RpcCall {
     /// # Returns
     ///
     /// A result containing the status as `U64`.
-    pub async fn fetch_rpc_call_status(&self) -> anyhow::Result<U64> {
+    pub async fn fetch_rpc_call_status(&self) -> Result<U64, ClientError> {
         let response = self
             .client
             .post(&self.rule.url)

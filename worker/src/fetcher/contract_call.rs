@@ -1,10 +1,15 @@
 use cron::Schedule;
+use ethers::abi::Token;
 use ethers::providers::JsonRpcClient;
 use ethers::types::U64;
 use tokio::sync::mpsc::UnboundedSender;
+use watch_tower_lib::utils::error::ClientError;
 
 use crate::rule::contract_call::ContractCall;
-use crate::utils::constants::INVALID_CONTRACT_CALL_LOG;
+use crate::rule::set_schedule;
+use crate::utils::constants::{
+    DEFAULT_BLOCK_NUMBER, MAX_BLOCK_LENGTH_LIMIT, NEW_BLOCK_OFFSET, NEXT_BLOCK,
+};
 use crate::utils::msg::ContractCallRawMessage;
 use crate::utils::traits::Fetcher;
 
@@ -15,17 +20,22 @@ pub struct ContractCallFetcher<T> {
     pub contract_call: ContractCall<T>,
     /// The channel sending event messages.
     pub sender: UnboundedSender<ContractCallRawMessage>,
+    /// The call time interval for each fetcher.
+    call_time_interval: u64,
+    // The block from which to start fetching.
+    from_block: U64,
 }
 
 #[async_trait::async_trait]
 impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
     /// Returns the schedule for the fetcher.
     fn schedule(&self) -> Schedule {
-        self.contract_call.rule.check_interval.clone()
+        set_schedule(self.call_time_interval.try_into().unwrap())
     }
 
     /// Runs the fetcher, fetching contract calls at scheduled intervals.
     async fn run(&mut self) {
+        self.initialize().await;
         loop {
             self.wait_until_next_time().await;
             self.process().await;
@@ -34,34 +44,32 @@ impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
 
     /// Processes the contract call, fetching the latest block number and sending the contract call log.
     async fn process(&mut self) {
-        let target_token = match self.contract_call.get_method_call().await {
-            Ok(token) => token,
-            Err(err) => {
-                tracing::error!(
-                    "[{}] ❗️ [{}] [Error: {}]",
-                    &self.contract_call.client.get_chain_name(),
-                    INVALID_CONTRACT_CALL_LOG,
-                    err
-                );
-                return;
-            }
-        };
+        let latest_block = self.get_latest_block_number().await;
+        if !self.check_block_interval(latest_block).await {
+            return;
+        }
 
-        let block_number = self.get_latest_block_number().await;
+        let target_tokens = self.get_call_tokens(self.from_block, latest_block).await;
 
-        self.sender
-            .send(ContractCallRawMessage::new(
-                block_number,
-                target_token,
-                self.contract_call.rule.id,
-            ))
-            .unwrap();
+        let from = self.from_block;
+        let to = latest_block;
 
-        tracing::info!(
-            "[Rule ID : {}] ✨ [Block Number : {}]",
-            &self.contract_call.rule.id,
-            block_number
-        );
+        if let Ok(target_tokens) = target_tokens {
+            self.sender
+                .send(ContractCallRawMessage::new(
+                    target_tokens,
+                    self.contract_call.rule.id,
+                ))
+                .unwrap();
+
+            tracing::info!(
+                "[Rule ID : {}] ✨ [Block Number :({:?} … {:?})]",
+                &self.contract_call.rule.id,
+                from,
+                to
+            );
+            self.replace_from_block(to);
+        }
     }
 }
 
@@ -79,18 +87,81 @@ impl<T: JsonRpcClient> ContractCallFetcher<T> {
     pub fn new(
         contract_call: ContractCall<T>,
         sender: UnboundedSender<ContractCallRawMessage>,
+        from_block_number: U64,
+        call_time_interval: u64,
     ) -> Self {
         Self {
             contract_call,
             sender,
+            call_time_interval,
+            from_block: from_block_number,
         }
     }
 
+    /// Initializes the call fetcher
+    async fn initialize(&mut self) {
+        // Prevent chain id mismatch in DB
+        let _ = self.contract_call.client.verify_chain_id().await;
+        self.check_zero_block().await;
+    }
+
+    /// Gets the latest block number.
     async fn get_latest_block_number(&self) -> U64 {
         self.contract_call
             .client
             .get_latest_block_number()
             .await
             .unwrap()
+    }
+
+    /// Checks if the block number is greater than the call block interval.
+    async fn check_block_interval(&self, latest_block: U64) -> bool {
+        latest_block.saturating_sub(self.contract_call.rule.check_block_interval) >= self.from_block
+    }
+
+    /// Checks if the from block is zero and replaces it with the latest block number.
+    async fn check_zero_block(&mut self) {
+        let latest_block = self.get_latest_block_number().await;
+
+        if self.from_block == U64::from(DEFAULT_BLOCK_NUMBER) {
+            self.from_block = latest_block;
+        }
+    }
+
+    async fn get_call_tokens(
+        &mut self,
+        from: U64,
+        to: U64,
+    ) -> Result<Vec<(Token, U64)>, ClientError> {
+        let mut tokens = vec![];
+
+        let bootstrap_block_length = to.saturating_sub(from);
+
+        let mut from = if bootstrap_block_length > U64::from(MAX_BLOCK_LENGTH_LIMIT) {
+            tracing::warn!(
+                "[Rule ID : {}] ⚠️ [Block Length : {}]",
+                &self.contract_call.rule.id,
+                bootstrap_block_length
+            );
+            to.saturating_sub(U64::from(MAX_BLOCK_LENGTH_LIMIT))
+        } else {
+            from
+        };
+
+        self.replace_from_block(from);
+
+        while from <= to {
+            let token = self.contract_call.get_method_call(from.into()).await?;
+            tokens.push((token, from));
+            from = from.saturating_add(U64::from(NEXT_BLOCK));
+        }
+
+        Ok(tokens)
+    }
+
+    /// Replaces the from block with the given block number.
+    #[inline]
+    fn replace_from_block(&mut self, to: U64) {
+        self.from_block = to.saturating_add(U64::from(NEW_BLOCK_OFFSET));
     }
 }

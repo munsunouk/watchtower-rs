@@ -1,6 +1,6 @@
 use url::Url;
 
-use crate::utils::{constants::ChainID, error::INVALID_PROVIDER_URL};
+use crate::utils::{constants::ChainID, error::ClientError};
 
 /// The metadata of the EVM provider.
 #[derive(Clone)]
@@ -17,7 +17,7 @@ impl ProviderMetadata {
     pub fn new(name: String, url: String, id: ChainID) -> Self {
         Self {
             name,
-            url: Url::parse(&url).expect(INVALID_PROVIDER_URL),
+            url: Url::parse(&url).expect(&ClientError::InvalidProviderURL.to_string()),
             id,
         }
     }

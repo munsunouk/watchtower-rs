@@ -2,7 +2,7 @@ use cron::Schedule;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::rule::rpc_call::RpcCall;
-use crate::utils::constants::INVALID_RPC_CALL_LOG;
+use crate::utils::error::WorkerError;
 use crate::utils::msg::RpcCallRawMessage;
 use crate::utils::traits::Fetcher;
 
@@ -19,7 +19,7 @@ pub struct RpcCallFetcher {
 impl Fetcher for RpcCallFetcher {
     /// Returns the schedule for the fetcher.
     fn schedule(&self) -> Schedule {
-        self.rpc_call.rule.check_interval.clone()
+        self.rpc_call.rule.call_time_interval.clone()
     }
 
     /// Runs the fetcher, fetching RPC calls at scheduled intervals.
@@ -36,10 +36,9 @@ impl Fetcher for RpcCallFetcher {
             Ok(token) => token,
             Err(err) => {
                 tracing::error!(
-                    "[{}] ❗️ [{}] [Error: {}]",
+                    "[{}] ❗️ [Error: {}]",
                     &self.rpc_call.rule.url,
-                    INVALID_RPC_CALL_LOG,
-                    err
+                    WorkerError::InvalidRpcCallLog(err.to_string())
                 );
                 return;
             }

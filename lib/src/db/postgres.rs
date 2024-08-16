@@ -3,8 +3,9 @@ use sqlx::postgres::PgRow;
 use sqlx::{pool::Pool, Executor, PgPool, Postgres};
 
 use crate::utils::constants::{
-    DB_SCHEMA_LOAD, DB_TABLE_NAME, INSERT_CONTRACT_CALL_LOG, INSERT_CONTRACT_EVENT_BLOCK_LOGS,
-    INSERT_CONTRACT_EVENT_LOG, INSERT_RPC_LOG, SCHEMA, SELECT_JOIN_EVENT_RULE_CHAIN_ID,
+    DB_SCHEMA_LOAD, DB_TABLE_NAME, INSERT_CONTRACT_CALL_BLOCK_LOG, INSERT_CONTRACT_CALL_LOG,
+    INSERT_CONTRACT_EVENT_BLOCK_LOGS, INSERT_CONTRACT_EVENT_LOG, INSERT_RPC_LOG, SCHEMA,
+    SELECT_JOIN_EVENT_RULE_CHAIN_ID,
 };
 
 ///Postgres's Pool type for the DatabasePool
@@ -90,6 +91,20 @@ impl PostgresClient {
         block_number: i32,
     ) -> Result<(), DatabaseError> {
         sqlx::query(INSERT_CONTRACT_EVENT_BLOCK_LOGS)
+            .bind(block_number)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| DatabaseError::GenericInsertError(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn insert_contract_call_block_logs(
+        &self,
+        id: i32,
+        block_number: i32,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(INSERT_CONTRACT_CALL_BLOCK_LOG)
+            .bind(id)
             .bind(block_number)
             .execute(&self.pool)
             .await

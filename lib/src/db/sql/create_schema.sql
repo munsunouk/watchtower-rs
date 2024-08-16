@@ -5,7 +5,7 @@ CREATE TABLE rpc_call_rule (
     url VARCHAR NOT NULL,
     expected_value VARCHAR NOT NULL,
     comparator VARCHAR NOT NULL,
-    check_interval INTEGER NOT NULL,
+    call_time_interval INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -22,7 +22,7 @@ CREATE TABLE contract_call_rule (
     rule_filter_comparator TEXT[] NOT NULL,
     expected_value_filter VARCHAR NOT NULL,
     expected_value_filter_comparator VARCHAR NOT NULL,
-    check_interval INTEGER NOT NULL,
+    check_block_interval INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -78,4 +78,12 @@ CREATE TABLE contract_event_block_log (
     block_number INTEGER NOT NULL,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id) REFERENCES contract_event_rule(id)
+);
+
+-- Create table for contract_call_block_log
+CREATE TABLE contract_call_block_log (
+    id INTEGER PRIMARY KEY,
+    block_number INTEGER NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id) REFERENCES contract_call_rule(id)
 );

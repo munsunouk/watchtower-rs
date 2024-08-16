@@ -8,7 +8,8 @@ use watch_tower_lib::db::postgres::PostgresClient;
 
 use crate::rule::parse_compare;
 use crate::rule::rpc_call::RpcCall;
-use crate::utils::constants::{RuleID, INVALID_RPC_CALL_LOG};
+use crate::utils::constants::RuleID;
+use crate::utils::error::WorkerError;
 use crate::utils::msg::RpcCallRawMessage;
 
 /// Manages RPC call operations.
@@ -83,10 +84,9 @@ impl RpcCallManager {
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(
-                    "[Rule ID : {}] ❗️ [Error : {}] [Detail : {}]",
+                    "[Rule ID : {}] ❗️ [Error : {}]",
                     rule_id,
-                    INVALID_RPC_CALL_LOG,
-                    err
+                    WorkerError::InvalidRpcCallLog(err.to_string())
                 );
             });
     }

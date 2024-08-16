@@ -9,7 +9,8 @@ use tokio_stream::StreamExt;
 use watch_tower_lib::db::postgres::PostgresClient;
 
 use crate::rule::{contract_event::ContractEvent, parse_decode_token};
-use crate::utils::constants::{RuleID, INVALID_CONTRACT_EVENT_LOG};
+use crate::utils::constants::RuleID;
+use crate::utils::error::WorkerError;
 use crate::utils::msg::ContractEventRawMessage;
 
 /// Manages contract event operations.
@@ -120,10 +121,9 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                 let chain_id = self.contract_events.values().next().unwrap().rule.chain_id;
 
                 tracing::error!(
-                    "[Chain ID :{}] ❗️ [Error: {}] [Details: {}]",
+                    "[Chain ID : {}] ❗️ [Error: {}]",
                     chain_id,
-                    INVALID_CONTRACT_EVENT_LOG,
-                    err
+                    WorkerError::InvalidContractEventLog(err.to_string()),
                 );
             });
     }
@@ -141,10 +141,9 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(
-                    "[Rule ID : {}] ❗️ [Error : {}] [Details : {}]",
+                    "[Rule ID : {}] ❗️ [Error : {}]",
                     rule_id,
-                    INVALID_CONTRACT_EVENT_LOG,
-                    err
+                    WorkerError::InvalidContractEventLog(err.to_string()),
                 );
             });
     }

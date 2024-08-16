@@ -1,23 +1,50 @@
-use anyhow::Result;
-use cron::Schedule;
 use ethers::{
     abi::{Abi, Function, ParamType, Token},
     prelude::*,
 };
 
-use super::{
-    create_contract, encode_token, parse_i32_to_usize, parse_to_abi, parse_to_address, set_schedule,
-};
+use super::{create_contract, encode_token, parse_i32_to_usize, parse_to_abi, parse_to_address};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
-use watch_tower_lib::{cli::eth::EthClient, utils::constants::ChainID};
-
-use crate::utils::constants::{
-    RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_CHAIN_ID_COLUMN, DB_CHECK_INTERVAL_COLUMN,
-    DB_EXPECTED_VALUE_FILTER_COLUMN, DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN,
-    DB_METHOD_PARAMS_COLUMN, DB_RULE_FILTER_COLUMN, DB_RULE_FILTER_COMPARATOR_COLUMN,
-    DEFAULT_FN_INPUT_INDEX,
+use watch_tower_lib::{
+    cli::eth::EthClient,
+    utils::{constants::ChainID, error::ClientError},
 };
+
+use crate::utils::{
+    constants::{
+        RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
+        DB_CHECK_BLOCK_INTERVAL_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
+        DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_METHOD_PARAMS_COLUMN,
+        DB_RULE_FILTER_COLUMN, DB_RULE_FILTER_COMPARATOR_COLUMN, DEFAULT_FN_INPUT_INDEX,
+    },
+    error::WorkerError,
+};
+
+/// Represents a log of contract calls.
+#[derive(Clone, Debug)]
+pub struct ContractCallBlockLog {
+    pub id: RuleID,
+    pub block_number: U64,
+}
+
+impl From<&PgRow> for ContractCallBlockLog {
+    /// Creates a `ContractCallBlockLog` from a database row.
+    ///
+    /// # Arguments
+    ///
+    /// * `row` - A reference to a `PgRow`.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `ContractCallBlockLog`.
+    fn from(row: &PgRow) -> Self {
+        ContractCallBlockLog {
+            id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
+            block_number: U64::from(parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN))),
+        }
+    }
+}
 
 /// Represents a rule for contract calls.
 #[derive(Debug, Clone)]
@@ -31,10 +58,10 @@ pub struct ContractCallRule {
     pub rule_filter_comparator: Vec<String>,
     pub expected_value_filter: String,
     pub expected_value_filter_comparator: String,
-    pub check_interval: Schedule,
+    pub check_block_interval: U64,
 }
 
-impl ContractCallRule {
+impl From<&PgRow> for ContractCallRule {
     /// Creates a `ContractCallRule` from a database row.
     ///
     /// # Arguments
@@ -44,7 +71,7 @@ impl ContractCallRule {
     /// # Returns
     ///
     /// A new instance of `ContractCallRule`.
-    pub fn from(row: &PgRow) -> Self {
+    fn from(row: &PgRow) -> Self {
         ContractCallRule {
             id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
             chain_id: parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)) as ChainID,
@@ -55,7 +82,9 @@ impl ContractCallRule {
             rule_filter_comparator: row.get(DB_RULE_FILTER_COMPARATOR_COLUMN),
             expected_value_filter: row.get(DB_EXPECTED_VALUE_FILTER_COLUMN),
             expected_value_filter_comparator: row.get(DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN),
-            check_interval: set_schedule(parse_i32_to_usize(row.get(DB_CHECK_INTERVAL_COLUMN))),
+            check_block_interval: U64::from(parse_i32_to_usize(
+                row.get(DB_CHECK_BLOCK_INTERVAL_COLUMN),
+            )),
         }
     }
 }
@@ -95,7 +124,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
     /// # Returns
     ///
     /// A result containing a reference to the function.
-    pub fn get_function(&self) -> Result<&Function> {
+    pub fn get_function(&self) -> Result<&Function, WorkerError> {
         let abi = self.contract.abi();
 
         let function = abi.functions().next().unwrap();
@@ -108,7 +137,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
     /// # Returns
     ///
     /// A result containing the function name as a string.
-    pub fn get_function_name(&self) -> Result<String> {
+    pub fn get_function_name(&self) -> Result<String, WorkerError> {
         let function = self.get_function()?;
 
         let function_name = function.name.clone();
@@ -121,13 +150,15 @@ impl<T: JsonRpcClient> ContractCall<T> {
     /// # Returns
     ///
     /// A result containing the input parameter type.
-    pub fn get_input_param_type(&self) -> Result<ParamType> {
+    pub fn get_input_param_type(&self) -> Result<ParamType, WorkerError> {
         let function = self.get_function()?;
 
         let function_input = function.inputs.clone();
 
         let input_param_type = if !function_input.is_empty() {
-            let input_param = function_input.get(DEFAULT_FN_INPUT_INDEX).unwrap();
+            let input_param = function_input
+                .get(DEFAULT_FN_INPUT_INDEX)
+                .expect(&WorkerError::InvalidTypeABI.to_string());
 
             input_param.kind.clone()
         } else {
@@ -142,7 +173,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
     /// # Returns
     ///
     /// A result containing the output parameter type.
-    pub fn get_output_param_type(&self) -> Result<ParamType> {
+    pub fn get_output_param_type(&self) -> Result<ParamType, WorkerError> {
         let function = self.get_function()?;
 
         let function_output = function.outputs.clone();
@@ -162,25 +193,35 @@ impl<T: JsonRpcClient> ContractCall<T> {
     /// # Returns
     ///
     /// A result containing the method parameter token.
-    pub fn get_method_param_token(&self) -> Result<Token> {
+    pub fn get_method_param_token(&self) -> Result<Token, WorkerError> {
         let method_params = self.rule.method_params.clone();
         let input_param_type = self.get_input_param_type()?;
 
         Ok(encode_token(method_params, &input_param_type))
     }
 
-    /// Fetches the method call.
+    /// Gets the method call.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_id` - The block ID.
     ///
     /// # Returns
     ///
-    /// A result containing the method call token.
-    pub async fn get_method_call(&self) -> Result<Token> {
-        let function_name = self.get_function_name()?;
-        let method_params = self.get_method_param_token()?;
+    /// A result containing the method call.
+    pub async fn get_method_call(&self, block_id: BlockId) -> Result<Token, ClientError> {
+        let function_name = self
+            .get_function_name()
+            .map_err(|err| ClientError::InvalidContractCall(err.to_string()))?;
+        let method_params = self
+            .get_method_param_token()
+            .map_err(|err| ClientError::InvalidContractCall(err.to_string()))?;
 
         let raw_call = self
             .contract
-            .method::<_, Token>(&function_name, method_params)?;
+            .method::<_, Token>(&function_name, method_params)
+            .map_err(|err| ClientError::InternalProviderError(err.to_string()))?
+            .block(block_id);
 
         let request = self.client.contract_call(raw_call, &function_name).await;
         request
@@ -192,10 +233,10 @@ mod tests {
     use super::*;
     use tracing_subscriber;
 
-    use watch_tower_lib::db::postgres::PostgresClient;
+    use watch_tower_lib::{db::postgres::PostgresClient, utils::error::DatabaseError};
 
     #[tokio::test]
-    async fn test_postgres_client() -> anyhow::Result<()> {
+    async fn test_postgres_client() -> Result<(), DatabaseError> {
         tracing_subscriber::fmt::init();
 
         let client = PostgresClient::new("postgres://root:secret@localhost:5432/postgres").await?;

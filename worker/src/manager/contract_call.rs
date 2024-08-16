@@ -2,12 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ethers::providers::JsonRpcClient;
+use ethers::types::U64;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::Mutex;
+use tokio_stream::StreamExt;
 use watch_tower_lib::db::postgres::PostgresClient;
 
 use crate::rule::{contract_call::ContractCall, parse_decode_token};
-use crate::utils::constants::{RuleID, INVALID_CONTRACT_CALL_LOG};
+use crate::utils::constants::RuleID;
+use crate::utils::error::WorkerError;
 use crate::utils::msg::ContractCallRawMessage;
 
 /// Manages contract call operations.
@@ -53,30 +56,43 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
             let contract_call = self.contract_calls.get(&msg.rule_id).unwrap();
             let output_param_type = contract_call.get_output_param_type().unwrap();
 
-            let decoded_token = parse_decode_token(
-                &msg.call_token,
-                &output_param_type,
-                &contract_call.rule.rule_filter,
-                &contract_call.rule.rule_filter_comparator,
-                &contract_call.rule.expected_value_filter,
-                &contract_call.rule.expected_value_filter_comparator,
-            )
-            .unwrap();
+            let mut stream = tokio_stream::iter(msg.block_tokens);
+            let mut last_block_number = U64::default();
 
-            if decoded_token.is_some() {
-                self.insert_contract_call_log(
-                    msg.rule_id.try_into().unwrap(),
-                    &decoded_token.clone().unwrap(),
-                    msg.block_number.try_into().unwrap(),
+            while let Some((token, block_number)) = stream.next().await {
+                let decoded_token = parse_decode_token(
+                    &token,
+                    &output_param_type,
+                    &contract_call.rule.rule_filter,
+                    &contract_call.rule.rule_filter_comparator,
+                    &contract_call.rule.expected_value_filter,
+                    &contract_call.rule.expected_value_filter_comparator,
                 )
-                .await;
+                .unwrap();
 
-                tracing::warn!(
-                    "[Rule ID : {}] ⚠️ [Value : {}]",
-                    msg.rule_id,
-                    &decoded_token.unwrap()
-                );
+                if decoded_token.is_some() {
+                    self.insert_contract_call_log(
+                        msg.rule_id.try_into().unwrap(),
+                        &decoded_token.clone().unwrap(),
+                        block_number.try_into().unwrap(),
+                    )
+                    .await;
+
+                    tracing::warn!(
+                        "[Rule ID : {}] ⚠️ [Value : {}]",
+                        msg.rule_id,
+                        &decoded_token.unwrap()
+                    );
+                }
+
+                last_block_number = block_number;
             }
+
+            self.insert_contract_call_block_logs(
+                msg.rule_id.try_into().unwrap(),
+                last_block_number.try_into().unwrap(),
+            )
+            .await;
         }
     }
 
@@ -93,10 +109,27 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(
-                    "[Rule ID : {}] ❗️ [{}] [Error : {}]",
+                    "[Rule ID : {}] ❗️ [Error : {}]",
                     rule_id,
-                    INVALID_CONTRACT_CALL_LOG,
-                    err
+                    WorkerError::InvalidContractCallLog(err.to_string()),
+                );
+            });
+    }
+
+    /// Inserts a contract call block log into the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - The block number associated with the contract call.
+    async fn insert_contract_call_block_logs(&self, rule_id: i32, block_number: i32) {
+        self.db_client
+            .insert_contract_call_block_logs(rule_id, block_number)
+            .await
+            .unwrap_or_else(|err| {
+                tracing::error!(
+                    "[Rule ID : {}] ❗️ [Error : {}]",
+                    rule_id,
+                    WorkerError::InvalidContractCallLog(err.to_string()),
                 );
             });
     }

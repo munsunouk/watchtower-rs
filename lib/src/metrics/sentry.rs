@@ -1,13 +1,13 @@
 use sentry::ClientInitGuard;
 use std::borrow::Cow;
 
-use crate::utils::error::INVALID_SENTRY_CLIENT_PARAMS;
+use crate::utils::error::SentryError;
 
 /// Builds a sentry client only when the sentry config exists.
 pub fn build_sentry_client(
     dsn: &str,
     environment: Option<Cow<'static, str>>,
-) -> anyhow::Result<ClientInitGuard> {
+) -> Result<ClientInitGuard, SentryError> {
     let sentry = sentry::init((
         dsn,
         sentry::ClientOptions {
@@ -19,10 +19,6 @@ pub fn build_sentry_client(
             // Enable debug mode when needed
             debug: false,
 
-            // To set a uniform sample rate
-            // https://docs.sentry.io/platforms/rust/performance/
-            traces_sample_rate: 1.0,
-
             ..Default::default()
         },
     ));
@@ -32,7 +28,7 @@ pub fn build_sentry_client(
             "[{}]-[{:?}] ❗️ {}",
             dsn,
             environment,
-            INVALID_SENTRY_CLIENT_PARAMS
+            SentryError::InvalidParams
         );
     }
 
