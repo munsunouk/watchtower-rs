@@ -99,12 +99,15 @@ pub fn set_schedule(check_interval: usize) -> Schedule {
 /// # Returns
 ///
 /// A `Contract` instance.
-pub fn create_contract<T: JsonRpcClient>(
+pub fn create_contracts<T: JsonRpcClient>(
     address: &Address,
     abi: &Abi,
-    provider: Arc<Provider<T>>,
-) -> Contract<Provider<T>> {
-    Contract::new(address.clone(), abi.clone(), provider)
+    providers: Vec<Arc<Provider<T>>>,
+) -> Vec<Contract<Provider<T>>> {
+    providers
+        .iter()
+        .map(|provider| Contract::new(address.clone(), abi.clone(), provider.clone()))
+        .collect::<Vec<_>>()
 }
 
 /// Parses rule filters.
@@ -484,10 +487,9 @@ pub fn parse_decode_token<'a>(
                 return Ok(None);
             }
         } else {
-            return Err(WorkerError::InvalidTokenValue.into());
+            return Err(WorkerError::InvalidTokenValue(token.clone()).into());
         }
     }
-
     // Expected Value Decoding
     if let Some(value) = decode_token(&token, &param_type, &parsed_expected_value_index_key) {
         return Ok(compare_token(
@@ -496,7 +498,7 @@ pub fn parse_decode_token<'a>(
             expected_value_filter_comparator.to_string(),
         ));
     } else {
-        return Err(WorkerError::InvalidTokenValue.into());
+        return Err(WorkerError::InvalidTokenValue(token.clone()).into());
     }
 }
 

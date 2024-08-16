@@ -3,7 +3,7 @@ use ethers::{
     prelude::*,
 };
 
-use super::{create_contract, encode_token, parse_i32_to_usize, parse_to_abi, parse_to_address};
+use super::{create_contracts, encode_token, parse_i32_to_usize, parse_to_abi, parse_to_address};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
 use watch_tower_lib::{
@@ -94,7 +94,7 @@ impl From<&PgRow> for ContractCallRule {
 pub struct ContractCall<T> {
     pub rule: ContractCallRule,
     pub client: EthClient<T>,
-    contract: Contract<Provider<T>>,
+    contracts: Vec<Contract<Provider<T>>>,
 }
 
 impl<T: JsonRpcClient> ContractCall<T> {
@@ -109,13 +109,13 @@ impl<T: JsonRpcClient> ContractCall<T> {
     ///
     /// A new instance of `ContractCall`.
     pub fn new(client: EthClient<T>, rule: ContractCallRule) -> Self {
-        let contract: Contract<Provider<T>> =
-            create_contract(&rule.address, &rule.abi, client.get_provider());
+        let contracts: Vec<Contract<Provider<T>>> =
+            create_contracts(&rule.address, &rule.abi, client.get_providers());
 
         Self {
             rule,
             client,
-            contract,
+            contracts,
         }
     }
 
@@ -125,7 +125,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
     ///
     /// A result containing a reference to the function.
     pub fn get_function(&self) -> Result<&Function, WorkerError> {
-        let abi = self.contract.abi();
+        let abi = self.contracts.first().unwrap().abi();
 
         let function = abi.functions().next().unwrap();
 
@@ -217,13 +217,15 @@ impl<T: JsonRpcClient> ContractCall<T> {
             .get_method_param_token()
             .map_err(|err| ClientError::InvalidContractCall(err.to_string()))?;
 
-        let raw_call = self
-            .contract
-            .method::<_, Token>(&function_name, method_params)
-            .map_err(|err| ClientError::InternalProviderError(err.to_string()))?
-            .block(block_id);
-
-        let request = self.client.contract_call(raw_call, &function_name).await;
+        let request = self
+            .client
+            .contracts_call(
+                self.contracts.clone(),
+                &function_name,
+                method_params,
+                block_id,
+            )
+            .await;
         request
     }
 }

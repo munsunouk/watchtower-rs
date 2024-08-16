@@ -3,13 +3,13 @@ pub mod metadata;
 pub use metadata::ProviderMetadata;
 
 use crate::utils::{
-    constants::{ChainID, DEFAULT_CALL_RETRIES, DEFAULT_CALL_RETRY_INTERVAL_MS, LIMIT_RETRY_CALL},
+    constants::{ChainID, DEFAULT_CALL_RETRY_INTERVAL_MS},
     error::ClientError,
 };
 use ethers::{
-    abi::Detokenize,
-    prelude::ContractCall,
-    providers::{JsonRpcClient, Middleware, Provider},
+    abi::Token,
+    contract::Contract,
+    providers::{JsonRpcClient, Provider},
     types::{
         Block, BlockId, Filter, Log, SyncingStatus, Transaction, TransactionReceipt, TxpoolContent,
         H256, U256, U64,
@@ -18,20 +18,22 @@ use ethers::{
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt::Debug, sync::Arc};
 use tokio::time::{sleep, Duration};
-use url::Url;
 
 #[derive(Clone)]
 pub struct EthClient<T> {
     /// The metadata of the provider.
     pub metadata: ProviderMetadata,
     /// The ethers.rs wrapper for the connected chain.
-    provider: Arc<Provider<T>>,
+    providers: Vec<Arc<Provider<T>>>,
 }
 
 impl<T: JsonRpcClient> EthClient<T> {
     /// Instantiates a new `EthClient` instance for the given chain.
-    pub fn new(metadata: ProviderMetadata, provider: Arc<Provider<T>>) -> Self {
-        Self { metadata, provider }
+    pub fn new(metadata: ProviderMetadata, providers: Vec<Arc<Provider<T>>>) -> Self {
+        Self {
+            metadata,
+            providers,
+        }
     }
 
     /// Returns name which chain this client interacts with.
@@ -44,14 +46,9 @@ impl<T: JsonRpcClient> EthClient<T> {
         self.metadata.id
     }
 
-    /// Returns the provider URL.
-    pub fn get_url(&self) -> Url {
-        self.metadata.url.clone()
-    }
-
     /// Returns `Arc<Provider>`.
-    pub fn get_provider(&self) -> Arc<Provider<T>> {
-        self.provider.clone()
+    pub fn get_providers(&self) -> Vec<Arc<Provider<T>>> {
+        self.providers.clone()
     }
 
     /// Make a JSON RPC request to the chain provider via the internal connection, and return the
@@ -62,15 +59,12 @@ impl<T: JsonRpcClient> EthClient<T> {
         P: Debug + Serialize + Send + Sync + Clone,
         R: Serialize + DeserializeOwned + Debug + Send,
     {
-        let mut retries_remaining: u8 = DEFAULT_CALL_RETRIES;
         let mut error_msg = String::default();
 
-        while retries_remaining > LIMIT_RETRY_CALL {
-            match self.provider.request(method, params.clone()).await {
+        for provider in self.providers.iter() {
+            match provider.request(method, params.clone()).await {
                 Ok(result) => return Ok(result),
                 Err(error) => {
-                    // retry on error
-                    retries_remaining = retries_remaining.saturating_sub(1);
                     error_msg = error.to_string();
                 }
             }
@@ -88,32 +82,33 @@ impl<T: JsonRpcClient> EthClient<T> {
 
     /// Make a contract call to the chain provider via the internal connection, and return the
     /// result. This method wraps the original contract call and retries whenever the request fails
-    /// until it exceeds the maximum retries.
-    pub async fn contract_call<M, D>(
+    /// until it last contract fails.
+    pub async fn contracts_call(
         &self,
-        raw_call: ContractCall<M, D>,
+        contracts: Vec<Contract<Provider<T>>>,
         method: &str,
-    ) -> Result<D, ClientError>
-    where
-        M: Middleware,
-        D: Serialize + DeserializeOwned + Debug + Send + Detokenize,
-    {
-        let mut retries_remaining: u8 = DEFAULT_CALL_RETRIES;
+        method_params: Token,
+        block_id: BlockId,
+    ) -> Result<Token, ClientError> {
         let mut error_msg = String::default();
 
-        while retries_remaining > LIMIT_RETRY_CALL {
+        for contract in contracts.iter() {
+            let raw_call = contract
+                .method::<_, Token>(method, method_params.clone())
+                .map_err(|err| ClientError::InternalProviderError(err.to_string()))?
+                .block(block_id);
+
             match raw_call.call().await {
                 Ok(result) => {
                     return Ok(result);
                 }
                 Err(error) => {
-                    // retry on error
-                    retries_remaining = retries_remaining.saturating_sub(1);
                     error_msg = error.to_string();
                 }
             }
             sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
         }
+
         tracing::error!(
             "[{}] ❗️ [method: {}] [Error: {}]",
             &self.get_chain_name(),

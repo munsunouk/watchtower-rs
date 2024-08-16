@@ -10,4 +10,5 @@ SET name = EXCLUDED.name,
     rule_filter_comparator = EXCLUDED.rule_filter_comparator,
     expected_value_filter = EXCLUDED.expected_value_filter,
     expected_value_filter_comparator = EXCLUDED.expected_value_filter_comparator,
-    check_block_interval = EXCLUDED.check_block_interval;
+    check_block_interval = EXCLUDED.check_block_interval,
+    updated_at = CURRENT_TIMESTAMP;

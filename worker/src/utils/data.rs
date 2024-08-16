@@ -8,9 +8,9 @@ use watch_tower_lib::db::{
 #[allow(dead_code)] // TODO: leave it till Api
 #[derive(Deserialize, Debug)]
 struct RuleData {
-    rpc_call_rule_data: Vec<RpcCallRuleData>,
-    contract_call_rule_data: Vec<ContractCallRuleData>,
-    contract_event_rule_data: Vec<ContractEventRuleData>,
+    rpc_call_rule_data: Option<Vec<RpcCallRuleData>>,
+    contract_call_rule_data: Option<Vec<ContractCallRuleData>>,
+    contract_event_rule_data: Option<Vec<ContractEventRuleData>>,
 }
 
 #[allow(dead_code)] // TODO: leave it till Api
@@ -22,17 +22,22 @@ impl RuleData {
     }
 
     async fn insert_rule(&self, postgres_client: PostgresClient) {
-        for rule in self.rpc_call_rule_data.clone() {
-            let _ = postgres_client.insert_rpc_call_rule(rule).await;
+        if let Some(rules) = self.rpc_call_rule_data.clone() {
+            for rule in rules {
+                let _ = postgres_client.insert_rpc_call_rule(rule).await;
+            }
         }
 
-        for rule in self.contract_call_rule_data.clone() {
-            println!("{:?}", rule);
-            let _ = postgres_client.insert_contract_call_rule(rule).await;
+        if let Some(rules) = self.contract_call_rule_data.clone() {
+            for rule in rules {
+                let _ = postgres_client.insert_contract_call_rule(rule).await;
+            }
         }
 
-        for rule in self.contract_event_rule_data.clone() {
-            let _ = postgres_client.insert_contract_event_rule(rule).await;
+        if let Some(rules) = self.contract_event_rule_data.clone() {
+            for rule in rules {
+                let _ = postgres_client.insert_contract_event_rule(rule).await;
+            }
         }
     }
 }

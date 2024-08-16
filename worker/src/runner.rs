@@ -266,8 +266,12 @@ impl Runner {
     /// # Returns
     ///
     /// A `ProviderMetadata` instance.
-    fn set_metadata(chain_name: String, chain_url: String, chain_id: ChainID) -> ProviderMetadata {
-        ProviderMetadata::new(chain_name, chain_url, chain_id)
+    fn set_metadata(
+        chain_name: String,
+        chain_urls: Vec<String>,
+        chain_id: ChainID,
+    ) -> ProviderMetadata {
+        ProviderMetadata::new(chain_name, chain_urls, chain_id)
     }
 
     /// Sets the provider.
@@ -285,6 +289,12 @@ impl Runner {
         Arc::new(provider)
     }
 
+    fn set_providers(urls: &Vec<String>) -> Vec<Arc<Provider<Http>>> {
+        urls.into_iter()
+            .map(|url| Self::set_provider(url))
+            .collect()
+    }
+
     /// Sets the Ethereum client.
     ///
     /// # Arguments
@@ -297,9 +307,9 @@ impl Runner {
     /// An `EthClient` instance.
     fn set_eth_client<T: JsonRpcClient>(
         metadata: ProviderMetadata,
-        provider: Arc<Provider<T>>,
+        providers: Vec<Arc<Provider<T>>>,
     ) -> EthClient<T> {
-        EthClient::new(metadata, provider)
+        EthClient::new(metadata, providers)
     }
 
     /// Sets multiple Ethereum clients.
@@ -321,9 +331,9 @@ impl Runner {
                 provider.id,
             );
 
-            let arc_provider = Self::set_provider(&provider.provider);
+            let arc_providers = Self::set_providers(&provider.provider);
 
-            let eth_client = Self::set_eth_client(metadata, arc_provider);
+            let eth_client = Self::set_eth_client(metadata, arc_providers);
             clients.insert(provider.id, eth_client);
         }
 

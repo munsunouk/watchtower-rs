@@ -49,15 +49,15 @@ impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
             return;
         }
 
-        let target_tokens = self.get_call_tokens(self.from_block, latest_block).await;
+        let block_tokens = self.get_block_tokens(self.from_block, latest_block).await;
 
         let from = self.from_block;
         let to = latest_block;
 
-        if let Ok(target_tokens) = target_tokens {
+        if let Ok(block_tokens) = block_tokens {
             self.sender
                 .send(ContractCallRawMessage::new(
-                    target_tokens,
+                    block_tokens,
                     self.contract_call.rule.id,
                 ))
                 .unwrap();
@@ -128,7 +128,8 @@ impl<T: JsonRpcClient> ContractCallFetcher<T> {
         }
     }
 
-    async fn get_call_tokens(
+    /// Gets the tokens for the given block range.
+    async fn get_block_tokens(
         &mut self,
         from: U64,
         to: U64,

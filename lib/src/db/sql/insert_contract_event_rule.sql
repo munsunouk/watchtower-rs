@@ -9,4 +9,5 @@ SET name = EXCLUDED.name,
     rule_filter = EXCLUDED.rule_filter,
     rule_filter_comparator = EXCLUDED.rule_filter_comparator,
     expected_value_filter = EXCLUDED.expected_value_filter,
-    expected_value_filter_comparator = EXCLUDED.expected_value_filter_comparator;
+    expected_value_filter_comparator = EXCLUDED.expected_value_filter_comparator,
+    updated_at = CURRENT_TIMESTAMP;

@@ -8,16 +8,19 @@ pub struct ProviderMetadata {
     /// The name of this provider.
     pub name: String,
     /// The provider URL. (Allowed values: `http`, `https`)
-    pub url: Url,
+    pub urls: Vec<Url>,
     /// Id of chain which this client interact with.
     pub id: ChainID,
 }
 
 impl ProviderMetadata {
-    pub fn new(name: String, url: String, id: ChainID) -> Self {
+    pub fn new(name: String, urls: Vec<String>, id: ChainID) -> Self {
         Self {
             name,
-            url: Url::parse(&url).expect(&ClientError::InvalidProviderURL.to_string()),
+            urls: urls
+                .iter()
+                .map(|url| Url::parse(&url).expect(&ClientError::InvalidProviderURL.to_string()))
+                .collect(),
             id,
         }
     }

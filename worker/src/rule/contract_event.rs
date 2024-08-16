@@ -9,7 +9,7 @@ use sqlx::Row;
 
 use watch_tower_lib::{cli::eth::EthClient, utils::constants::ChainID};
 
-use super::{create_contract, parse_i32_to_usize, parse_to_abi, parse_to_address};
+use super::{create_contracts, parse_i32_to_usize, parse_to_abi, parse_to_address};
 
 use crate::utils::constants::{
     RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
@@ -89,7 +89,7 @@ impl From<&PgRow> for ContractEventRule {
 #[derive(Clone)]
 pub struct ContractEvent<T> {
     pub rule: ContractEventRule,
-    contract: Contract<Provider<T>>,
+    contracts: Vec<Contract<Provider<T>>>,
 }
 
 impl<T: JsonRpcClient> ContractEvent<T> {
@@ -104,10 +104,9 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     ///
     /// A new instance of `ContractEvent`.
     pub fn new(client: EthClient<T>, rule: ContractEventRule) -> Self {
-        let contract: Contract<Provider<T>> =
-            create_contract(&rule.address, &rule.abi, client.get_provider());
-
-        Self { rule, contract }
+        let contracts: Vec<Contract<Provider<T>>> =
+            create_contracts(&rule.address, &rule.abi, client.get_providers());
+        Self { rule, contracts }
     }
 
     /// Gets the event from the contract ABI.
@@ -116,7 +115,7 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     ///
     /// A result containing a reference to the event.
     pub fn get_event(&self) -> Result<&Event, WorkerError> {
-        let abi = self.contract.abi();
+        let abi = self.contracts.first().unwrap().abi();
 
         let event = abi.events().next().unwrap();
 

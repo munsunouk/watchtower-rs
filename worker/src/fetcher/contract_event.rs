@@ -64,11 +64,11 @@ impl<T: JsonRpcClient> Fetcher for ContractEventFetcher<T> {
             return;
         }
 
-        let target_logs = self.get_event_logs(from, to).await;
+        let event_logs = self.get_event_logs(from, to).await;
 
-        if let Ok(target_logs) = target_logs {
+        if let Ok(event_logs) = event_logs {
             self.sender
-                .send(ContractEventRawMessage::new(target_logs, to))
+                .send(ContractEventRawMessage::new(event_logs, to))
                 .unwrap();
 
             let chain_id = self.get_client().await.get_chain_id();

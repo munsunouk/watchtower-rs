@@ -1,6 +1,9 @@
 target/
 Cargo.lock
 
+worker/src/utils/data/
+worker/src/utils/configs/
+
 ### macOS ###
 # General
 .DS_Store

@@ -23,7 +23,7 @@ pub const DB_COMPARATOR_COLUMN: &str = "comparator";
 pub const DB_EXPECTED_VALUE_COLUMN: &str = "expected_value";
 pub const DB_CONTRACT_CALL_BLOCK_LOG: &str = "contract_call_block_log";
 
-// SQLX Query Warn - Try to avoid SQL Insert Log
+/// SQLX Query Warn - Try to avoid SQL Insert Log
 pub const SQLX_QUERY_WARN: &str = "sqlx::query=warn";
 
 pub const TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
@@ -31,30 +31,31 @@ pub const TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 /// The block range chunk size for getLogs requests.
 pub const BOOTSTRAP_BLOCK_CHUNK_SIZE: u64 = 2000;
 
-// Default Block Number - 0 is recent block number
+/// Default Block Number - 0 is recent block number
 pub const DEFAULT_BLOCK_NUMBER: u64 = 0;
 
-// Default Function Input Index - 0 is the first input parameter in Tuple
+/// Default Function Input Index - 0 is the first input parameter in Tuple
 pub const DEFAULT_FN_INPUT_INDEX: usize = 0;
 
-// Block Offset - ensuring that the block range is inclusive of both the from and to blocks.
+/// Block Offset - ensuring that the block range is inclusive of both the from and to blocks.
 pub const BLOCK_OFFSET: u64 = 1;
 
-// New Block Offset - ensuring that the from block is the next block number
+/// New Block Offset - ensuring that the from block is the next block number
 pub const NEW_BLOCK_OFFSET: u64 = 1;
 
-// Default Check Interval
+/// Default Check Interval
 pub const DEFAULT_CALL_TIME_INTERVAL: u64 = 15;
 
-// Next Block - 1 is the next block number
+/// Next Block - 1 is the next block number
 pub const NEXT_BLOCK: u64 = 1;
 
-// Max Block Length Limit for contract call bootstrap
+/// Max Block Length Limit for contract call bootstrap
 pub const MAX_BLOCK_LENGTH_LIMIT: u64 = 10;
 
-// Add Memory Value Order
+/// Add Memory Value Order
 pub const ADD_MEMORY_VALUE_ORDER: u64 = 1;
-// Default Memory Value Order
+
+/// Default Memory Value Order
 pub const DEFAULT_MEMORY_VALUE_ORDER: u64 = 0;
 
 // Parsing VALUE Filter
@@ -63,7 +64,7 @@ pub const FILTER_INDEX_SPLIT_CHAR: &str = ".";
 pub const FILTER_INDEX: usize = 0;
 pub const FILTER_VALUE: usize = 1;
 
-// Default Param Value - Need to change dynamically
+/// Default Param Value - Need to change dynamically
 pub const DEFAULT_PARAM_VALUE: usize = 0;
 
 // Comparator Type Allow by each type
@@ -75,7 +76,7 @@ pub const STRING_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 pub const BYTES_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 pub const FIXED_BYTES_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 
-// Config Path
+/// Config Path
 pub const CONFIG_PATH: &str = "./src/utils/config/config.testnet.yaml";
 
 pub type RuleID = usize;

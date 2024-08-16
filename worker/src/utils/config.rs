@@ -22,7 +22,7 @@ pub struct EVMProvider {
     /// Chain ID.
     pub id: ChainID,
     /// Endpoint provider URL.
-    pub provider: String,
+    pub provider: Vec<String>,
     /// Check interval.
     pub call_time_interval: u64,
 }

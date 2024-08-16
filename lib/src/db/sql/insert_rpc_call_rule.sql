@@ -4,4 +4,5 @@ VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO UPDATE
             url = EXCLUDED.url,
             expected_value = EXCLUDED.expected_value,
             comparator = EXCLUDED.comparator,
-            call_time_interval = EXCLUDED.call_time_interval
+            call_time_interval = EXCLUDED.call_time_interval,
+            updated_at = CURRENT_TIMESTAMP;

@@ -82,3 +82,7 @@ The worker will start and begin processing tasks based on the configuration prov
 ## Configuration
 
 The configuration file is located at `./src/utils/configs/config.testnet.yaml`. This file contains various settings such as database connection details, EVM providers, and other runtime configurations.
+
+## Rules
+
+The rules are stored in the database. You can find the sample data in the `./src/utils/data/sample_data.json` file.

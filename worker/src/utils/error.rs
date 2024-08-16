@@ -1,3 +1,4 @@
+use ethers::abi::Token;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -10,8 +11,8 @@ pub enum WorkerError {
     InvalidConfigFileStructure,
     #[error("Invalid type ABI")]
     InvalidTypeABI,
-    #[error("Invalid token value")]
-    InvalidTokenValue,
+    #[error("Invalid token value {0}")]
+    InvalidTokenValue(Token),
     #[error("Invalid rpc call log: {0}")]
     InvalidRpcCallLog(String),
     #[error("Invalid contract call log: {0}")]

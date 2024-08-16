@@ -1,7 +1,9 @@
 evm_providers:
   - name: "bifrost-testnet"
     id: 49088
-    provider: "https://public-01.testnet.bifrostnetwork.com/rpc"
+    provider:
+      - "https://public-01.testnet.bifrostnetwork.com/rpc"
+      - "https://public-02.testnet.bifrostnetwork.com/rpc"
     call_time_interval: 15
 
 sentry_config:

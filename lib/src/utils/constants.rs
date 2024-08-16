@@ -1,9 +1,9 @@
-/// The default retries of a single json rpc request.
-pub const DEFAULT_CALL_RETRIES: u8 = 3;
+/// The Maximum retries of a single json rpc request.
+pub const MAX_RETRY_CALL: u8 = 3;
 /// The default retry interval of a single json rpc request in milliseconds.
 pub const DEFAULT_CALL_RETRY_INTERVAL_MS: u64 = 3000;
 
-// Limit Retry Call
+/// Limit Retry Call
 pub const LIMIT_RETRY_CALL: u8 = 0;
 
 // DB Query PATH
