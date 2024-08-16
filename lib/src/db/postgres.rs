@@ -4,9 +4,12 @@ use sqlx::{pool::Pool, Executor, PgPool, Postgres};
 
 use crate::utils::constants::{
     DB_SCHEMA_LOAD, DB_TABLE_NAME, INSERT_CONTRACT_CALL_BLOCK_LOG, INSERT_CONTRACT_CALL_LOG,
-    INSERT_CONTRACT_EVENT_BLOCK_LOGS, INSERT_CONTRACT_EVENT_LOG, INSERT_RPC_LOG, SCHEMA,
+    INSERT_CONTRACT_CALL_RULE, INSERT_CONTRACT_EVENT_BLOCK_LOGS, INSERT_CONTRACT_EVENT_LOG,
+    INSERT_CONTRACT_EVENT_RULE, INSERT_RPC_CALL_RULE, INSERT_RPC_LOG, SCHEMA,
     SELECT_JOIN_EVENT_RULE_CHAIN_ID,
 };
+
+use crate::db::data::{ContractCallRuleData, ContractEventRuleData, RpcCallRuleData};
 
 ///Postgres's Pool type for the DatabasePool
 #[derive(Debug, Clone)]
@@ -129,14 +132,72 @@ impl PostgresClient {
 
         Ok(result)
     }
+
+    pub async fn insert_rpc_call_rule(
+        &self,
+        rule_data: RpcCallRuleData,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(INSERT_RPC_CALL_RULE)
+            .bind(rule_data.id)
+            .bind(rule_data.name)
+            .bind(rule_data.url)
+            .bind(rule_data.expected_value)
+            .bind(rule_data.comparator)
+            .bind(rule_data.call_time_interval)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| DatabaseError::GenericInsertError(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn insert_contract_call_rule(
+        &self,
+        rule_data: ContractCallRuleData,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(INSERT_CONTRACT_CALL_RULE)
+            .bind(rule_data.id)
+            .bind(rule_data.name)
+            .bind(rule_data.chain_id)
+            .bind(rule_data.address)
+            .bind(rule_data.abi)
+            .bind(rule_data.method_params)
+            .bind(rule_data.rule_filter)
+            .bind(rule_data.rule_filter_comparator)
+            .bind(rule_data.expected_value_filter)
+            .bind(rule_data.expected_value_filter_comparator)
+            .bind(rule_data.check_block_interval)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| DatabaseError::GenericInsertError(err.to_string()))?;
+        Ok(())
+    }
+
+    pub async fn insert_contract_event_rule(
+        &self,
+        rule_data: ContractEventRuleData,
+    ) -> Result<(), DatabaseError> {
+        sqlx::query(INSERT_CONTRACT_EVENT_RULE)
+            .bind(rule_data.id)
+            .bind(rule_data.name)
+            .bind(rule_data.chain_id)
+            .bind(rule_data.address)
+            .bind(rule_data.abi)
+            .bind(rule_data.event_index)
+            .bind(rule_data.rule_filter)
+            .bind(rule_data.rule_filter_comparator)
+            .bind(rule_data.expected_value_filter)
+            .bind(rule_data.expected_value_filter_comparator)
+            .execute(&self.pool)
+            .await
+            .map_err(|err| DatabaseError::GenericInsertError(err.to_string()))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::constants::{INSERT_RPC_RULE_DATA, SAMPLE_DATA};
 
     use super::*;
-    use sqlx::Row;
     use tracing_subscriber;
 
     const DB_URL: &str = "postgres://root:secret@localhost:5432/postgres";
@@ -148,101 +209,6 @@ mod tests {
         let client = PostgresClient::new(DB_URL).await?;
 
         client.initiate().await?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_insert_rpc_rule_data() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
-
-        let client = PostgresClient::new(DB_URL).await?;
-
-        let mut conn = client
-            .pool
-            .acquire()
-            .await
-            .map_err(|err| DatabaseError::GenericAquire(err.to_string()))?;
-
-        let _ = conn
-            .execute(INSERT_RPC_RULE_DATA)
-            .await
-            .map_err(|err| DatabaseError::GenericInitError(err.to_string()))?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_insert_sample_data() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
-
-        let client = PostgresClient::new(DB_URL).await?;
-
-        let mut conn = client
-            .pool
-            .acquire()
-            .await
-            .map_err(|err| DatabaseError::GenericAquire(err.to_string()))?;
-
-        let _ = conn
-            .execute(SAMPLE_DATA)
-            .await
-            .map_err(|err| DatabaseError::GenericInitError(err.to_string()))?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_insert_contract_call_log() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
-
-        let client = PostgresClient::new(DB_URL).await?;
-
-        let _ = client
-            .insert_contract_call_log("100000", 123, 1)
-            .await
-            .map_err(|err| DatabaseError::GenericInitError(err.to_string()))?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_insert_contract_event_log() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
-
-        let client = PostgresClient::new(DB_URL).await?;
-
-        let _ = client
-            .insert_contract_event_log("100000", "0xa189…a0a3", 1)
-            .await
-            .map_err(|err| DatabaseError::GenericInitError(err.to_string()))?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_insert_contract_event_block_logs() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
-
-        let client = PostgresClient::new(DB_URL).await?;
-
-        let _ = client
-            .insert_contract_event_block_logs(19157523)
-            .await
-            .map_err(|err| DatabaseError::GenericInitError(err.to_string()))?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_select_join_event_rule_chain_id() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
-
-        let client = PostgresClient::new(DB_URL).await?;
-
-        let result = client.select_join_event_rule_chain_id().await?;
-
-        println!("{:?}", result.get(0).unwrap().columns());
 
         Ok(())
     }

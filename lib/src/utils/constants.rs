@@ -16,10 +16,12 @@ pub const INSERT_CONTRACT_EVENT_BLOCK_LOGS: &str =
     include_str!("../db/sql/insert_contract_event_block_logs.sql");
 pub const INSERT_CONTRACT_CALL_BLOCK_LOG: &str =
     include_str!("../db/sql/insert_contract_call_block_log.sql");
-pub const SAMPLE_DATA: &str = include_str!("../db/sql/sample_data.sql");
-pub const INSERT_RPC_RULE_DATA: &str = include_str!("../db/sql/insert_rpc_rule_data.sql");
 pub const SELECT_JOIN_EVENT_RULE_CHAIN_ID: &str =
     include_str!("../db/sql/select_join_event_rule_chain_id.sql");
+pub const INSERT_RPC_CALL_RULE: &str = include_str!("../db/sql/insert_rpc_call_rule.sql");
+pub const INSERT_CONTRACT_CALL_RULE: &str = include_str!("../db/sql/insert_contract_call_rule.sql");
+pub const INSERT_CONTRACT_EVENT_RULE: &str =
+    include_str!("../db/sql/insert_contract_event_rule.sql");
 
 // DB SCHEMA
 pub const DB_SCHEMA_LOAD: &str = "SELECT * FROM %%TABLE_NAME%%";

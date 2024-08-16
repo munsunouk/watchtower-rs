@@ -45,10 +45,12 @@ Before you begin, ensure you have the following installed on your machine:
 
 4. **Insert Rules**:
 
-   - Insert the necessary rules into the database
+   - If you want custom rules, you can insert the necessary rules into the database by json file.
+     you can find the sample data json file in `./src/utils/data/sample_data.json`
+
+   - Alternatively sample data is given in the json file, you can insert the sample data into the database by running the following command:
      ```sh
-     cargo test --test test_insert_rpc_rule_data -- --nocapture
-     cargo test --test test_insert_sample_data -- --nocapture
+     cargo test --test test_insert_data -- --nocapture
      ```
 
 5. **Configure the database**:

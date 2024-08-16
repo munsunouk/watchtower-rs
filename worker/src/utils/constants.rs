@@ -76,7 +76,7 @@ pub const BYTES_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 pub const FIXED_BYTES_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 
 // Config Path
-pub const CONFIG_PATH: &str = "./src/utils/configs/config.testnet.yaml";
+pub const CONFIG_PATH: &str = "./src/utils/config/config.testnet.yaml";
 
 pub type RuleID = usize;
 

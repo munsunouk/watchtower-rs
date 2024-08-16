@@ -1,5 +1,6 @@
 pub mod config;
 pub mod constants;
+pub mod data;
 pub mod error;
 pub mod msg;
 pub mod traits;
@@ -9,9 +10,7 @@ use std::sync::atomic::Ordering::SeqCst;
 use crate::runner::Runner;
 
 use self::{
-    constants::{
-        CONFIG_PATH, ADD_MEMORY_VALUE_ORDER, TOKIO_THREADS_ALIVE, TOKIO_THREADS_TOTAL,
-    },
+    constants::{ADD_MEMORY_VALUE_ORDER, CONFIG_PATH, TOKIO_THREADS_ALIVE, TOKIO_THREADS_TOTAL},
     error::WorkerError,
 };
 
