@@ -7,10 +7,11 @@ use futures::future::join_all;
 use std::collections::HashMap; // Add this import
 
 use tokio::sync::mpsc::UnboundedSender;
-use watch_tower_lib::{cli::eth::EthClient, utils::error::ClientError};
+use watch_tower_lib::cli::eth::EthClient;
 
 use crate::utils::{
-    constants::{RuleID, DEFAULT_BLOCK_NUMBER, NEW_BLOCK_OFFSET},
+    constants::{RuleID, DEFAULT_BLOCK_NUMBER, DEFAULT_INDEX, NEW_BLOCK_OFFSET},
+    error::{IndexType, WorkerError},
     traits::Fetcher,
 };
 use crate::utils::{
@@ -42,26 +43,30 @@ pub struct ContractEventFetcher<T> {
 #[async_trait::async_trait]
 impl<T: JsonRpcClient> Fetcher for ContractEventFetcher<T> {
     /// Returns the schedule for the fetcher.
-    fn schedule(&self) -> Schedule {
-        set_schedule(self.call_time_interval.try_into().unwrap())
+    fn schedule(&self) -> Result<Schedule, WorkerError> {
+        set_schedule(
+            self.call_time_interval
+                .try_into()
+                .expect(&WorkerError::InvalidTypeConvert.to_string()),
+        )
     }
 
     /// Runs the fetcher, fetching contract events at scheduled intervals.
-    async fn run(&mut self) {
-        self.initialize().await;
+    async fn run(&mut self) -> Result<(), WorkerError> {
+        self.initialize().await?;
         loop {
-            self.wait_until_next_time().await;
-            self.process().await;
+            self.wait_until_next_time().await?;
+            self.process().await?;
         }
     }
 
     /// Processes the contract event, fetching the latest block number and sending the contract event log.
-    async fn process(&mut self) {
+    async fn process(&mut self) -> Result<(), WorkerError> {
         let from = self.from_block;
-        let to = self.get_latest_block_number().await;
+        let to = self.get_latest_block_number().await?;
 
         if from > to {
-            return;
+            return Ok(());
         }
 
         let event_logs = self.get_event_logs(from, to).await;
@@ -69,7 +74,7 @@ impl<T: JsonRpcClient> Fetcher for ContractEventFetcher<T> {
         if let Ok(event_logs) = event_logs {
             self.sender
                 .send(ContractEventRawMessage::new(event_logs, to))
-                .unwrap();
+                .map_err(|_| WorkerError::InvalidMessage)?;
 
             let chain_id = self.get_client().await.get_chain_id();
 
@@ -81,6 +86,8 @@ impl<T: JsonRpcClient> Fetcher for ContractEventFetcher<T> {
             );
             self.replace_from_block(to);
         }
+
+        Ok(())
     }
 }
 
@@ -114,16 +121,22 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
     }
 
     /// Initializes the event fetcher.
-    async fn initialize(&mut self) {
+    async fn initialize(&mut self) -> Result<(), WorkerError> {
         // Prevent chain id mismatch in DB
-        let _ = self.get_client().await.verify_chain_id().await;
-        self.check_zero_blocks().await;
-        let oldest_block = self.get_oldest_block();
+        self.get_client()
+            .await
+            .verify_chain_id()
+            .await
+            .map_err(|_| WorkerError::InvalidClient)?;
+        self.check_zero_blocks().await?;
+        let oldest_block = self.get_oldest_block()?;
         self.from_block = *oldest_block;
+
+        Ok(())
     }
 
     /// Fetches events from the given block range.
-    async fn get_event_logs(&self, mut from: U64, to: U64) -> Result<Vec<Log>, ClientError> {
+    async fn get_event_logs(&self, mut from: U64, to: U64) -> Result<Vec<Log>, WorkerError> {
         let mut logs = vec![];
         // Split from_block into smaller chunks
         while from <= to {
@@ -135,7 +148,12 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
                 .to_block(BlockNumber::from(chunk_to_block))
                 .address(self.get_addresses());
 
-            let target_logs_chunk = self.get_client().await.get_logs(&filter).await.unwrap();
+            let target_logs_chunk = self
+                .get_client()
+                .await
+                .get_logs(&filter)
+                .await
+                .map_err(|_| WorkerError::InvalidClient)?;
             logs.extend(target_logs_chunk);
 
             from = chunk_to_block + NEXT_BLOCK;
@@ -145,12 +163,12 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
     }
 
     /// Gets the latest block number.
-    async fn get_latest_block_number(&self) -> U64 {
+    async fn get_latest_block_number(&self) -> Result<U64, WorkerError> {
         self.get_client()
             .await
             .get_latest_block_number()
             .await
-            .unwrap()
+            .map_err(|_| WorkerError::InvalidClient)
     }
 
     /// Gets the client.
@@ -159,13 +177,16 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
     }
 
     /// Gets the oldest block.
-    fn get_oldest_block(&self) -> &U64 {
-        self.from_block_numbers.values().min().unwrap()
+    fn get_oldest_block(&self) -> Result<&U64, WorkerError> {
+        self.from_block_numbers
+            .values()
+            .min()
+            .ok_or(WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
     }
 
     /// Checks if the from block is zero and replaces it with the latest block number.
-    async fn check_zero_blocks(&mut self) {
-        let latest_block = self.get_latest_block_number().await;
+    async fn check_zero_blocks(&mut self) -> Result<(), WorkerError> {
+        let latest_block = self.get_latest_block_number().await?;
 
         let futures = self
             .from_block_numbers
@@ -178,6 +199,8 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
             .collect::<Vec<_>>();
 
         join_all(futures).await;
+
+        Ok(())
     }
 
     /// Gets the addresses of the contract events.

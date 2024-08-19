@@ -17,8 +17,9 @@ use crate::utils::{
         DB_CHECK_BLOCK_INTERVAL_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
         DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_METHOD_PARAMS_COLUMN,
         DB_RULE_FILTER_COLUMN, DB_RULE_FILTER_COMPARATOR_COLUMN, DEFAULT_FN_INPUT_INDEX,
+        DEFAULT_INDEX,
     },
-    error::WorkerError,
+    error::{IndexType, WorkerError},
 };
 
 /// Represents a log of contract calls.
@@ -125,9 +126,16 @@ impl<T: JsonRpcClient> ContractCall<T> {
     ///
     /// A result containing a reference to the function.
     pub fn get_function(&self) -> Result<&Function, WorkerError> {
-        let abi = self.contracts.first().unwrap().abi();
+        let abi = self
+            .contracts
+            .first()
+            .expect(&WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)).to_string())
+            .abi();
 
-        let function = abi.functions().next().unwrap();
+        let function = abi
+            .functions()
+            .next()
+            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
 
         Ok(function)
     }
@@ -197,7 +205,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
         let method_params = self.rule.method_params.clone();
         let input_param_type = self.get_input_param_type()?;
 
-        Ok(encode_token(method_params, &input_param_type))
+        encode_token(method_params, &input_param_type)
     }
 
     /// Gets the method call.
@@ -244,7 +252,7 @@ mod tests {
         let client = PostgresClient::new("postgres://root:secret@localhost:5432/postgres").await?;
 
         // client.initiate().await?;
-        let db_result = client.select_table("contract_call_rule").await.unwrap();
+        let db_result = client.select_table("contract_call_rule").await?;
 
         let raw_rule = ContractCallRule::from(&db_result[0]);
 

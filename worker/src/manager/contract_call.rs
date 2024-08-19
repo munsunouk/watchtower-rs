@@ -10,7 +10,7 @@ use watch_tower_lib::db::postgres::PostgresClient;
 
 use crate::rule::{contract_call::ContractCall, parse_decode_token};
 use crate::utils::constants::RuleID;
-use crate::utils::error::WorkerError;
+use crate::utils::error::{IndexType, WorkerError};
 use crate::utils::msg::ContractCallRawMessage;
 
 /// Manages contract call operations.
@@ -49,12 +49,21 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
     }
 
     /// Runs the contract call manager, processing messages from the receiver.
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Result<(), WorkerError> {
         loop {
-            let msg = self.receiver.lock().await.recv().await.unwrap();
+            let msg = self
+                .receiver
+                .lock()
+                .await
+                .recv()
+                .await
+                .ok_or(WorkerError::InvalidMessage)?;
 
-            let contract_call = self.contract_calls.get(&msg.rule_id).unwrap();
-            let output_param_type = contract_call.get_output_param_type().unwrap();
+            let contract_call = self
+                .contract_calls
+                .get(&msg.rule_id)
+                .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(msg.rule_id)))?;
+            let output_param_type = contract_call.get_output_param_type()?;
 
             let mut stream = tokio_stream::iter(msg.block_tokens);
             let mut last_block_number = U64::default();
@@ -67,30 +76,33 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
                     &contract_call.rule.rule_filter_comparator,
                     &contract_call.rule.expected_value_filter,
                     &contract_call.rule.expected_value_filter_comparator,
-                )
-                .unwrap();
+                )?;
 
-                if decoded_token.is_some() {
+                if let Some(decoded_token) = decoded_token {
                     self.insert_contract_call_log(
-                        msg.rule_id.try_into().unwrap(),
-                        &decoded_token.clone().unwrap(),
-                        block_number.try_into().unwrap(),
+                        msg.rule_id
+                            .try_into()
+                            .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                        &decoded_token.clone(),
+                        block_number
+                            .try_into()
+                            .map_err(|_| WorkerError::InvalidTypeConvert)?,
                     )
                     .await;
 
-                    tracing::warn!(
-                        "[Rule ID : {}] ⚠️ [Value : {}]",
-                        msg.rule_id,
-                        &decoded_token.unwrap()
-                    );
+                    tracing::warn!("[Rule ID : {}] ⚠️ [Value : {}]", msg.rule_id, &decoded_token);
                 }
 
                 last_block_number = block_number;
             }
 
             self.insert_contract_call_block_logs(
-                msg.rule_id.try_into().unwrap(),
-                last_block_number.try_into().unwrap(),
+                msg.rule_id
+                    .try_into()
+                    .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                last_block_number
+                    .try_into()
+                    .map_err(|_| WorkerError::InvalidTypeConvert)?,
             )
             .await;
         }

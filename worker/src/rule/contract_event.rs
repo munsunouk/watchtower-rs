@@ -15,9 +15,9 @@ use crate::utils::constants::{
     RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
     DB_EVENT_INDEX_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
     DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
-    DB_RULE_FILTER_COMPARATOR_COLUMN,
+    DB_RULE_FILTER_COMPARATOR_COLUMN, DEFAULT_INDEX,
 };
-use crate::utils::error::WorkerError;
+use crate::utils::error::{IndexType, WorkerError};
 
 /// Represents a log of contract events.
 #[derive(Clone, Debug)]
@@ -115,9 +115,16 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     ///
     /// A result containing a reference to the event.
     pub fn get_event(&self) -> Result<&Event, WorkerError> {
-        let abi = self.contracts.first().unwrap().abi();
+        let abi = self
+            .contracts
+            .first()
+            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?
+            .abi();
 
-        let event = abi.events().next().unwrap();
+        let event = abi
+            .events()
+            .next()
+            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
 
         Ok(event)
     }
@@ -150,7 +157,9 @@ impl<T: JsonRpcClient> ContractEvent<T> {
 
         let input_param_types_cloned = input_param_types.clone();
 
-        let input_param_type = input_param_types_cloned.get(self.rule.event_index).unwrap();
+        let input_param_type = input_param_types_cloned
+            .get(self.rule.event_index)
+            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(self.rule.event_index)))?;
 
         Ok(input_param_type.clone())
     }
@@ -182,10 +191,10 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     /// # Returns
     ///
     /// `true` if the signature matches the target event signature, otherwise `false`.
-    pub fn is_target_event(&self, signature: &H256) -> bool {
-        let target_signature = self.get_event_signature().unwrap();
+    pub fn is_target_event(&self, signature: &H256) -> Result<bool, WorkerError> {
+        let target_signature = self.get_event_signature()?;
 
-        *signature == target_signature
+        Ok(*signature == target_signature)
     }
 }
 
@@ -203,7 +212,7 @@ mod tests {
         let client = PostgresClient::new("postgres://root:secret@localhost:5432/postgres").await?;
 
         // client.initiate().await?;
-        let db_result = client.select_table("contract_event_rule").await.unwrap();
+        let db_result = client.select_table("contract_event_rule").await?;
 
         let raw_rule = ContractEventRule::from(&db_result[0]);
 

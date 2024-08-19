@@ -6,6 +6,7 @@ pub mod msg;
 pub mod traits;
 
 use std::sync::atomic::Ordering::SeqCst;
+use tokio::runtime::Runtime;
 
 use crate::runner::Runner;
 
@@ -15,7 +16,7 @@ use self::{
 };
 
 /// Sets the runtime for the application.
-fn set_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
+fn set_runtime() -> Result<Runtime, WorkerError> {
     tokio::runtime::Builder::new_multi_thread()
         .on_thread_start(|| {
             TOKIO_THREADS_ALIVE.fetch_add(ADD_MEMORY_VALUE_ORDER, SeqCst);
@@ -26,14 +27,15 @@ fn set_runtime() -> Result<tokio::runtime::Runtime, std::io::Error> {
         })
         .enable_all()
         .build()
+        .map_err(|_| WorkerError::InvalidRuntime)
 }
 
 /// Runs the application with the runtime.
 pub fn run_with_runtime() -> Result<(), WorkerError> {
-    let runtime = set_runtime().unwrap();
+    let runtime = set_runtime()?;
 
     let result = runtime.block_on(async {
-        let runner = Runner::new(CONFIG_PATH).await;
+        let runner = Runner::new(CONFIG_PATH).await?;
         runner.run().await
     });
 

@@ -10,6 +10,7 @@ use crate::rule::set_schedule;
 use crate::utils::constants::{
     DEFAULT_BLOCK_NUMBER, MAX_BLOCK_LENGTH_LIMIT, NEW_BLOCK_OFFSET, NEXT_BLOCK,
 };
+use crate::utils::error::WorkerError;
 use crate::utils::msg::ContractCallRawMessage;
 use crate::utils::traits::Fetcher;
 
@@ -29,24 +30,28 @@ pub struct ContractCallFetcher<T> {
 #[async_trait::async_trait]
 impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
     /// Returns the schedule for the fetcher.
-    fn schedule(&self) -> Schedule {
-        set_schedule(self.call_time_interval.try_into().unwrap())
+    fn schedule(&self) -> Result<Schedule, WorkerError> {
+        set_schedule(
+            self.call_time_interval
+                .try_into()
+                .expect(&WorkerError::InvalidTypeConvert.to_string()),
+        )
     }
 
     /// Runs the fetcher, fetching contract calls at scheduled intervals.
-    async fn run(&mut self) {
-        self.initialize().await;
+    async fn run(&mut self) -> Result<(), WorkerError> {
+        self.initialize().await?;
         loop {
-            self.wait_until_next_time().await;
-            self.process().await;
+            self.wait_until_next_time().await?;
+            self.process().await?;
         }
     }
 
     /// Processes the contract call, fetching the latest block number and sending the contract call log.
-    async fn process(&mut self) {
-        let latest_block = self.get_latest_block_number().await;
+    async fn process(&mut self) -> Result<(), WorkerError> {
+        let latest_block = self.get_latest_block_number().await?;
         if !self.check_block_interval(latest_block).await {
-            return;
+            return Ok(());
         }
 
         let block_tokens = self.get_block_tokens(self.from_block, latest_block).await;
@@ -60,7 +65,7 @@ impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
                     block_tokens,
                     self.contract_call.rule.id,
                 ))
-                .unwrap();
+                .map_err(|_| WorkerError::InvalidMessage)?;
 
             tracing::info!(
                 "[Rule ID : {}] ✨ [Block Number :({:?} … {:?})]",
@@ -70,6 +75,8 @@ impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
             );
             self.replace_from_block(to);
         }
+
+        Ok(())
     }
 }
 
@@ -99,19 +106,25 @@ impl<T: JsonRpcClient> ContractCallFetcher<T> {
     }
 
     /// Initializes the call fetcher
-    async fn initialize(&mut self) {
+    async fn initialize(&mut self) -> Result<(), WorkerError> {
         // Prevent chain id mismatch in DB
-        let _ = self.contract_call.client.verify_chain_id().await;
-        self.check_zero_block().await;
+        self.contract_call
+            .client
+            .verify_chain_id()
+            .await
+            .map_err(|_| WorkerError::InvalidClient)?;
+        self.check_zero_block().await?;
+
+        Ok(())
     }
 
     /// Gets the latest block number.
-    async fn get_latest_block_number(&self) -> U64 {
+    async fn get_latest_block_number(&self) -> Result<U64, WorkerError> {
         self.contract_call
             .client
             .get_latest_block_number()
             .await
-            .unwrap()
+            .map_err(|_| WorkerError::InvalidClient)
     }
 
     /// Checks if the block number is greater than the call block interval.
@@ -120,12 +133,14 @@ impl<T: JsonRpcClient> ContractCallFetcher<T> {
     }
 
     /// Checks if the from block is zero and replaces it with the latest block number.
-    async fn check_zero_block(&mut self) {
-        let latest_block = self.get_latest_block_number().await;
+    async fn check_zero_block(&mut self) -> Result<(), WorkerError> {
+        let latest_block = self.get_latest_block_number().await?;
 
         if self.from_block == U64::from(DEFAULT_BLOCK_NUMBER) {
             self.from_block = latest_block;
         }
+
+        Ok(())
     }
 
     /// Gets the tokens for the given block range.

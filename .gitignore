@@ -9,3 +9,4 @@ worker/src/utils/configs/
 .DS_Store
 .AppleDouble
 .LSOverride
+/worker/src/utils/data

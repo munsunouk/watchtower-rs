@@ -67,6 +67,9 @@ pub const FILTER_VALUE: usize = 1;
 /// Default Param Value - Need to change dynamically
 pub const DEFAULT_PARAM_VALUE: usize = 0;
 
+/// Default Index for any index type
+pub const DEFAULT_INDEX: usize = 0;
+
 // Comparator Type Allow by each type
 pub const UINT_COMPARATOR_TYPE: [&str; 6] = ["==", ">", ">=", "<", "<=", "!="];
 pub const INT_COMPARATOR_TYPE: [&str; 6] = ["==", ">", ">=", "<", "<=", "!="];

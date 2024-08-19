@@ -9,7 +9,7 @@ use watch_tower_lib::db::postgres::PostgresClient;
 use crate::rule::parse_compare;
 use crate::rule::rpc_call::RpcCall;
 use crate::utils::constants::RuleID;
-use crate::utils::error::WorkerError;
+use crate::utils::error::{IndexType, WorkerError};
 use crate::utils::msg::RpcCallRawMessage;
 
 /// Manages RPC call operations.
@@ -48,20 +48,35 @@ impl RpcCallManager {
     }
 
     /// Runs the RPC call manager, processing messages from the receiver.
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Result<(), WorkerError> {
         loop {
-            let msg = self.receiver.lock().await.recv().await.unwrap();
+            let msg = self
+                .receiver
+                .lock()
+                .await
+                .recv()
+                .await
+                .ok_or(WorkerError::InvalidMessage)?;
 
-            let rpc_call = self.rpc_calls.get(&msg.rule_id).unwrap();
+            let rpc_call = self
+                .rpc_calls
+                .get(&msg.rule_id)
+                .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(msg.rule_id)))?;
 
             let status = msg.status;
 
-            let expected_value = U64::from_dec_str(&rpc_call.rule.expected_value).unwrap();
+            let expected_value = U64::from_dec_str(&rpc_call.rule.expected_value)
+                .expect(&WorkerError::InvalidTypeConvert.to_string());
             let result = parse_compare(&status, &expected_value, &rpc_call.rule.comparator);
 
             if result.is_some() {
-                self.insert_rpc_call_log(msg.rule_id.try_into().unwrap(), &status.to_string())
-                    .await;
+                self.insert_rpc_call_log(
+                    msg.rule_id
+                        .try_into()
+                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                    &status.to_string(),
+                )
+                .await;
 
                 tracing::warn!(
                     "[Rule ID : {}] ⚠️ [Value : {}]",

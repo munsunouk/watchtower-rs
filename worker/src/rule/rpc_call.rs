@@ -1,5 +1,4 @@
-use super::{parse_i32_to_usize, set_schedule};
-use cron::Schedule;
+use super::parse_i32_to_usize;
 use ethers::types::U64;
 use reqwest::{Client, StatusCode};
 use sqlx::postgres::PgRow;
@@ -28,7 +27,7 @@ pub struct RpcCallRule {
     pub url: String,
     pub expected_value: String,
     pub comparator: String,
-    pub call_time_interval: Schedule,
+    pub call_time_interval: usize,
 }
 
 impl From<&PgRow> for RpcCallRule {
@@ -47,9 +46,7 @@ impl From<&PgRow> for RpcCallRule {
             url: row.get(DB_URL_COLUMN),
             expected_value: row.get(DB_EXPECTED_VALUE_COLUMN),
             comparator: row.get(DB_COMPARATOR_COLUMN),
-            call_time_interval: set_schedule(parse_i32_to_usize(
-                row.get(DB_CALL_TIME_INTERVAL_COLUMN),
-            )),
+            call_time_interval: parse_i32_to_usize(row.get(DB_CALL_TIME_INTERVAL_COLUMN)),
         }
     }
 }

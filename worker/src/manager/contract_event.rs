@@ -9,8 +9,8 @@ use tokio_stream::StreamExt;
 use watch_tower_lib::db::postgres::PostgresClient;
 
 use crate::rule::{contract_event::ContractEvent, parse_decode_token};
-use crate::utils::constants::RuleID;
-use crate::utils::error::WorkerError;
+use crate::utils::constants::{RuleID, DEFAULT_INDEX};
+use crate::utils::error::{IndexType, WorkerError};
 use crate::utils::msg::ContractEventRawMessage;
 
 /// Manages contract event operations.
@@ -49,13 +49,23 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
     }
 
     /// Runs the contract event manager, processing messages from the receiver.
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self) -> Result<(), WorkerError> {
         loop {
-            let msg = self.receiver.lock().await.recv().await.unwrap();
+            let msg = self
+                .receiver
+                .lock()
+                .await
+                .recv()
+                .await
+                .ok_or(WorkerError::InvalidMessage)?;
 
             if msg.event_logs.is_empty() {
-                self.insert_contract_event_block_logs(msg.block_number.try_into().unwrap())
-                    .await;
+                self.insert_contract_event_block_logs(
+                    msg.block_number
+                        .try_into()
+                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                )
+                .await;
 
                 continue;
             }
@@ -64,14 +74,20 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
 
             while let Some(log) = stream.next().await {
                 for (_, event) in self.contract_events.iter() {
-                    if event.is_target_event(&log.topics[event.rule.event_index]) {
-                        let contract_event = self.contract_events.get(&event.rule.id).unwrap();
-                        let input_param_type = contract_event.get_raw_input_param_type().unwrap();
-                        let parsing_input_param_type =
-                            contract_event.get_input_param_type().unwrap();
+                    if event.is_target_event(log.topics.get(event.rule.event_index).ok_or_else(
+                        || WorkerError::InvalidIndex(IndexType::USize(event.rule.event_index)),
+                    )?)? {
+                        let contract_event =
+                            self.contract_events.get(&event.rule.id).ok_or_else(|| {
+                                WorkerError::InvalidIndex(IndexType::USize(event.rule.id))
+                            })?;
+                        let input_param_type = contract_event.get_raw_input_param_type()?;
+                        let parsing_input_param_type = contract_event.get_input_param_type()?;
 
-                        let token =
-                            Token::Tuple(decode(&[input_param_type.clone()], &log.data).unwrap());
+                        let token = Token::Tuple(
+                            decode(&[input_param_type.clone()], &log.data)
+                                .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                        );
 
                         let decoded_token = parse_decode_token(
                             &token,
@@ -80,31 +96,40 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                             &contract_event.rule.rule_filter_comparator,
                             &contract_event.rule.expected_value_filter,
                             &contract_event.rule.expected_value_filter_comparator,
-                        )
-                        .unwrap();
+                        )?;
 
                         if let Some(decoded_value) = decoded_token {
-                            let tx_log = format!("{:?}", log.transaction_hash.unwrap());
+                            if let Some(tx_log) = log.transaction_hash {
+                                let tx_log = format!("{:?}", tx_log);
 
-                            self.insert_contract_event_log(
-                                event.rule.id.try_into().unwrap(),
-                                &decoded_value,
-                                &tx_log,
-                            )
-                            .await;
+                                self.insert_contract_event_log(
+                                    event
+                                        .rule
+                                        .id
+                                        .try_into()
+                                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                                    &decoded_value,
+                                    &tx_log,
+                                )
+                                .await;
 
-                            tracing::warn!(
-                                "[Rule ID : {}] ⚠️ [Value : {}]",
-                                event.rule.id,
-                                decoded_value
-                            );
+                                tracing::warn!(
+                                    "[Rule ID : {}] ⚠️ [Value : {}]",
+                                    event.rule.id,
+                                    decoded_value
+                                );
+                            }
                         }
                     }
                 }
-            }
 
-            self.insert_contract_event_block_logs(msg.block_number.try_into().unwrap())
+                self.insert_contract_event_block_logs(
+                    msg.block_number
+                        .try_into()
+                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                )
                 .await;
+            }
         }
     }
 
@@ -118,7 +143,13 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
             .insert_contract_event_block_logs(block_number)
             .await
             .unwrap_or_else(|err| {
-                let chain_id = self.contract_events.values().next().unwrap().rule.chain_id;
+                let chain_id = self
+                    .contract_events
+                    .values()
+                    .next()
+                    .expect(&WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)).to_string())
+                    .rule
+                    .chain_id;
 
                 tracing::error!(
                     "[Chain ID : {}] ❗️ [Error: {}]",

@@ -1,5 +1,21 @@
 use ethers::abi::Token;
+use std::fmt;
 use thiserror::Error;
+
+#[derive(Debug)]
+pub enum IndexType {
+    U32(u32),
+    USize(usize),
+}
+
+impl fmt::Display for IndexType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IndexType::U32(val) => write!(f, "{}", val),
+            IndexType::USize(val) => write!(f, "{}", val),
+        }
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum WorkerError {
@@ -19,4 +35,16 @@ pub enum WorkerError {
     InvalidContractCallLog(String),
     #[error("Invalid contract event log: {0}")]
     InvalidContractEventLog(String),
+    #[error("Invalid index: {0}")]
+    InvalidIndex(IndexType),
+    #[error("Invalid type convert")]
+    InvalidTypeConvert,
+    #[error("Invalid database: {0}")]
+    InvalidDatabase(String),
+    #[error("Invalid message")]
+    InvalidMessage,
+    #[error("Invalid client")]
+    InvalidClient,
+    #[error("Invalid runtime")]
+    InvalidRuntime,
 }

@@ -13,13 +13,13 @@ use tracing_subscriber::{fmt, EnvFilter};
 use watch_tower_lib::cli::eth::{EthClient, ProviderMetadata};
 use watch_tower_lib::db::postgres::PostgresClient;
 use watch_tower_lib::utils::constants::ChainID;
-use watch_tower_lib::utils::error::{ClientError, DatabaseError};
+use watch_tower_lib::utils::error::ClientError;
 
 use crate::rule::contract_call::ContractCallBlockLog;
 use crate::utils::constants::{
     DB_CONTRACT_CALL_BLOCK_LOG, DEFAULT_BLOCK_NUMBER, DEFAULT_CALL_TIME_INTERVAL,
 };
-use crate::utils::error::WorkerError;
+use crate::utils::error::{IndexType, WorkerError};
 use crate::{
     fetcher::{
         contract_call::ContractCallFetcher, contract_event::ContractEventFetcher,
@@ -72,8 +72,8 @@ impl Runner {
     /// # Returns
     ///
     /// A new instance of `Runner`.
-    pub async fn new(config_path: &str) -> Self {
-        Self::set_log();
+    pub async fn new(config_path: &str) -> Result<Self, WorkerError> {
+        Self::set_log()?;
 
         //Channel
         let (rpc_call_sender, rpc_call_receiver) = Self::set_rpc_call_channel();
@@ -81,18 +81,18 @@ impl Runner {
         let (contract_event_sender, contract_event_receiver) = Self::set_contract_event_channel();
 
         //Config
-        let config: Configuration = Self::set_config(config_path).unwrap();
+        let config = Self::set_config(config_path);
         let chain_intervals = Self::set_chain_intervals(config.clone().evm_providers);
 
         //DB
-        let db_client = Self::set_db(&config.postgres_config.url).await.unwrap();
+        let db_client = Self::set_db(&config.postgres_config.url).await?;
 
         //DB Rule
-        let rpc_call_rules = Self::load_rpc_call_rules(&db_client).await;
-        let contract_call_rules = Self::load_contract_call_rules(&db_client).await;
-        let contract_call_blocks = Self::load_contract_call_block_logs(&db_client).await;
-        let contract_event_rules = Self::load_contract_event_rules(&db_client).await;
-        let contract_event_blocks = Self::load_contract_event_block_logs(&db_client).await;
+        let rpc_call_rules = Self::load_rpc_call_rules(&db_client).await?;
+        let contract_call_rules = Self::load_contract_call_rules(&db_client).await?;
+        let contract_call_blocks = Self::load_contract_call_block_logs(&db_client).await?;
+        let contract_event_rules = Self::load_contract_event_rules(&db_client).await?;
+        let contract_event_blocks = Self::load_contract_event_block_logs(&db_client).await?;
 
         //Client
         let rpc_client = Self::set_client();
@@ -100,8 +100,8 @@ impl Runner {
 
         //Rule
         let rpc_calls = Self::set_rpc_calls(rpc_call_rules, rpc_client);
-        let contract_calls = Self::set_contract_calls(contract_call_rules, clients.clone());
-        let contract_events = Self::set_contract_events(contract_event_rules, clients.clone());
+        let contract_calls = Self::set_contract_calls(contract_call_rules, clients.clone())?;
+        let contract_events = Self::set_contract_events(contract_event_rules, clients.clone())?;
         let contract_chain_events = Self::set_contract_chain_events(contract_events.clone());
 
         //Fetcher
@@ -118,7 +118,7 @@ impl Runner {
             contract_event_sender,
             contract_event_blocks.clone(),
             chain_intervals,
-        );
+        )?;
 
         //Manager
         let rpc_call_manager = Self::set_rpc_call_manager(
@@ -137,14 +137,14 @@ impl Runner {
             db_client,
         );
 
-        Self {
+        Ok(Self {
             rpc_call_fetchers,
             contract_call_fetchers,
             contract_event_fetchers,
             rpc_call_manager,
             contract_call_manager,
             contract_event_manager,
-        }
+        })
     }
 
     /// Runs the `Runner` instance.
@@ -170,11 +170,16 @@ impl Runner {
     /// # Returns
     ///
     /// A vector of `RpcCallRule`.
-    pub async fn load_rpc_call_rules(db_client: &PostgresClient) -> Vec<RpcCallRule> {
-        let result = db_client.select_table(DB_RPC_CALL_RULE).await.unwrap();
+    pub async fn load_rpc_call_rules(
+        db_client: &PostgresClient,
+    ) -> Result<Vec<RpcCallRule>, WorkerError> {
+        let result = db_client
+            .select_table(DB_RPC_CALL_RULE)
+            .await
+            .map_err(|e| WorkerError::InvalidDatabase(e.to_string()))?;
 
         let rpc_calls: Vec<RpcCallRule> = result.iter().map(|row| row.into()).collect();
-        rpc_calls
+        Ok(rpc_calls)
     }
 
     /// Loads contract call rules from the database.
@@ -186,11 +191,16 @@ impl Runner {
     /// # Returns
     ///
     /// A vector of `ContractCallRule`.
-    pub async fn load_contract_call_rules(db_client: &PostgresClient) -> Vec<ContractCallRule> {
-        let result = db_client.select_table(DB_CONTRACT_CALL_RULE).await.unwrap();
+    pub async fn load_contract_call_rules(
+        db_client: &PostgresClient,
+    ) -> Result<Vec<ContractCallRule>, WorkerError> {
+        let result = db_client
+            .select_table(DB_CONTRACT_CALL_RULE)
+            .await
+            .map_err(|e| WorkerError::InvalidDatabase(e.to_string()))?;
 
         let contract_calls: Vec<ContractCallRule> = result.iter().map(|row| row.into()).collect();
-        contract_calls
+        Ok(contract_calls)
     }
 
     /// Loads contract event rules from the database.
@@ -202,14 +212,16 @@ impl Runner {
     /// # Returns
     ///
     /// A vector of `ContractEventRule`.
-    pub async fn load_contract_event_rules(db_client: &PostgresClient) -> Vec<ContractEventRule> {
+    pub async fn load_contract_event_rules(
+        db_client: &PostgresClient,
+    ) -> Result<Vec<ContractEventRule>, WorkerError> {
         let result = db_client
             .select_table(DB_CONTRACT_EVENT_RULE)
             .await
-            .unwrap();
+            .map_err(|e| WorkerError::InvalidDatabase(e.to_string()))?;
 
         let contract_events: Vec<ContractEventRule> = result.iter().map(|row| row.into()).collect();
-        contract_events
+        Ok(contract_events)
     }
 
     /// Loads contract event block logs from the database.
@@ -223,8 +235,11 @@ impl Runner {
     /// A hashmap of `ChainID` to a hashmap of `RuleID` to `U64`.
     pub async fn load_contract_event_block_logs(
         db_client: &PostgresClient,
-    ) -> HashMap<ChainID, HashMap<RuleID, U64>> {
-        let result = db_client.select_join_event_rule_chain_id().await.unwrap();
+    ) -> Result<HashMap<ChainID, HashMap<RuleID, U64>>, WorkerError> {
+        let result = db_client
+            .select_join_event_rule_chain_id()
+            .await
+            .map_err(|e| WorkerError::InvalidDatabase(e.to_string()))?;
 
         let mut contract_events: HashMap<ChainID, HashMap<RuleID, U64>> = HashMap::new();
 
@@ -236,14 +251,16 @@ impl Runner {
                 .insert(block_log.id, block_log.block_number);
         }
 
-        contract_events
+        Ok(contract_events)
     }
 
-    pub async fn load_contract_call_block_logs(db_client: &PostgresClient) -> HashMap<RuleID, U64> {
+    pub async fn load_contract_call_block_logs(
+        db_client: &PostgresClient,
+    ) -> Result<HashMap<RuleID, U64>, WorkerError> {
         let result = db_client
             .select_table(DB_CONTRACT_CALL_BLOCK_LOG)
             .await
-            .unwrap();
+            .map_err(|e| WorkerError::InvalidDatabase(e.to_string()))?;
 
         let mut contract_calls: HashMap<RuleID, U64> = HashMap::new();
 
@@ -252,7 +269,7 @@ impl Runner {
             contract_calls.insert(block_log.id, block_log.block_number);
         }
 
-        contract_calls
+        Ok(contract_calls)
     }
 
     /// Sets the metadata for a provider.
@@ -426,15 +443,15 @@ impl Runner {
     fn set_contract_calls(
         contract_call_rules: Vec<ContractCallRule>,
         clients: HashMap<ChainID, EthClient<Http>>,
-    ) -> HashMap<RuleID, ContractCall<Http>> {
+    ) -> Result<HashMap<RuleID, ContractCall<Http>>, WorkerError> {
         contract_call_rules
             .into_iter()
             .map(|rule| {
-                let contract_call = Self::set_contract_call(
-                    clients.get(&rule.chain_id).unwrap().clone(),
-                    rule.clone(),
-                );
-                (rule.id, contract_call)
+                let client = clients
+                    .get(&rule.chain_id)
+                    .ok_or_else(|| WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
+                let contract_call = Self::set_contract_call(client.clone(), rule.clone());
+                Ok((rule.id, contract_call))
             })
             .collect()
     }
@@ -469,15 +486,16 @@ impl Runner {
     fn set_contract_events(
         contract_event_rules: Vec<ContractEventRule>,
         clients: HashMap<ChainID, EthClient<Http>>,
-    ) -> HashMap<RuleID, ContractEvent<Http>> {
+    ) -> Result<HashMap<RuleID, ContractEvent<Http>>, WorkerError> {
         contract_event_rules
             .into_iter()
             .map(|rule| {
-                let contract_event = Self::set_contract_event(
-                    clients.get(&rule.chain_id).unwrap().clone(),
-                    rule.clone(),
-                );
-                (rule.id, contract_event)
+                let client = clients
+                    .get(&rule.chain_id)
+                    .ok_or_else(|| WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
+
+                let contract_event = Self::set_contract_event(client.clone(), rule.clone());
+                Ok((rule.id, contract_event))
             })
             .collect()
     }
@@ -682,14 +700,16 @@ impl Runner {
         contract_event_sender: UnboundedSender<ContractEventRawMessage>,
         contract_event_blocks: HashMap<ChainID, HashMap<RuleID, U64>>,
         call_time_intervals: HashMap<ChainID, u64>,
-    ) -> Vec<ContractEventFetcher<Http>> {
+    ) -> Result<Vec<ContractEventFetcher<Http>>, WorkerError> {
         contract_chain_events
             .clone()
             .into_iter()
             .map(|(chain_id, contract_events)| {
                 let mut default_block_numbers = HashMap::new();
                 default_block_numbers.insert(
-                    chain_id.try_into().unwrap(),
+                    chain_id
+                        .try_into()
+                        .expect(&WorkerError::InvalidTypeConvert.to_string()),
                     U64::from(DEFAULT_BLOCK_NUMBER),
                 );
                 let from_block_numbers = contract_event_blocks
@@ -699,15 +719,18 @@ impl Runner {
                     .get(&chain_id)
                     .unwrap_or(&DEFAULT_CALL_TIME_INTERVAL);
 
-                let client = chain_clients.get(&chain_id).unwrap();
+                let client = chain_clients
+                    .get(&chain_id)
+                    .ok_or_else(|| WorkerError::InvalidIndex(IndexType::U32(chain_id)))?;
 
-                Self::set_contract_event_fetcher(
+                let result = Self::set_contract_event_fetcher(
                     client.clone(),
                     contract_events,
                     contract_event_sender.clone(),
                     from_block_numbers.clone(),
                     *call_time_interval,
-                )
+                );
+                Ok(result)
             })
             .collect()
     }
@@ -775,7 +798,7 @@ impl Runner {
     }
 
     /// Sets the log configuration.
-    fn set_log() {
+    fn set_log() -> Result<(), WorkerError> {
         let format = fmt::format()
             .with_timer(fmt::time::ChronoLocal::new(TIME_FORMAT.to_string()))
             .with_level(true)
@@ -788,9 +811,15 @@ impl Runner {
             .with_env_filter(
                 EnvFilter::from_default_env()
                     .add_directive(Level::INFO.into())
-                    .add_directive(SQLX_QUERY_WARN.parse().unwrap()), // Exclude sqlx::query logs
+                    .add_directive(
+                        SQLX_QUERY_WARN
+                            .parse()
+                            .expect(&WorkerError::InvalidTypeConvert.to_string()),
+                    ), // Exclude sqlx::query logs
             )
             .init();
+
+        Ok(())
     }
 
     /// Sets up the database client.
@@ -802,8 +831,10 @@ impl Runner {
     /// # Returns
     ///
     /// A `Result` containing the `PostgresClient` instance.
-    async fn set_db(db_url: &str) -> Result<PostgresClient, DatabaseError> {
-        let client = PostgresClient::new(db_url).await?;
+    async fn set_db(db_url: &str) -> Result<PostgresClient, WorkerError> {
+        let client = PostgresClient::new(db_url)
+            .await
+            .map_err(|e| WorkerError::InvalidDatabase(e.to_string()))?;
         Ok(client)
     }
 
@@ -816,16 +847,16 @@ impl Runner {
     /// # Returns
     ///
     /// A `Result` containing the `Configuration` instance.
-    pub fn set_config(spec: &str) -> Result<Configuration, WorkerError> {
+    pub fn set_config(spec: &str) -> Configuration {
         let user_config_file =
             std::fs::File::open(spec).expect(&WorkerError::InvalidConfigFilePath.to_string());
         let user_config: Configuration = serde_yaml::from_reader(user_config_file)
             .expect(&WorkerError::InvalidConfigFileStructure.to_string());
 
-        Ok(user_config)
+        user_config
     }
 
-    pub fn set_tasks(&self) -> Vec<JoinHandle<()>> {
+    pub fn set_tasks(&self) -> Vec<JoinHandle<Result<(), WorkerError>>> {
         let mut tasks = Vec::new();
 
         // Add RPC call fetcher tasks by Each Rule
