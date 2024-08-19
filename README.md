@@ -46,7 +46,7 @@ Before you begin, ensure you have the following installed on your machine:
 4. **Insert Rules**:
 
    - If you want custom rules, you can insert the necessary rules into the database by json file.
-     you can find the sample data json file in `./src/utils/data/sample_data.json`
+     you can find the sample data json file in `./worker/src/utils/data/sample_data.json`
 
    - Alternatively sample data is given in the json file, you can insert the sample data into the database by running the following command:
      ```sh
@@ -55,7 +55,7 @@ Before you begin, ensure you have the following installed on your machine:
 
 5. **Configure the database**:
 
-   - Update the database URL in the configuration file located at `./src/utils/configs/config.testnet.yaml` to match your PostgreSQL setup.
+   - Update the database URL in the configuration file located at `./worker/src/utils/configs/config.testnet.yaml` to match your PostgreSQL setup.
 
 6. **Install dependencies**:
    ```sh
@@ -66,23 +66,23 @@ Before you begin, ensure you have the following installed on your machine:
 
 To run the worker, follow these steps:
 
-1. **Navigate to the worker directory**:
+1. **Build watchtower**:
 
    ```sh
-   cd worker
+   cargo build --release
    ```
 
 2. **Run the worker**:
    ```sh
-   cargo run
+   ./target/release/watch_tower_worker
    ```
 
 The worker will start and begin processing tasks based on the configuration provided.
 
 ## Configuration
 
-The configuration file is located at `./src/utils/configs/config.testnet.yaml`. This file contains various settings such as database connection details, EVM providers, and other runtime configurations.
+The worker configuration file is located at `./worker/src/utils/configs/config.testnet.yaml`. This file contains various settings such as database connection details, EVM providers, and other runtime configurations.
 
 ## Rules
 
-The rules are stored in the database. You can find the sample data in the `./src/utils/data/sample_data.json` file.
+The rules are stored in the database. You can find the sample data in the `./worker/src/utils/data/sample_data.json` file.
