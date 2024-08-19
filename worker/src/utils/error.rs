@@ -39,6 +39,8 @@ pub enum WorkerError {
     InvalidIndex(IndexType),
     #[error("Invalid type convert")]
     InvalidTypeConvert,
+    #[error("Invalid type convert error: {0}")]
+    InvalidTypeConvertError(String),
     #[error("Invalid database: {0}")]
     InvalidDatabase(String),
     #[error("Invalid message")]

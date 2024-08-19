@@ -122,7 +122,6 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
 
     /// Initializes the event fetcher.
     async fn initialize(&mut self) -> Result<(), WorkerError> {
-        // Prevent chain id mismatch in DB
         self.get_client()
             .await
             .verify_chain_id()
@@ -176,7 +175,7 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
         &self.client
     }
 
-    /// Gets the oldest block.
+    /// Gets the oldest block among Rules.
     fn get_oldest_block(&self) -> Result<&U64, WorkerError> {
         self.from_block_numbers
             .values()

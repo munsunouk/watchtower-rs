@@ -60,11 +60,9 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                 .ok_or(WorkerError::InvalidMessage)?;
 
             if msg.event_logs.is_empty() {
-                self.insert_contract_event_block_logs(
-                    msg.block_number
-                        .try_into()
-                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
-                )
+                self.insert_contract_event_block_logs(msg.block_number.try_into().map_err(
+                    |_| WorkerError::InvalidTypeConvertError(msg.block_number.to_string()),
+                )?)
                 .await;
 
                 continue;
@@ -84,10 +82,10 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                         let input_param_type = contract_event.get_raw_input_param_type()?;
                         let parsing_input_param_type = contract_event.get_input_param_type()?;
 
-                        let token = Token::Tuple(
-                            decode(&[input_param_type.clone()], &log.data)
-                                .map_err(|_| WorkerError::InvalidTypeConvert)?,
-                        );
+                        let token =
+                            Token::Tuple(decode(&[input_param_type.clone()], &log.data).map_err(
+                                |_| WorkerError::InvalidTypeConvertError(log.data.to_string()),
+                            )?);
 
                         let decoded_token = parse_decode_token(
                             &token,
@@ -103,11 +101,11 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                                 let tx_log = format!("{:?}", tx_log);
 
                                 self.insert_contract_event_log(
-                                    event
-                                        .rule
-                                        .id
-                                        .try_into()
-                                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                                    event.rule.id.try_into().map_err(|_| {
+                                        WorkerError::InvalidTypeConvertError(
+                                            event.rule.id.to_string(),
+                                        )
+                                    })?,
                                     &decoded_value,
                                     &tx_log,
                                 )
@@ -123,11 +121,9 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                     }
                 }
 
-                self.insert_contract_event_block_logs(
-                    msg.block_number
-                        .try_into()
-                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
-                )
+                self.insert_contract_event_block_logs(msg.block_number.try_into().map_err(
+                    |_| WorkerError::InvalidTypeConvertError(msg.block_number.to_string()),
+                )?)
                 .await;
             }
         }

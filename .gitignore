@@ -1,6 +1,7 @@
 target/
 Cargo.lock
 
+# Sample data
 worker/src/utils/data/
 worker/src/utils/configs/
 
@@ -9,4 +10,3 @@ worker/src/utils/configs/
 .DS_Store
 .AppleDouble
 .LSOverride
-/worker/src/utils/data

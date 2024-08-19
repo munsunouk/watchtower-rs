@@ -1,10 +1,9 @@
 /// The Maximum retries of a single json rpc request.
 pub const MAX_RETRY_CALL: u8 = 3;
-/// The default retry interval of a single json rpc request in milliseconds.
-pub const DEFAULT_CALL_RETRY_INTERVAL_MS: u64 = 3000;
-
 /// Limit Retry Call
 pub const LIMIT_RETRY_CALL: u8 = 0;
+/// The default retry interval of a single json rpc request in milliseconds.
+pub const DEFAULT_CALL_RETRY_INTERVAL_MS: u64 = 3000;
 
 // DB Query PATH
 pub const SCHEMA: &str = include_str!("../db/sql/create_schema.sql");

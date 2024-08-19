@@ -71,9 +71,9 @@ impl RpcCallManager {
 
             if result.is_some() {
                 self.insert_rpc_call_log(
-                    msg.rule_id
-                        .try_into()
-                        .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                    msg.rule_id.try_into().map_err(|_| {
+                        WorkerError::InvalidTypeConvertError(msg.rule_id.to_string())
+                    })?,
                     &status.to_string(),
                 )
                 .await;

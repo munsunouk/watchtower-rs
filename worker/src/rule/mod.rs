@@ -63,13 +63,13 @@ pub fn parse_to_abi(input: Value) -> Abi {
 pub fn parse_string_to_uint(input: String) -> Result<Uint, WorkerError> {
     input
         .parse::<Uint>()
-        .map_err(|_| WorkerError::InvalidTypeConvert)
+        .map_err(|_| WorkerError::InvalidTypeConvertError(input))
 }
 
 pub fn parse_string_to_address(input: String) -> Result<Address, WorkerError> {
     input
         .parse::<Address>()
-        .map_err(|_| WorkerError::InvalidTypeConvert)
+        .map_err(|_| WorkerError::InvalidTypeConvertError(input))
 }
 
 /// Parses a string into an int.
@@ -84,7 +84,7 @@ pub fn parse_string_to_address(input: String) -> Result<Address, WorkerError> {
 pub fn parse_string_to_int(input: String) -> Result<Int, WorkerError> {
     input
         .parse::<Int>()
-        .map_err(|_| WorkerError::InvalidTypeConvert)
+        .map_err(|_| WorkerError::InvalidTypeConvertError(input))
 }
 
 /// Parses a string into a bool.
@@ -99,7 +99,7 @@ pub fn parse_string_to_int(input: String) -> Result<Int, WorkerError> {
 pub fn parse_string_to_bool(input: String) -> Result<bool, WorkerError> {
     input
         .parse::<bool>()
-        .map_err(|_| WorkerError::InvalidTypeConvert)
+        .map_err(|_| WorkerError::InvalidTypeConvertError(input))
 }
 
 /// Converts an i32 to usize.
@@ -142,8 +142,10 @@ pub fn parse_to_address(input: String) -> Address {
 ///
 /// A `Schedule` instance.
 pub fn set_schedule(check_interval: usize) -> Result<Schedule, WorkerError> {
-    Schedule::from_str(&format!("*/{} * * * * *", check_interval))
-        .map_err(|_| WorkerError::InvalidTypeConvert)
+    let format_schedule = format!("{} * * * * *", check_interval);
+
+    Schedule::from_str(&format_schedule)
+        .map_err(|_| WorkerError::InvalidTypeConvertError(format_schedule))
 }
 
 /// Creates a new Ethereum contract instance.
@@ -188,7 +190,10 @@ pub fn parse_rule_filter(
                 .get(FILTER_INDEX)
                 .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(FILTER_INDEX)))?
                 .split(FILTER_INDEX_SPLIT_CHAR)
-                .map(|s| s.parse().map_err(|_| WorkerError::InvalidTypeConvert))
+                .map(|s| {
+                    s.parse()
+                        .map_err(|_| WorkerError::InvalidTypeConvertError(s.to_string()))
+                })
                 .collect::<Result<Vec<usize>, WorkerError>>()?;
             let value = parts
                 .get(FILTER_VALUE)
@@ -218,7 +223,10 @@ pub fn parse_expected_value_filter(
         .get(FILTER_INDEX)
         .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(FILTER_INDEX)))?
         .split(FILTER_INDEX_SPLIT_CHAR)
-        .map(|s| s.parse().map_err(|_| WorkerError::InvalidTypeConvert))
+        .map(|s| {
+            s.parse()
+                .map_err(|_| WorkerError::InvalidTypeConvertError(s.to_string()))
+        })
         .collect::<Result<Vec<usize>, WorkerError>>()?;
     let value = parts
         .get(FILTER_VALUE)

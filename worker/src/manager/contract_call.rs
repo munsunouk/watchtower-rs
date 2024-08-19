@@ -80,13 +80,13 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
 
                 if let Some(decoded_token) = decoded_token {
                     self.insert_contract_call_log(
-                        msg.rule_id
-                            .try_into()
-                            .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                        msg.rule_id.try_into().map_err(|_| {
+                            WorkerError::InvalidTypeConvertError(msg.rule_id.to_string())
+                        })?,
                         &decoded_token.clone(),
-                        block_number
-                            .try_into()
-                            .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                        block_number.try_into().map_err(|_| {
+                            WorkerError::InvalidTypeConvertError(block_number.to_string())
+                        })?,
                     )
                     .await;
 
@@ -99,10 +99,10 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
             self.insert_contract_call_block_logs(
                 msg.rule_id
                     .try_into()
-                    .map_err(|_| WorkerError::InvalidTypeConvert)?,
-                last_block_number
-                    .try_into()
-                    .map_err(|_| WorkerError::InvalidTypeConvert)?,
+                    .map_err(|_| WorkerError::InvalidTypeConvertError(msg.rule_id.to_string()))?,
+                last_block_number.try_into().map_err(|_| {
+                    WorkerError::InvalidTypeConvertError(last_block_number.to_string())
+                })?,
             )
             .await;
         }
