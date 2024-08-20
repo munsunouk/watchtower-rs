@@ -118,13 +118,13 @@ impl<T: JsonRpcClient> ContractEvent<T> {
         let abi = self
             .contracts
             .first()
-            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?
+            .ok_or(WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?
             .abi();
 
         let event = abi
             .events()
             .next()
-            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+            .ok_or(WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
 
         Ok(event)
     }
@@ -157,9 +157,9 @@ impl<T: JsonRpcClient> ContractEvent<T> {
 
         let input_param_types_cloned = input_param_types.clone();
 
-        let input_param_type = input_param_types_cloned
-            .get(self.rule.event_index)
-            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(self.rule.event_index)))?;
+        let input_param_type = input_param_types_cloned.get(self.rule.event_index).ok_or(
+            WorkerError::InvalidIndex(IndexType::USize(self.rule.event_index)),
+        )?;
 
         Ok(input_param_type.clone())
     }

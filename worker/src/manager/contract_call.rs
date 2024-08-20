@@ -62,7 +62,7 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
             let contract_call = self
                 .contract_calls
                 .get(&msg.rule_id)
-                .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(msg.rule_id)))?;
+                .ok_or(WorkerError::InvalidIndex(IndexType::USize(msg.rule_id)))?;
             let output_param_type = contract_call.get_output_param_type()?;
 
             let mut stream = tokio_stream::iter(msg.block_tokens);

@@ -20,7 +20,7 @@ pub struct RpcCallFetcher {
 impl Fetcher for RpcCallFetcher {
     /// Returns the schedule for the fetcher.
     fn schedule(&self) -> Result<Schedule, WorkerError> {
-        set_schedule(self.rpc_call.rule.call_time_interval.clone())
+        set_schedule(self.rpc_call.rule.call_time_interval)
     }
 
     /// Runs the fetcher, fetching RPC calls at scheduled intervals.

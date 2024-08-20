@@ -86,3 +86,11 @@ The worker configuration file is located at `./worker/src/utils/configs/config.t
 ## Rules
 
 The rules are stored in the database. You can find the sample data in the `./worker/src/utils/data/sample_data.json` file.
+
+## Docs
+
+To know more about the project, you can set up crates.io and run the following command:
+
+```sh
+cargo doc --workspace --open
+```

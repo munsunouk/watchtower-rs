@@ -34,7 +34,7 @@ impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
         set_schedule(
             self.call_time_interval
                 .try_into()
-                .expect(&WorkerError::InvalidTypeConvert.to_string()),
+                .unwrap_or_else(|_| panic!("{}", WorkerError::InvalidTypeConvert.to_string())),
         )
     }
 

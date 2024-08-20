@@ -77,7 +77,7 @@ impl<T: JsonRpcClient> EthClient<T> {
             ClientError::InternalProviderError(error_msg.clone())
         );
 
-        Err(ClientError::InternalProviderError(error_msg).into())
+        Err(ClientError::InternalProviderError(error_msg))
     }
 
     /// Make a contract call to the chain provider via the internal connection, and return the
@@ -116,7 +116,7 @@ impl<T: JsonRpcClient> EthClient<T> {
             ClientError::InternalProviderError(error_msg.clone()),
         );
 
-        Err(ClientError::InternalProviderError(error_msg).into())
+        Err(ClientError::InternalProviderError(error_msg))
     }
 
     /// Verifies whether the configured chain ID and the provider's actual chain ID matches.
@@ -128,7 +128,7 @@ impl<T: JsonRpcClient> EthClient<T> {
                 &self.get_chain_name(),
                 ClientError::InvalidChainId
             );
-            return Err(ClientError::InvalidChainId.into());
+            return Err(ClientError::InvalidChainId);
         }
         Ok(())
     }

@@ -72,13 +72,13 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
 
             while let Some(log) = stream.next().await {
                 for (_, event) in self.contract_events.iter() {
-                    if event.is_target_event(log.topics.get(event.rule.event_index).ok_or_else(
-                        || WorkerError::InvalidIndex(IndexType::USize(event.rule.event_index)),
+                    if event.is_target_event(log.topics.get(event.rule.event_index).ok_or(
+                        WorkerError::InvalidIndex(IndexType::USize(event.rule.event_index)),
                     )?)? {
-                        let contract_event =
-                            self.contract_events.get(&event.rule.id).ok_or_else(|| {
-                                WorkerError::InvalidIndex(IndexType::USize(event.rule.id))
-                            })?;
+                        let contract_event = self
+                            .contract_events
+                            .get(&event.rule.id)
+                            .ok_or(WorkerError::InvalidIndex(IndexType::USize(event.rule.id)))?;
                         let input_param_type = contract_event.get_raw_input_param_type()?;
                         let parsing_input_param_type = contract_event.get_input_param_type()?;
 
@@ -143,7 +143,12 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                     .contract_events
                     .values()
                     .next()
-                    .expect(&WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)).to_string())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{}",
+                            WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)).to_string()
+                        )
+                    })
                     .rule
                     .chain_id;
 

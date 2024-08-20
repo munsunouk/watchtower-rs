@@ -247,7 +247,7 @@ impl Runner {
             let block_log = ContractEventBlockLog::from(&row);
             contract_events
                 .entry(block_log.chain_id)
-                .or_insert_with(HashMap::new)
+                .or_default()
                 .insert(block_log.id, block_log.block_number);
         }
 
@@ -301,15 +301,13 @@ impl Runner {
     ///
     /// An `Arc` of `Provider<Http>`.
     fn set_provider(url: &str) -> Arc<Provider<Http>> {
-        let provider =
-            Provider::<Http>::try_from(url).expect(&ClientError::InvalidProviderURL.to_string());
+        let provider = Provider::<Http>::try_from(url)
+            .unwrap_or_else(|_| panic!("{}", ClientError::InvalidProviderURL.to_string()));
         Arc::new(provider)
     }
 
-    fn set_providers(urls: &Vec<String>) -> Vec<Arc<Provider<Http>>> {
-        urls.into_iter()
-            .map(|url| Self::set_provider(url))
-            .collect()
+    fn set_providers(urls: &[String]) -> Vec<Arc<Provider<Http>>> {
+        urls.iter().map(|url| Self::set_provider(url)).collect()
     }
 
     /// Sets the Ethereum client.
@@ -449,7 +447,7 @@ impl Runner {
             .map(|rule| {
                 let client = clients
                     .get(&rule.chain_id)
-                    .ok_or_else(|| WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
+                    .ok_or(WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
                 let contract_call = Self::set_contract_call(client.clone(), rule.clone());
                 Ok((rule.id, contract_call))
             })
@@ -492,7 +490,7 @@ impl Runner {
             .map(|rule| {
                 let client = clients
                     .get(&rule.chain_id)
-                    .ok_or_else(|| WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
+                    .ok_or(WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
 
                 let contract_event = Self::set_contract_event(client.clone(), rule.clone());
                 Ok((rule.id, contract_event))
@@ -509,7 +507,7 @@ impl Runner {
             let chain_id = contract_event.rule.chain_id;
             result
                 .entry(chain_id)
-                .or_insert_with(HashMap::new)
+                .or_default()
                 .insert(rule_id, contract_event);
         }
 
@@ -569,8 +567,7 @@ impl Runner {
         rpc_call: RpcCall,
         rpc_call_sender: UnboundedSender<RpcCallRawMessage>,
     ) -> RpcCallFetcher {
-        let rpc_call_fetcher = RpcCallFetcher::new(rpc_call, rpc_call_sender);
-        rpc_call_fetcher
+        RpcCallFetcher::new(rpc_call, rpc_call_sender)
     }
 
     /// Sets multiple RPC call fetchers.
@@ -588,8 +585,8 @@ impl Runner {
         rpc_call_sender: UnboundedSender<RpcCallRawMessage>,
     ) -> Vec<RpcCallFetcher> {
         rpc_calls
-            .into_iter()
-            .map(|(_, rpc_call)| Self::set_rpc_call_fetcher(rpc_call, rpc_call_sender.clone()))
+            .into_values()
+            .map(|rpc_call| Self::set_rpc_call_fetcher(rpc_call, rpc_call_sender.clone()))
             .collect()
     }
 
@@ -609,13 +606,12 @@ impl Runner {
         from_block_number: U64,
         call_time_interval: u64,
     ) -> ContractCallFetcher<T> {
-        let contract_call_fetcher = ContractCallFetcher::new(
+        ContractCallFetcher::new(
             contract_call,
             contract_call_sender,
             from_block_number,
             call_time_interval,
-        );
-        contract_call_fetcher
+        )
     }
 
     /// Sets multiple contract call fetchers.
@@ -673,14 +669,13 @@ impl Runner {
         from_block_numbers: HashMap<RuleID, U64>,
         call_time_interval: u64,
     ) -> ContractEventFetcher<T> {
-        let event_fetcher = ContractEventFetcher::new(
+        ContractEventFetcher::new(
             client,
             contract_events,
             contract_event_sender,
             from_block_numbers,
             call_time_interval,
-        );
-        event_fetcher
+        )
     }
 
     /// Sets multiple contract event fetchers.
@@ -707,9 +702,9 @@ impl Runner {
             .map(|(chain_id, contract_events)| {
                 let mut default_block_numbers = HashMap::new();
                 default_block_numbers.insert(
-                    chain_id
-                        .try_into()
-                        .expect(&WorkerError::InvalidTypeConvert.to_string()),
+                    chain_id.try_into().unwrap_or_else(|_| {
+                        panic!("{}", WorkerError::InvalidTypeConvert.to_string())
+                    }),
                     U64::from(DEFAULT_BLOCK_NUMBER),
                 );
                 let from_block_numbers = contract_event_blocks
@@ -721,7 +716,7 @@ impl Runner {
 
                 let client = chain_clients
                     .get(&chain_id)
-                    .ok_or_else(|| WorkerError::InvalidIndex(IndexType::U32(chain_id)))?;
+                    .ok_or(WorkerError::InvalidIndex(IndexType::U32(chain_id)))?;
 
                 let result = Self::set_contract_event_fetcher(
                     client.clone(),
@@ -751,8 +746,7 @@ impl Runner {
         rpc_call_receiver: Arc<Mutex<UnboundedReceiver<RpcCallRawMessage>>>,
         db_client: PostgresClient,
     ) -> RpcCallManager {
-        let rpc_call_manager = RpcCallManager::new(rpc_calls, rpc_call_receiver, db_client);
-        rpc_call_manager
+        RpcCallManager::new(rpc_calls, rpc_call_receiver, db_client)
     }
 
     /// Sets the contract call manager.
@@ -771,9 +765,7 @@ impl Runner {
         contract_call_receiver: Arc<Mutex<UnboundedReceiver<ContractCallRawMessage>>>,
         db_client: PostgresClient,
     ) -> ContractCallManager<T> {
-        let contract_call_manager =
-            ContractCallManager::new(contract_calls, contract_call_receiver, db_client);
-        contract_call_manager
+        ContractCallManager::new(contract_calls, contract_call_receiver, db_client)
     }
 
     /// Sets the contract event manager.
@@ -792,9 +784,7 @@ impl Runner {
         contract_event_receiver: Arc<Mutex<UnboundedReceiver<ContractEventRawMessage>>>,
         db_client: PostgresClient,
     ) -> ContractEventManager<T> {
-        let contract_event_manager =
-            ContractEventManager::new(contract_events, contract_event_receiver, db_client);
-        contract_event_manager
+        ContractEventManager::new(contract_events, contract_event_receiver, db_client)
     }
 
     /// Sets the log configuration.
@@ -811,11 +801,9 @@ impl Runner {
             .with_env_filter(
                 EnvFilter::from_default_env()
                     .add_directive(Level::INFO.into())
-                    .add_directive(
-                        SQLX_QUERY_WARN
-                            .parse()
-                            .expect(&WorkerError::InvalidTypeConvert.to_string()),
-                    ), // Exclude sqlx::query logs
+                    .add_directive(SQLX_QUERY_WARN.parse().unwrap_or_else(|_| {
+                        panic!("{}", WorkerError::InvalidTypeConvert.to_string())
+                    })), // Exclude sqlx::query logs
             )
             .init();
 
@@ -848,10 +836,10 @@ impl Runner {
     ///
     /// A `Result` containing the `Configuration` instance.
     pub fn set_config(spec: &str) -> Configuration {
-        let user_config_file =
-            std::fs::File::open(spec).expect(&WorkerError::InvalidConfigFilePath.to_string());
+        let user_config_file = std::fs::File::open(spec)
+            .unwrap_or_else(|_| panic!("{}", WorkerError::InvalidConfigFilePath.to_string()));
         let user_config: Configuration = serde_yaml::from_reader(user_config_file)
-            .expect(&WorkerError::InvalidConfigFileStructure.to_string());
+            .unwrap_or_else(|_| panic!("{}", WorkerError::InvalidConfigFileStructure.to_string()));
 
         user_config
     }

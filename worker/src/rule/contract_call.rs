@@ -129,13 +129,18 @@ impl<T: JsonRpcClient> ContractCall<T> {
         let abi = self
             .contracts
             .first()
-            .expect(&WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)).to_string())
+            .unwrap_or_else(|| {
+                panic!(
+                    "{}",
+                    WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)).to_string()
+                )
+            })
             .abi();
 
         let function = abi
             .functions()
             .next()
-            .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+            .ok_or(WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
 
         Ok(function)
     }
@@ -166,7 +171,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
         let input_param_type = if !function_input.is_empty() {
             let input_param = function_input
                 .get(DEFAULT_FN_INPUT_INDEX)
-                .expect(&WorkerError::InvalidTypeABI.to_string());
+                .unwrap_or_else(|| panic!("{}", WorkerError::InvalidTypeABI.to_string()));
 
             input_param.kind.clone()
         } else {
@@ -225,16 +230,14 @@ impl<T: JsonRpcClient> ContractCall<T> {
             .get_method_param_token()
             .map_err(|err| ClientError::InvalidContractCall(err.to_string()))?;
 
-        let request = self
-            .client
+        self.client
             .contracts_call(
                 self.contracts.clone(),
                 &function_name,
                 method_params,
                 block_id,
             )
-            .await;
-        request
+            .await
     }
 }
 

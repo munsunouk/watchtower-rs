@@ -61,12 +61,12 @@ impl RpcCallManager {
             let rpc_call = self
                 .rpc_calls
                 .get(&msg.rule_id)
-                .ok_or_else(|| WorkerError::InvalidIndex(IndexType::USize(msg.rule_id)))?;
+                .ok_or(WorkerError::InvalidIndex(IndexType::USize(msg.rule_id)))?;
 
             let status = msg.status;
 
             let expected_value = U64::from_dec_str(&rpc_call.rule.expected_value)
-                .expect(&WorkerError::InvalidTypeConvert.to_string());
+                .unwrap_or_else(|_| panic!("{}", WorkerError::InvalidTypeConvert.to_string()));
             let result = parse_compare(&status, &expected_value, &rpc_call.rule.comparator);
 
             if result.is_some() {
