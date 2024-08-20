@@ -3,10 +3,10 @@ use sqlx::postgres::PgRow;
 use sqlx::{pool::Pool, Executor, PgPool, Postgres};
 
 use crate::utils::constants::{
-    DB_SCHEMA_LOAD, DB_TABLE_NAME, INSERT_CONTRACT_CALL_BLOCK_LOG, INSERT_CONTRACT_CALL_LOG,
-    INSERT_CONTRACT_CALL_RULE, INSERT_CONTRACT_EVENT_BLOCK_LOGS, INSERT_CONTRACT_EVENT_LOG,
-    INSERT_CONTRACT_EVENT_RULE, INSERT_RPC_CALL_RULE, INSERT_RPC_LOG, SCHEMA,
-    SELECT_JOIN_EVENT_RULE_CHAIN_ID,
+    DB_SCHEMA_LOAD, DB_SCHEMA_MAX_ID, DB_TABLE_NAME, INSERT_CONTRACT_CALL_BLOCK_LOG,
+    INSERT_CONTRACT_CALL_LOG, INSERT_CONTRACT_CALL_RULE, INSERT_CONTRACT_EVENT_BLOCK_LOGS,
+    INSERT_CONTRACT_EVENT_LOG, INSERT_CONTRACT_EVENT_RULE, INSERT_RPC_CALL_RULE, INSERT_RPC_LOG,
+    SCHEMA, SELECT_JOIN_EVENT_RULE_CHAIN_ID,
 };
 
 use crate::db::data::{ContractCallRuleData, ContractEventRuleData, RpcCallRuleData};
@@ -117,6 +117,18 @@ impl PostgresClient {
 
     pub async fn select_table(&self, table_name: &str) -> Result<Vec<PgRow>, DatabaseError> {
         let result = sqlx::query(&DB_SCHEMA_LOAD.replace(DB_TABLE_NAME, table_name))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| DatabaseError::GenericSelectError(err.to_string()))?;
+
+        Ok(result)
+    }
+
+    pub async fn select_table_by_max_id(
+        &self,
+        table_name: &str,
+    ) -> Result<Vec<PgRow>, DatabaseError> {
+        let result = sqlx::query(&DB_SCHEMA_MAX_ID.replace(DB_TABLE_NAME, table_name))
             .fetch_all(&self.pool)
             .await
             .map_err(|err| DatabaseError::GenericSelectError(err.to_string()))?;

@@ -1,6 +1,3 @@
-use once_cell::sync::Lazy;
-use std::sync::atomic::AtomicU64;
-
 // DB Tables
 pub const DB_RPC_CALL_RULE: &str = "rpc_call_rule";
 pub const DB_CONTRACT_CALL_RULE: &str = "contract_call_rule";
@@ -26,6 +23,7 @@ pub const DB_CONTRACT_CALL_BLOCK_LOG: &str = "contract_call_block_log";
 /// SQLX Query Warn - Try to avoid SQL Insert Log
 pub const SQLX_QUERY_WARN: &str = "sqlx::query=warn";
 
+/// Local Time Format
 pub const TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 
 /// The block range chunk size for getLogs requests.
@@ -83,8 +81,3 @@ pub const FIXED_BYTES_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 pub const CONFIG_PATH: &str = "./worker/src/utils/config/config.testnet.yaml";
 
 pub type RuleID = usize;
-
-pub static TOKIO_THREADS_TOTAL: Lazy<AtomicU64> =
-    Lazy::new(|| AtomicU64::new(DEFAULT_MEMORY_VALUE_ORDER));
-pub static TOKIO_THREADS_ALIVE: Lazy<AtomicU64> =
-    Lazy::new(|| AtomicU64::new(DEFAULT_MEMORY_VALUE_ORDER));

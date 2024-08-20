@@ -3,7 +3,7 @@ use serde_json::Value;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct RpcCallRuleData {
-    pub id: i32,
+    pub id: Option<i32>,
     pub name: String,
     pub url: String,
     pub expected_value: i32,
@@ -13,7 +13,7 @@ pub struct RpcCallRuleData {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ContractCallRuleData {
-    pub id: i32,
+    pub id: Option<i32>,
     pub name: String,
     pub chain_id: i32,
     pub address: String,
@@ -28,7 +28,7 @@ pub struct ContractCallRuleData {
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct ContractEventRuleData {
-    pub id: i32,
+    pub id: Option<i32>,
     pub name: String,
     pub chain_id: i32,
     pub address: String,

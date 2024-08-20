@@ -11,9 +11,17 @@ use tokio::runtime::Runtime;
 use crate::runner::Runner;
 
 use self::{
-    constants::{ADD_MEMORY_VALUE_ORDER, CONFIG_PATH, TOKIO_THREADS_ALIVE, TOKIO_THREADS_TOTAL},
+    constants::{ADD_MEMORY_VALUE_ORDER, CONFIG_PATH, DEFAULT_MEMORY_VALUE_ORDER},
     error::WorkerError,
 };
+
+use once_cell::sync::Lazy;
+use std::sync::atomic::AtomicU64;
+
+static TOKIO_THREADS_TOTAL: Lazy<AtomicU64> =
+    Lazy::new(|| AtomicU64::new(DEFAULT_MEMORY_VALUE_ORDER));
+static TOKIO_THREADS_ALIVE: Lazy<AtomicU64> =
+    Lazy::new(|| AtomicU64::new(DEFAULT_MEMORY_VALUE_ORDER));
 
 /// Sets the runtime for the application.
 fn set_runtime() -> Result<Runtime, WorkerError> {

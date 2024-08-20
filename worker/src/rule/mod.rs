@@ -142,7 +142,7 @@ pub fn parse_to_address(input: String) -> Address {
 ///
 /// A `Schedule` instance.
 pub fn set_schedule(check_interval: usize) -> Result<Schedule, WorkerError> {
-    let format_schedule = format!("{} * * * * *", check_interval);
+    let format_schedule = format!("*/{} * * * * *", check_interval);
 
     Schedule::from_str(&format_schedule)
         .map_err(|_| WorkerError::InvalidTypeConvertError(format_schedule))
