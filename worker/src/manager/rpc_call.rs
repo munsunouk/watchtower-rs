@@ -1,16 +1,17 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use ethers::types::U64;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::Mutex;
-use watch_tower_lib::db::postgres::PostgresClient;
+use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
+use watch_tower_lib::{db::postgres::PostgresClient, utils::types::RuleID};
 
-use crate::rule::parse_compare;
-use crate::rule::rpc_call::RpcCall;
-use crate::utils::constants::RuleID;
-use crate::utils::error::{IndexType, WorkerError};
-use crate::utils::msg::RpcCallRawMessage;
+use crate::{
+    rule::{parse_compare, rpc_call::RpcCall},
+    utils::{
+        error::{IndexType, WorkerError},
+        msg::RpcCallRawMessage,
+        traits::Manager,
+    },
+};
 
 /// Manages RPC call operations.
 #[derive(Clone)]
@@ -23,32 +24,10 @@ pub struct RpcCallManager {
     pub db_client: PostgresClient,
 }
 
-impl RpcCallManager {
-    /// Creates a new `RpcCallManager` instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `rpc_calls` - A map of RPC calls indexed by rule ID.
-    /// * `receiver` - The channel to receive RPC call messages.
-    /// * `db_client` - The Postgres client for database operations.
-    ///
-    /// # Returns
-    ///
-    /// A new instance of `RpcCallManager`.
-    pub fn new(
-        rpc_calls: HashMap<RuleID, RpcCall>,
-        receiver: Arc<Mutex<UnboundedReceiver<RpcCallRawMessage>>>,
-        db_client: PostgresClient,
-    ) -> Self {
-        Self {
-            rpc_calls,
-            receiver,
-            db_client,
-        }
-    }
-
+#[async_trait::async_trait]
+impl Manager for RpcCallManager {
     /// Runs the RPC call manager, processing messages from the receiver.
-    pub async fn run(&mut self) -> Result<(), WorkerError> {
+    async fn run(&mut self) -> Result<(), WorkerError> {
         loop {
             let msg = self
                 .receiver
@@ -84,6 +63,31 @@ impl RpcCallManager {
                     &status.to_string()
                 );
             }
+        }
+    }
+}
+
+impl RpcCallManager {
+    /// Creates a new `RpcCallManager` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `rpc_calls` - A map of RPC calls indexed by rule ID.
+    /// * `receiver` - The channel to receive RPC call messages.
+    /// * `db_client` - The Postgres client for database operations.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `RpcCallManager`.
+    pub fn new(
+        rpc_calls: HashMap<RuleID, RpcCall>,
+        receiver: Arc<Mutex<UnboundedReceiver<RpcCallRawMessage>>>,
+        db_client: PostgresClient,
+    ) -> Self {
+        Self {
+            rpc_calls,
+            receiver,
+            db_client,
         }
     }
 

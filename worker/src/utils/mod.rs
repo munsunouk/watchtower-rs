@@ -11,7 +11,7 @@ use tokio::runtime::Runtime;
 use crate::runner::Runner;
 
 use self::{
-    constants::{ADD_MEMORY_VALUE_ORDER, CONFIG_PATH, DEFAULT_MEMORY_VALUE_ORDER},
+    constants::{ADD_MEMORY_VALUE_ORDER, DEFAULT_MEMORY_VALUE_ORDER},
     error::WorkerError,
 };
 
@@ -23,8 +23,8 @@ static TOKIO_THREADS_TOTAL: Lazy<AtomicU64> =
 static TOKIO_THREADS_ALIVE: Lazy<AtomicU64> =
     Lazy::new(|| AtomicU64::new(DEFAULT_MEMORY_VALUE_ORDER));
 
-/// Sets the runtime for the application.
-fn set_runtime() -> Result<Runtime, WorkerError> {
+/// Builds the runtime for the application.
+fn build_runtime() -> Result<Runtime, WorkerError> {
     tokio::runtime::Builder::new_multi_thread()
         .on_thread_start(|| {
             TOKIO_THREADS_ALIVE.fetch_add(ADD_MEMORY_VALUE_ORDER, SeqCst);
@@ -39,11 +39,11 @@ fn set_runtime() -> Result<Runtime, WorkerError> {
 }
 
 /// Runs the application with the runtime.
-pub fn run_with_runtime() -> Result<(), WorkerError> {
-    let runtime = set_runtime()?;
+pub fn run_with_runtime(config_path: &str) -> Result<(), WorkerError> {
+    let runtime = build_runtime()?;
 
     let result = runtime.block_on(async {
-        let runner = Runner::new(CONFIG_PATH).await?;
+        let runner = Runner::new(config_path).await?;
         runner.run().await
     });
 

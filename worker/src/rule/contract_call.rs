@@ -4,16 +4,18 @@ use ethers::{
 };
 
 use super::{create_contracts, encode_token, parse_i32_to_usize, parse_to_abi, parse_to_address};
-use sqlx::postgres::PgRow;
-use sqlx::Row;
+use sqlx::{postgres::PgRow, Row};
 use watch_tower_lib::{
     cli::eth::EthClient,
-    utils::{constants::ChainID, error::ClientError},
+    utils::{
+        error::ClientError,
+        types::{ChainID, RuleID},
+    },
 };
 
 use crate::utils::{
     constants::{
-        RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
+        DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
         DB_CHECK_BLOCK_INTERVAL_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
         DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_METHOD_PARAMS_COLUMN,
         DB_RULE_FILTER_COLUMN, DB_RULE_FILTER_COMPARATOR_COLUMN, DEFAULT_FN_INPUT_INDEX,

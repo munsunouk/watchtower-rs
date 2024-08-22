@@ -1,25 +1,31 @@
-use ethers::providers::{Http, JsonRpcClient, Provider};
-use ethers::types::U64;
-use futures::future::join_all;
+use ethers::{
+    providers::{Http, JsonRpcClient, Provider},
+    types::U64,
+};
+use futures::{future::join_all, FutureExt};
 use reqwest::Client;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{mpsc, Mutex};
-use tokio::task::JoinHandle;
+
+use std::{collections::HashMap, sync::Arc};
+use tokio::{
+    sync::{
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+        Mutex,
+    },
+    task::JoinHandle,
+};
+
 use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
 
-use watch_tower_lib::cli::eth::{EthClient, ProviderMetadata};
-use watch_tower_lib::db::postgres::PostgresClient;
-use watch_tower_lib::utils::constants::ChainID;
-use watch_tower_lib::utils::error::ClientError;
-
-use crate::rule::contract_call::ContractCallBlockLog;
-use crate::utils::constants::{
-    DB_CONTRACT_CALL_BLOCK_LOG, DEFAULT_BLOCK_NUMBER, DEFAULT_CALL_TIME_INTERVAL,
+use watch_tower_lib::{
+    cli::eth::{EthClient, ProviderMetadata},
+    db::postgres::PostgresClient,
+    utils::{
+        error::ClientError,
+        types::{ChainID, RuleID},
+    },
 };
-use crate::utils::error::{IndexType, WorkerError};
+
 use crate::{
     fetcher::{
         contract_call::ContractCallFetcher, contract_event::ContractEventFetcher,
@@ -30,7 +36,7 @@ use crate::{
         rpc_call::RpcCallManager,
     },
     rule::{
-        contract_call::ContractCallRule,
+        contract_call::{ContractCallBlockLog, ContractCallRule},
         contract_event::{ContractEventBlockLog, ContractEventRule},
         rpc_call::RpcCallRule,
         ContractCall, ContractEvent, RpcCall,
@@ -38,28 +44,22 @@ use crate::{
     utils::{
         config::{Configuration, EVMProvider},
         constants::{
-            RuleID, DB_CONTRACT_CALL_RULE, DB_CONTRACT_EVENT_RULE, DB_RPC_CALL_RULE,
-            SQLX_QUERY_WARN, TIME_FORMAT,
+            DB_CONTRACT_CALL_BLOCK_LOG, DB_CONTRACT_CALL_RULE, DB_CONTRACT_EVENT_RULE,
+            DB_RPC_CALL_RULE, DEFAULT_BLOCK_NUMBER, DEFAULT_CALL_TIME_INTERVAL, SQLX_QUERY_WARN,
+            TIME_FORMAT,
         },
+        error::{IndexType, WorkerError},
         msg::{ContractCallRawMessage, ContractEventRawMessage, RpcCallRawMessage},
-        traits::Fetcher,
+        traits::{Fetcher, Manager},
     },
 };
 
 /// A Watchtower CLI runtime that can be used to run
 pub struct Runner {
-    /// Fetchers for RPC calls.
-    pub rpc_call_fetchers: Vec<RpcCallFetcher>,
-    /// Fetchers for contract calls.
-    pub contract_call_fetchers: Vec<ContractCallFetcher<Http>>,
-    /// Fetchers for contract events.
-    pub contract_event_fetchers: Vec<ContractEventFetcher<Http>>,
-    /// Manager for RPC calls.
-    pub rpc_call_manager: RpcCallManager,
-    /// Manager for contract events.
-    pub contract_call_manager: ContractCallManager<Http>,
-    /// Manager for contract calls.
-    pub contract_event_manager: ContractEventManager<Http>,
+    /// The fetchers.
+    pub fetchers: Vec<Arc<Mutex<dyn Fetcher>>>,
+    /// The managers.
+    pub managers: Vec<Arc<Mutex<dyn Manager>>>,
 }
 
 impl Runner {
@@ -76,16 +76,16 @@ impl Runner {
         Self::set_log()?;
 
         //Channel
-        let (rpc_call_sender, rpc_call_receiver) = Self::set_rpc_call_channel();
-        let (contract_call_sender, contract_call_receiver) = Self::set_contract_call_channel();
-        let (contract_event_sender, contract_event_receiver) = Self::set_contract_event_channel();
+        let (rpc_call_sender, rpc_call_receiver) = Self::build_rpc_call_channel();
+        let (contract_call_sender, contract_call_receiver) = Self::build_contract_call_channel();
+        let (contract_event_sender, contract_event_receiver) = Self::build_contract_event_channel();
 
         //Config
         let config = Self::set_config(config_path);
         let chain_intervals = Self::set_chain_intervals(config.clone().evm_providers);
 
         //DB
-        let db_client = Self::set_db(&config.postgres_config.url).await?;
+        let db_client = Self::build_db(&config.postgres_config.url).await?;
 
         //DB Rule
         let rpc_call_rules = Self::load_rpc_call_rules(&db_client).await?;
@@ -95,56 +95,41 @@ impl Runner {
         let contract_event_blocks = Self::load_contract_event_block_logs(&db_client).await?;
 
         //Client
-        let rpc_client = Self::set_client();
-        let clients = Self::set_eth_clients(config.evm_providers);
+        let rpc_client = Self::build_rpc_client();
+        let clients = Self::build_eth_clients(config.evm_providers);
 
         //Rule
-        let rpc_calls = Self::set_rpc_calls(rpc_call_rules, rpc_client);
-        let contract_calls = Self::set_contract_calls(contract_call_rules, clients.clone())?;
-        let contract_events = Self::set_contract_events(contract_event_rules, clients.clone())?;
-        let contract_chain_events = Self::set_contract_chain_events(contract_events.clone());
+        let rpc_calls = Self::build_rpc_calls(rpc_call_rules, rpc_client);
+        let contract_calls = Self::build_contract_calls(contract_call_rules, clients.clone())?;
+        let contract_events = Self::build_contract_events(contract_event_rules, clients.clone())?;
+        let contract_chain_events = Self::build_contract_chain_events(contract_events.clone());
 
         //Fetcher
-        let rpc_call_fetchers = Self::set_rpc_call_fetchers(rpc_calls.clone(), rpc_call_sender);
-        let contract_call_fetchers = Self::set_contract_call_fetchers(
+        let fetchers = Self::build_fetchers(
+            rpc_calls.clone(),
+            rpc_call_sender,
             contract_calls.clone(),
             contract_call_sender,
-            contract_call_blocks.clone(),
-            chain_intervals.clone(),
-        );
-        let contract_event_fetchers = Self::set_contract_event_fetchers(
-            clients,
+            contract_call_blocks,
             contract_chain_events,
             contract_event_sender,
-            contract_event_blocks.clone(),
+            contract_event_blocks,
             chain_intervals,
+            clients,
         )?;
 
         //Manager
-        let rpc_call_manager = Self::set_rpc_call_manager(
+        let managers = Self::build_managers(
             rpc_calls.clone(),
             rpc_call_receiver.clone(),
-            db_client.clone(),
-        );
-        let contract_call_manager = Self::set_contract_call_manager(
             contract_calls.clone(),
             contract_call_receiver.clone(),
-            db_client.clone(),
-        );
-        let contract_event_manager = Self::set_contract_event_manager(
             contract_events.clone(),
             contract_event_receiver.clone(),
-            db_client,
-        );
+            db_client.clone(),
+        )?;
 
-        Ok(Self {
-            rpc_call_fetchers,
-            contract_call_fetchers,
-            contract_event_fetchers,
-            rpc_call_manager,
-            contract_call_manager,
-            contract_event_manager,
-        })
+        Ok(Self { fetchers, managers })
     }
 
     /// Runs the `Runner` instance.
@@ -153,7 +138,7 @@ impl Runner {
     ///
     /// A `Result` indicating the success or failure of the operation.
     pub async fn run(&self) -> Result<(), WorkerError> {
-        let tasks = self.set_tasks();
+        let tasks = self.spawn_tasks();
 
         // Await all futures
         join_all(tasks).await;
@@ -300,14 +285,14 @@ impl Runner {
     /// # Returns
     ///
     /// An `Arc` of `Provider<Http>`.
-    fn set_provider(url: &str) -> Arc<Provider<Http>> {
+    fn build_provider(url: &str) -> Arc<Provider<Http>> {
         let provider = Provider::<Http>::try_from(url)
             .unwrap_or_else(|_| panic!("{}", ClientError::InvalidProviderURL.to_string()));
         Arc::new(provider)
     }
 
     fn set_providers(urls: &[String]) -> Vec<Arc<Provider<Http>>> {
-        urls.iter().map(|url| Self::set_provider(url)).collect()
+        urls.iter().map(|url| Self::build_provider(url)).collect()
     }
 
     /// Sets the Ethereum client.
@@ -320,14 +305,14 @@ impl Runner {
     /// # Returns
     ///
     /// An `EthClient` instance.
-    fn set_eth_client<T: JsonRpcClient>(
+    fn build_eth_client<T: JsonRpcClient>(
         metadata: ProviderMetadata,
         providers: Vec<Arc<Provider<T>>>,
     ) -> EthClient<T> {
         EthClient::new(metadata, providers)
     }
 
-    /// Sets multiple Ethereum clients.
+    /// Builds multiple Ethereum clients.
     ///
     /// # Arguments
     ///
@@ -336,7 +321,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `HashMap` where the key is a `ChainID` and the value is an `EthClient<Http>` instance.
-    fn set_eth_clients(providers: Vec<EVMProvider>) -> HashMap<ChainID, EthClient<Http>> {
+    fn build_eth_clients(providers: Vec<EVMProvider>) -> HashMap<ChainID, EthClient<Http>> {
         let mut clients = HashMap::new();
 
         for provider in providers {
@@ -348,7 +333,7 @@ impl Runner {
 
             let arc_providers = Self::set_providers(&provider.provider);
 
-            let eth_client = Self::set_eth_client(metadata, arc_providers);
+            let eth_client = Self::build_eth_client(metadata, arc_providers);
             clients.insert(provider.id, eth_client);
         }
 
@@ -360,8 +345,8 @@ impl Runner {
     /// # Returns
     ///
     /// A `Client` instance.
-    fn set_client() -> Client {
-        Client::new()
+    fn build_rpc_client() -> Arc<Client> {
+        Arc::new(Client::new())
     }
 
     fn set_chain_intervals(providers: Vec<EVMProvider>) -> HashMap<ChainID, u64> {
@@ -384,11 +369,11 @@ impl Runner {
     /// # Returns
     ///
     /// An `RpcCall` instance.
-    fn set_rpc_call(client: Client, rule: RpcCallRule) -> RpcCall {
+    fn build_rpc_call(client: Arc<Client>, rule: RpcCallRule) -> RpcCall {
         RpcCall::new(client, rule)
     }
 
-    /// Sets multiple RPC calls.
+    /// Builds multiple RPC calls.
     ///
     /// # Arguments
     ///
@@ -398,20 +383,20 @@ impl Runner {
     /// # Returns
     ///
     /// A `HashMap` where the key is a `RuleID` and the value is an `RpcCall` instance.
-    fn set_rpc_calls(
+    fn build_rpc_calls(
         rpc_call_rules: Vec<RpcCallRule>,
-        rpc_client: Client,
+        rpc_client: Arc<Client>,
     ) -> HashMap<RuleID, RpcCall> {
         rpc_call_rules
             .into_iter()
             .map(|rule| {
-                let rpc_call = Self::set_rpc_call(rpc_client.clone(), rule.clone());
+                let rpc_call = Self::build_rpc_call(rpc_client.clone(), rule.clone());
                 (rule.id, rpc_call)
             })
             .collect()
     }
 
-    /// Sets a contract call.
+    /// Builds a contract call.
     ///
     /// # Arguments
     ///
@@ -421,14 +406,14 @@ impl Runner {
     /// # Returns
     ///
     /// A `ContractCall` instance.
-    fn set_contract_call<T: JsonRpcClient>(
+    fn build_contract_call<T: JsonRpcClient>(
         client: EthClient<T>,
         rule: ContractCallRule,
     ) -> ContractCall<T> {
         ContractCall::new(client, rule)
     }
 
-    /// Sets multiple RPC calls.
+    /// Builds multiple contract calls.
     ///
     /// # Arguments
     ///
@@ -438,7 +423,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `HashMap` where the key is a `RuleID` and the value is an `RpcCall` instance.
-    fn set_contract_calls(
+    fn build_contract_calls(
         contract_call_rules: Vec<ContractCallRule>,
         clients: HashMap<ChainID, EthClient<Http>>,
     ) -> Result<HashMap<RuleID, ContractCall<Http>>, WorkerError> {
@@ -448,13 +433,13 @@ impl Runner {
                 let client = clients
                     .get(&rule.chain_id)
                     .ok_or(WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
-                let contract_call = Self::set_contract_call(client.clone(), rule.clone());
+                let contract_call = Self::build_contract_call(client.clone(), rule.clone());
                 Ok((rule.id, contract_call))
             })
             .collect()
     }
 
-    /// Sets a contract event.
+    /// Builds a contract event.
     ///
     /// # Arguments
     ///
@@ -464,14 +449,14 @@ impl Runner {
     /// # Returns
     ///
     /// A `ContractEvent` instance.
-    fn set_contract_event<T: JsonRpcClient>(
+    fn build_contract_event<T: JsonRpcClient>(
         client: EthClient<T>,
         rule: ContractEventRule,
     ) -> ContractEvent<T> {
         ContractEvent::new(client, rule)
     }
 
-    /// Sets multiple contract events.
+    /// Builds multiple contract events.
     ///
     /// # Arguments
     ///
@@ -481,7 +466,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `HashMap` where the key is a `RuleID` and the value is a `ContractEvent` instance.
-    fn set_contract_events(
+    fn build_contract_events(
         contract_event_rules: Vec<ContractEventRule>,
         clients: HashMap<ChainID, EthClient<Http>>,
     ) -> Result<HashMap<RuleID, ContractEvent<Http>>, WorkerError> {
@@ -492,13 +477,22 @@ impl Runner {
                     .get(&rule.chain_id)
                     .ok_or(WorkerError::InvalidIndex(IndexType::U32(rule.chain_id)))?;
 
-                let contract_event = Self::set_contract_event(client.clone(), rule.clone());
+                let contract_event = Self::build_contract_event(client.clone(), rule.clone());
                 Ok((rule.id, contract_event))
             })
             .collect()
     }
 
-    fn set_contract_chain_events(
+    /// Builds a contract chain event.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_events` - A hashmap of contract events.
+    ///
+    /// # Returns
+    ///
+    /// A hashmap of `ChainID` to a hashmap of `RuleID` to `ContractEvent`.
+    fn build_contract_chain_events(
         contract_events: HashMap<RuleID, ContractEvent<Http>>,
     ) -> HashMap<ChainID, HashMap<RuleID, ContractEvent<Http>>> {
         let mut result: HashMap<ChainID, HashMap<RuleID, ContractEvent<Http>>> = HashMap::new();
@@ -514,12 +508,12 @@ impl Runner {
         result
     }
 
-    /// Sets the RPC call channel.
+    /// Builds the RPC call channel.
     ///
     /// # Returns
     ///
     /// A tuple containing the sender and receiver for the RPC call channel.
-    fn set_rpc_call_channel() -> (
+    fn build_rpc_call_channel() -> (
         UnboundedSender<RpcCallRawMessage>,
         Arc<Mutex<UnboundedReceiver<RpcCallRawMessage>>>,
     ) {
@@ -527,12 +521,12 @@ impl Runner {
         (sender, Arc::new(Mutex::new(receiver)))
     }
 
-    /// Sets the contract call channel.
+    /// Builds the contract call channel.
     ///
     /// # Returns
     ///
     /// A tuple containing the sender and receiver for the contract call channel.
-    fn set_contract_call_channel() -> (
+    fn build_contract_call_channel() -> (
         UnboundedSender<ContractCallRawMessage>,
         Arc<Mutex<UnboundedReceiver<ContractCallRawMessage>>>,
     ) {
@@ -540,12 +534,12 @@ impl Runner {
         (sender, Arc::new(Mutex::new(receiver)))
     }
 
-    /// Sets the contract event channel.
+    /// Builds the contract event channel.
     ///
     /// # Returns
     ///
     /// A tuple containing the sender and receiver for the contract event channel.
-    fn set_contract_event_channel() -> (
+    fn build_contract_event_channel() -> (
         UnboundedSender<ContractEventRawMessage>,
         Arc<Mutex<UnboundedReceiver<ContractEventRawMessage>>>,
     ) {
@@ -553,7 +547,114 @@ impl Runner {
         (sender, Arc::new(Mutex::new(receiver)))
     }
 
-    /// Sets the RPC call fetcher.
+    /// Builds the fetchers.
+    ///
+    /// # Arguments
+    ///
+    /// * `rpc_calls` - A hashmap of RPC call instances.
+    /// * `rpc_call_sender` - The sender for the RPC call channel.
+    /// * `contract_calls` - A hashmap of contract call instances.
+    /// * `contract_call_sender` - The sender for the contract call channel.
+    /// * `contract_call_blocks` - A hashmap of contract call blocks.
+    /// * `contract_chain_events` - A hashmap of contract chain events.
+    /// * `contract_event_sender` - The sender for the contract event channel.
+    /// * `contract_event_blocks` - A hashmap of contract event blocks.
+    /// * `chain_intervals` - A hashmap of chain intervals.
+    /// * `clients` - A hashmap of Ethereum clients.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `Arc<Mutex<dyn Fetcher>>` instances.
+    fn build_fetchers(
+        rpc_calls: HashMap<RuleID, RpcCall>,
+        rpc_call_sender: UnboundedSender<RpcCallRawMessage>,
+        contract_calls: HashMap<RuleID, ContractCall<Http>>,
+        contract_call_sender: UnboundedSender<ContractCallRawMessage>,
+        contract_call_blocks: HashMap<RuleID, U64>,
+        contract_chain_events: HashMap<ChainID, HashMap<RuleID, ContractEvent<Http>>>,
+        contract_event_sender: UnboundedSender<ContractEventRawMessage>,
+        contract_event_blocks: HashMap<ChainID, HashMap<RuleID, U64>>,
+        chain_intervals: HashMap<ChainID, u64>,
+        clients: HashMap<ChainID, EthClient<Http>>,
+    ) -> Result<Vec<Arc<Mutex<dyn Fetcher>>>, WorkerError> {
+        let mut fetchers: Vec<Arc<Mutex<dyn Fetcher>>> = Vec::new();
+        fetchers.extend(
+            Self::build_rpc_call_fetchers(rpc_calls.clone(), rpc_call_sender)
+                .into_iter()
+                .map(|f| Arc::new(Mutex::new(f)) as Arc<Mutex<dyn Fetcher>>),
+        );
+        fetchers.extend(
+            Self::build_contract_call_fetchers(
+                contract_calls.clone(),
+                contract_call_sender,
+                contract_call_blocks.clone(),
+                chain_intervals.clone(),
+            )
+            .into_iter()
+            .map(|f| Arc::new(Mutex::new(f)) as Arc<Mutex<dyn Fetcher>>),
+        );
+        fetchers.extend(
+            Self::build_contract_event_fetchers(
+                clients,
+                contract_chain_events,
+                contract_event_sender,
+                contract_event_blocks.clone(),
+                chain_intervals,
+            )?
+            .into_iter()
+            .map(|f| Arc::new(Mutex::new(f)) as Arc<Mutex<dyn Fetcher>>),
+        );
+
+        Ok(fetchers)
+    }
+
+    /// Builds the managers.
+    ///
+    /// # Arguments
+    ///
+    /// * `rpc_calls` - A hashmap of RPC call instances.
+    /// * `rpc_call_receiver` - The receiver for the RPC call channel.
+    /// * `contract_calls` - A hashmap of contract call instances.
+    /// * `contract_call_receiver` - The receiver for the contract call channel.
+    /// * `contract_events` - A hashmap of contract event instances.
+    /// * `contract_event_receiver` - The receiver for the contract event channel.
+    /// * `db_client` - A database client.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `Arc<Mutex<dyn Manager>>` instances.
+    fn build_managers(
+        rpc_calls: HashMap<RuleID, RpcCall>,
+        rpc_call_receiver: Arc<Mutex<UnboundedReceiver<RpcCallRawMessage>>>,
+        contract_calls: HashMap<RuleID, ContractCall<Http>>,
+        contract_call_receiver: Arc<Mutex<UnboundedReceiver<ContractCallRawMessage>>>,
+        contract_events: HashMap<RuleID, ContractEvent<Http>>,
+        contract_event_receiver: Arc<Mutex<UnboundedReceiver<ContractEventRawMessage>>>,
+        db_client: PostgresClient,
+    ) -> Result<Vec<Arc<Mutex<dyn Manager>>>, WorkerError> {
+        let rpc_manager = Arc::new(Mutex::new(Self::build_rpc_call_manager(
+            rpc_calls,
+            rpc_call_receiver,
+            db_client.clone(),
+        )));
+        let contract_manager = Arc::new(Mutex::new(Self::build_contract_call_manager(
+            contract_calls,
+            contract_call_receiver,
+            db_client.clone(),
+        )));
+        let contract_event_manager = Arc::new(Mutex::new(Self::build_contract_event_manager(
+            contract_events,
+            contract_event_receiver,
+            db_client,
+        )));
+
+        let managers: Vec<Arc<Mutex<dyn Manager>>> =
+            vec![rpc_manager, contract_manager, contract_event_manager];
+
+        Ok(managers)
+    }
+
+    /// Builds the RPC call fetcher.
     ///
     /// # Arguments
     ///
@@ -563,14 +664,14 @@ impl Runner {
     /// # Returns
     ///
     /// An `RpcCallFetcher` instance.
-    fn set_rpc_call_fetcher(
+    fn build_rpc_call_fetcher(
         rpc_call: RpcCall,
         rpc_call_sender: UnboundedSender<RpcCallRawMessage>,
     ) -> RpcCallFetcher {
         RpcCallFetcher::new(rpc_call, rpc_call_sender)
     }
 
-    /// Sets multiple RPC call fetchers.
+    /// Builds multiple RPC call fetchers.
     ///
     /// # Arguments
     ///
@@ -580,17 +681,17 @@ impl Runner {
     /// # Returns
     ///
     /// A vector of `RpcCallFetcher` instances.
-    fn set_rpc_call_fetchers(
+    fn build_rpc_call_fetchers(
         rpc_calls: HashMap<RuleID, RpcCall>,
         rpc_call_sender: UnboundedSender<RpcCallRawMessage>,
     ) -> Vec<RpcCallFetcher> {
         rpc_calls
             .into_values()
-            .map(|rpc_call| Self::set_rpc_call_fetcher(rpc_call, rpc_call_sender.clone()))
+            .map(|rpc_call| Self::build_rpc_call_fetcher(rpc_call, rpc_call_sender.clone()))
             .collect()
     }
 
-    /// Sets the contract call fetcher.
+    /// Builds the contract call fetcher.
     ///
     /// # Arguments
     ///
@@ -600,7 +701,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `ContractCallFetcher` instance.
-    fn set_contract_call_fetcher<T: JsonRpcClient>(
+    fn build_contract_call_fetcher<T: JsonRpcClient>(
         contract_call: ContractCall<T>,
         contract_call_sender: UnboundedSender<ContractCallRawMessage>,
         from_block_number: U64,
@@ -614,7 +715,7 @@ impl Runner {
         )
     }
 
-    /// Sets multiple contract call fetchers.
+    /// Builds multiple contract call fetchers.
     ///
     /// # Arguments
     ///
@@ -624,7 +725,7 @@ impl Runner {
     /// # Returns
     ///
     /// A vector of `ContractCallFetcher` instances.
-    fn set_contract_call_fetchers(
+    fn build_contract_call_fetchers(
         contract_calls: HashMap<RuleID, ContractCall<Http>>,
         contract_call_sender: UnboundedSender<ContractCallRawMessage>,
         from_block_numbers: HashMap<RuleID, U64>,
@@ -641,7 +742,7 @@ impl Runner {
                     .get(&contract_call.rule.chain_id)
                     .unwrap_or(&DEFAULT_CALL_TIME_INTERVAL);
 
-                Self::set_contract_call_fetcher(
+                Self::build_contract_call_fetcher(
                     contract_call,
                     contract_call_sender.clone(),
                     *from_block_number,
@@ -651,7 +752,7 @@ impl Runner {
             .collect()
     }
 
-    /// Sets the contract event fetcher.
+    /// Builds the contract event fetcher.
     ///
     /// # Arguments
     ///
@@ -662,7 +763,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `ContractEventFetcher` instance.
-    fn set_contract_event_fetcher<T: JsonRpcClient>(
+    fn build_contract_event_fetcher<T: JsonRpcClient>(
         client: EthClient<T>,
         contract_events: HashMap<RuleID, ContractEvent<T>>,
         contract_event_sender: UnboundedSender<ContractEventRawMessage>,
@@ -678,7 +779,7 @@ impl Runner {
         )
     }
 
-    /// Sets multiple contract event fetchers.
+    /// Builds multiple contract event fetchers.
     ///
     /// # Arguments
     ///
@@ -689,7 +790,7 @@ impl Runner {
     /// # Returns
     ///
     /// A vector of `ContractEventFetcher` instances.
-    fn set_contract_event_fetchers(
+    fn build_contract_event_fetchers(
         chain_clients: HashMap<ChainID, EthClient<Http>>,
         contract_chain_events: HashMap<ChainID, HashMap<RuleID, ContractEvent<Http>>>,
         contract_event_sender: UnboundedSender<ContractEventRawMessage>,
@@ -718,7 +819,7 @@ impl Runner {
                     .get(&chain_id)
                     .ok_or(WorkerError::InvalidIndex(IndexType::U32(chain_id)))?;
 
-                let result = Self::set_contract_event_fetcher(
+                let result = Self::build_contract_event_fetcher(
                     client.clone(),
                     contract_events,
                     contract_event_sender.clone(),
@@ -730,7 +831,7 @@ impl Runner {
             .collect()
     }
 
-    /// Sets the RPC call manager.
+    /// Builds the RPC call manager.
     ///
     /// # Arguments
     ///
@@ -741,7 +842,7 @@ impl Runner {
     /// # Returns
     ///
     /// An `RpcCallManager` instance.
-    fn set_rpc_call_manager(
+    fn build_rpc_call_manager(
         rpc_calls: HashMap<RuleID, RpcCall>,
         rpc_call_receiver: Arc<Mutex<UnboundedReceiver<RpcCallRawMessage>>>,
         db_client: PostgresClient,
@@ -749,7 +850,7 @@ impl Runner {
         RpcCallManager::new(rpc_calls, rpc_call_receiver, db_client)
     }
 
-    /// Sets the contract call manager.
+    /// Builds the contract call manager.
     ///
     /// # Arguments
     ///
@@ -760,7 +861,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `ContractCallManager` instance.
-    fn set_contract_call_manager<T: JsonRpcClient>(
+    fn build_contract_call_manager<T: JsonRpcClient>(
         contract_calls: HashMap<RuleID, ContractCall<T>>,
         contract_call_receiver: Arc<Mutex<UnboundedReceiver<ContractCallRawMessage>>>,
         db_client: PostgresClient,
@@ -768,7 +869,7 @@ impl Runner {
         ContractCallManager::new(contract_calls, contract_call_receiver, db_client)
     }
 
-    /// Sets the contract event manager.
+    /// Builds the contract event manager.
     ///
     /// # Arguments
     ///
@@ -779,7 +880,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `ContractEventManager` instance.
-    fn set_contract_event_manager<T: JsonRpcClient>(
+    fn build_contract_event_manager<T: JsonRpcClient>(
         contract_events: HashMap<RuleID, ContractEvent<T>>,
         contract_event_receiver: Arc<Mutex<UnboundedReceiver<ContractEventRawMessage>>>,
         db_client: PostgresClient,
@@ -810,7 +911,7 @@ impl Runner {
         Ok(())
     }
 
-    /// Sets up the database client.
+    /// Builds the database client.
     ///
     /// # Arguments
     ///
@@ -819,7 +920,7 @@ impl Runner {
     /// # Returns
     ///
     /// A `Result` containing the `PostgresClient` instance.
-    async fn set_db(db_url: &str) -> Result<PostgresClient, WorkerError> {
+    async fn build_db(db_url: &str) -> Result<PostgresClient, WorkerError> {
         let client = PostgresClient::new(db_url)
             .await
             .map_err(|e| WorkerError::InvalidDatabase(e.to_string()))?;
@@ -844,39 +945,53 @@ impl Runner {
         user_config
     }
 
-    pub fn set_tasks(&self) -> Vec<JoinHandle<Result<(), WorkerError>>> {
+    /// Sets the tasks.
+    ///
+    /// # Returns
+    ///
+    /// A vector of `JoinHandle<Result<(), WorkerError>>` instances.
+    pub fn spawn_tasks(&self) -> Vec<JoinHandle<Result<(), WorkerError>>> {
         let mut tasks = Vec::new();
 
-        // Add RPC call fetcher tasks by Each Rule
-        for mut fetcher in self.rpc_call_fetchers.clone() {
-            tasks.push(tokio::spawn(async move { fetcher.run().await }));
-        }
+        // Add fetcher tasks
+        for fetcher in &self.fetchers {
+            let fetcher = Arc::clone(fetcher);
+            tasks.push(tokio::spawn(async move {
+                let result = std::panic::AssertUnwindSafe(async {
+                    let mut fetcher = fetcher.lock().await;
+                    fetcher.run().await
+                })
+                .catch_unwind()
+                .await;
 
-        // Add contract call fetcher tasks by Each Rule
-        for mut fetcher in self.contract_call_fetchers.clone() {
-            tasks.push(tokio::spawn(async move { fetcher.run().await }));
-        }
-
-        // Add contract event fetcher tasks by Each Chain
-        for mut fetcher in self.contract_event_fetchers.clone() {
-            tasks.push(tokio::spawn(async move { fetcher.run().await }));
+                match result {
+                    Ok(res) => res,
+                    Err(_) => Err(WorkerError::GeneralShutdown(
+                        "Fetcher task panicked".to_string(),
+                    )),
+                }
+            }));
         }
 
         // Add manager tasks
-        let mut rpc_call_manager = self.rpc_call_manager.clone();
-        tasks.push(tokio::spawn(async move { rpc_call_manager.run().await }));
+        for manager in &self.managers {
+            let manager = Arc::clone(manager);
+            tasks.push(tokio::spawn(async move {
+                let result = std::panic::AssertUnwindSafe(async {
+                    let mut manager = manager.lock().await;
+                    manager.run().await
+                })
+                .catch_unwind()
+                .await;
 
-        // Add contract call manager task
-        let mut contract_call_manager = self.contract_call_manager.clone();
-        tasks.push(tokio::spawn(
-            async move { contract_call_manager.run().await },
-        ));
-
-        // Add contract event manager task
-        let mut contract_event_manager = self.contract_event_manager.clone();
-        tasks.push(tokio::spawn(
-            async move { contract_event_manager.run().await },
-        ));
+                match result {
+                    Ok(res) => res,
+                    Err(_) => Err(WorkerError::GeneralShutdown(
+                        "Manager task panicked".to_string(),
+                    )),
+                }
+            }));
+        }
 
         tasks
     }

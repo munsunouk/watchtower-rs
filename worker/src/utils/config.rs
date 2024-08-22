@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use std::borrow::Cow;
-use watch_tower_lib::utils::constants::ChainID;
+use watch_tower_lib::utils::types::ChainID;
 
 /// Configuration for the application.
 #[allow(dead_code)]

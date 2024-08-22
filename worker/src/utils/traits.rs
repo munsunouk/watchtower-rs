@@ -7,7 +7,7 @@ use super::{
 };
 
 #[async_trait::async_trait]
-pub trait Fetcher {
+pub trait Fetcher: Send + Sync {
     /// Returns the schedule definition.
     fn schedule(&self) -> Result<Schedule, WorkerError>;
 
@@ -33,4 +33,9 @@ pub trait Fetcher {
             Err(_) => Err(WorkerError::InvalidTypeConvert),
         }
     }
+}
+
+#[async_trait::async_trait]
+pub trait Manager: Send + Sync {
+    async fn run(&mut self) -> Result<(), WorkerError>;
 }

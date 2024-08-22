@@ -2,10 +2,7 @@ pub mod metadata;
 
 pub use metadata::ProviderMetadata;
 
-use crate::utils::{
-    constants::{ChainID, DEFAULT_CALL_RETRY_INTERVAL_MS},
-    error::ClientError,
-};
+use crate::utils::{constants::DEFAULT_CALL_RETRY_INTERVAL_MS, error::ClientError, types::ChainID};
 use ethers::{
     abi::Token,
     contract::Contract,

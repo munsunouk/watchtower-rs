@@ -9,18 +9,19 @@ use std::collections::HashMap; // Add this import
 use tokio::sync::mpsc::UnboundedSender;
 use watch_tower_lib::cli::eth::EthClient;
 
-use crate::utils::{
-    constants::{RuleID, DEFAULT_BLOCK_NUMBER, DEFAULT_INDEX, NEW_BLOCK_OFFSET},
-    error::{IndexType, WorkerError},
-    traits::Fetcher,
-};
-use crate::utils::{
-    constants::{BLOCK_OFFSET, BOOTSTRAP_BLOCK_CHUNK_SIZE},
-    msg::ContractEventRawMessage,
-};
+use watch_tower_lib::utils::types::RuleID;
+
 use crate::{
     rule::{contract_event::ContractEvent, set_schedule},
-    utils::constants::NEXT_BLOCK,
+    utils::{
+        constants::{
+            BLOCK_OFFSET, BOOTSTRAP_BLOCK_CHUNK_SIZE, DEFAULT_BLOCK_NUMBER, DEFAULT_INDEX,
+            NEW_BLOCK_OFFSET, NEXT_BLOCK,
+        },
+        error::{IndexType, WorkerError},
+        msg::ContractEventRawMessage,
+        traits::Fetcher,
+    },
 };
 
 /// The essential task that listens and fetches new events.

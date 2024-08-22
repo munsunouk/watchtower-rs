@@ -2,7 +2,7 @@ use ethers::abi::Token;
 
 use ethers::types::{Log, U64};
 
-use crate::utils::constants::RuleID;
+use watch_tower_lib::utils::types::RuleID;
 
 #[derive(Clone, Debug)]
 /// The message format passed through the block channel.

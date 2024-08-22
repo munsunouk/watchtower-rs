@@ -1,6 +1,6 @@
 use url::Url;
 
-use crate::utils::{constants::ChainID, error::ClientError};
+use crate::utils::{error::ClientError, types::ChainID};
 
 /// The metadata of the EVM provider.
 #[derive(Clone)]

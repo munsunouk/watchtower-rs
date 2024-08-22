@@ -1,17 +1,22 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use ethers::abi::{decode, Token};
-use ethers::providers::JsonRpcClient;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::Mutex;
+use ethers::{
+    abi::{decode, Token},
+    providers::JsonRpcClient,
+};
+use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use tokio_stream::StreamExt;
-use watch_tower_lib::db::postgres::PostgresClient;
+use watch_tower_lib::{db::postgres::PostgresClient, utils::types::RuleID};
 
-use crate::rule::{contract_event::ContractEvent, parse_decode_token};
-use crate::utils::constants::{RuleID, DEFAULT_INDEX};
-use crate::utils::error::{IndexType, WorkerError};
-use crate::utils::msg::ContractEventRawMessage;
+use crate::{
+    rule::{contract_event::ContractEvent, parse_decode_token},
+    utils::{
+        constants::DEFAULT_INDEX,
+        error::{IndexType, WorkerError},
+        msg::ContractEventRawMessage,
+        traits::Manager,
+    },
+};
 
 /// Manages contract event operations.
 #[derive(Clone)]
@@ -24,32 +29,10 @@ pub struct ContractEventManager<T> {
     pub db_client: PostgresClient,
 }
 
-impl<T: JsonRpcClient> ContractEventManager<T> {
-    /// Creates a new `ContractEventManager` instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `contract_events` - A map of contract events indexed by rule ID.
-    /// * `receiver` - The channel to receive contract event messages.
-    /// * `db_client` - The Postgres client for database operations.
-    ///
-    /// # Returns
-    ///
-    /// A new instance of `ContractEventManager`.
-    pub fn new(
-        contract_events: HashMap<RuleID, ContractEvent<T>>,
-        receiver: Arc<Mutex<UnboundedReceiver<ContractEventRawMessage>>>,
-        db_client: PostgresClient,
-    ) -> Self {
-        Self {
-            contract_events,
-            receiver,
-            db_client,
-        }
-    }
-
+#[async_trait::async_trait]
+impl<T: JsonRpcClient> Manager for ContractEventManager<T> {
     /// Runs the contract event manager, processing messages from the receiver.
-    pub async fn run(&mut self) -> Result<(), WorkerError> {
+    async fn run(&mut self) -> Result<(), WorkerError> {
         loop {
             let msg = self
                 .receiver
@@ -126,6 +109,31 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
                 )?)
                 .await;
             }
+        }
+    }
+}
+
+impl<T: JsonRpcClient> ContractEventManager<T> {
+    /// Creates a new `ContractEventManager` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_events` - A map of contract events indexed by rule ID.
+    /// * `receiver` - The channel to receive contract event messages.
+    /// * `db_client` - The Postgres client for database operations.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `ContractEventManager`.
+    pub fn new(
+        contract_events: HashMap<RuleID, ContractEvent<T>>,
+        receiver: Arc<Mutex<UnboundedReceiver<ContractEventRawMessage>>>,
+        db_client: PostgresClient,
+    ) -> Self {
+        Self {
+            contract_events,
+            receiver,
+            db_client,
         }
     }
 

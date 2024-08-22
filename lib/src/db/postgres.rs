@@ -1,6 +1,5 @@
 use crate::utils::error::DatabaseError;
-use sqlx::postgres::PgRow;
-use sqlx::{pool::Pool, Executor, PgPool, Postgres};
+use sqlx::{pool::Pool, postgres::PgRow, Executor, PgPool, Postgres};
 
 use crate::utils::constants::{
     DB_SCHEMA_LOAD, DB_SCHEMA_MAX_ID, DB_TABLE_NAME, INSERT_CONTRACT_CALL_BLOCK_LOG,

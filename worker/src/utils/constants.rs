@@ -76,8 +76,3 @@ pub const BOOL_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 pub const STRING_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 pub const BYTES_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
 pub const FIXED_BYTES_COMPARATOR_TYPE: [&str; 2] = ["==", "!="];
-
-/// Config Path
-pub const CONFIG_PATH: &str = "./worker/src/utils/config/config.testnet.yaml";
-
-pub type RuleID = usize;

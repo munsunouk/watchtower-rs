@@ -1,11 +1,10 @@
 use cron::Schedule;
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::rule::rpc_call::RpcCall;
-use crate::rule::set_schedule;
-use crate::utils::error::WorkerError;
-use crate::utils::msg::RpcCallRawMessage;
-use crate::utils::traits::Fetcher;
+use crate::{
+    rule::{rpc_call::RpcCall, set_schedule},
+    utils::{error::WorkerError, msg::RpcCallRawMessage, traits::Fetcher},
+};
 
 /// Struct representing an RPC call fetcher.
 #[derive(Clone)]

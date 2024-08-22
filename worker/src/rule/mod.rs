@@ -10,11 +10,8 @@ pub use contract_event::ContractEvent;
 pub use rpc_call::RpcCall;
 
 use cron::Schedule;
-use serde_json::from_str;
-use serde_json::Value;
-use std::iter::zip;
-use std::str::FromStr;
-use std::sync::Arc;
+use serde_json::{from_str, Value};
+use std::{iter::zip, str::FromStr, sync::Arc};
 
 use ethers::{
     abi::{Abi, Int, ParamType, Token, Uint},
@@ -22,21 +19,15 @@ use ethers::{
     utils::hex,
 };
 
-use crate::utils::constants::ADDRESS_COMPARATOR_TYPE;
-use crate::utils::constants::BOOL_COMPARATOR_TYPE;
-use crate::utils::constants::BYTES_COMPARATOR_TYPE;
-use crate::utils::constants::DEFAULT_INDEX;
-use crate::utils::constants::DEFAULT_PARAM_VALUE;
-use crate::utils::constants::FILTER_INDEX;
-use crate::utils::constants::FILTER_INDEX_SPLIT_CHAR;
-use crate::utils::constants::FILTER_VALUE;
-use crate::utils::constants::FILTER_VALUE_SPLIT_CHAR;
-use crate::utils::constants::FIXED_BYTES_COMPARATOR_TYPE;
-use crate::utils::constants::INT_COMPARATOR_TYPE;
-use crate::utils::constants::STRING_COMPARATOR_TYPE;
-use crate::utils::constants::UINT_COMPARATOR_TYPE;
-use crate::utils::error::IndexType;
-use crate::utils::error::WorkerError;
+use crate::utils::{
+    constants::{
+        ADDRESS_COMPARATOR_TYPE, BOOL_COMPARATOR_TYPE, BYTES_COMPARATOR_TYPE, DEFAULT_INDEX,
+        DEFAULT_PARAM_VALUE, FILTER_INDEX, FILTER_INDEX_SPLIT_CHAR, FILTER_VALUE,
+        FILTER_VALUE_SPLIT_CHAR, FIXED_BYTES_COMPARATOR_TYPE, INT_COMPARATOR_TYPE,
+        STRING_COMPARATOR_TYPE, UINT_COMPARATOR_TYPE,
+    },
+    error::{IndexType, WorkerError},
+};
 
 /// Parses a JSON value into an ABI.
 ///

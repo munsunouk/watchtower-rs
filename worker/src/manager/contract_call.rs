@@ -1,17 +1,18 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use ethers::providers::JsonRpcClient;
-use ethers::types::U64;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::Mutex;
+use ethers::{providers::JsonRpcClient, types::U64};
+use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use tokio_stream::StreamExt;
-use watch_tower_lib::db::postgres::PostgresClient;
+use watch_tower_lib::{db::postgres::PostgresClient, utils::types::RuleID};
 
-use crate::rule::{contract_call::ContractCall, parse_decode_token};
-use crate::utils::constants::RuleID;
-use crate::utils::error::{IndexType, WorkerError};
-use crate::utils::msg::ContractCallRawMessage;
+use crate::{
+    rule::{contract_call::ContractCall, parse_decode_token},
+    utils::{
+        error::{IndexType, WorkerError},
+        msg::ContractCallRawMessage,
+        traits::Manager,
+    },
+};
 
 /// Manages contract call operations.
 #[derive(Clone)]
@@ -24,32 +25,10 @@ pub struct ContractCallManager<T> {
     pub db_client: PostgresClient,
 }
 
-impl<T: JsonRpcClient> ContractCallManager<T> {
-    /// Creates a new `ContractCallManager` instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `contract_calls` - A map of contract calls indexed by rule ID.
-    /// * `receiver` - The channel to receive contract call messages.
-    /// * `db_client` - The Postgres client for database operations.
-    ///
-    /// # Returns
-    ///
-    /// A new instance of `ContractCallManager`.
-    pub fn new(
-        contract_calls: HashMap<RuleID, ContractCall<T>>,
-        receiver: Arc<Mutex<UnboundedReceiver<ContractCallRawMessage>>>,
-        db_client: PostgresClient,
-    ) -> Self {
-        Self {
-            contract_calls,
-            receiver,
-            db_client,
-        }
-    }
-
+#[async_trait::async_trait]
+impl<T: JsonRpcClient> Manager for ContractCallManager<T> {
     /// Runs the contract call manager, processing messages from the receiver.
-    pub async fn run(&mut self) -> Result<(), WorkerError> {
+    async fn run(&mut self) -> Result<(), WorkerError> {
         loop {
             let msg = self
                 .receiver
@@ -105,6 +84,31 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
                 })?,
             )
             .await;
+        }
+    }
+}
+
+impl<T: JsonRpcClient> ContractCallManager<T> {
+    /// Creates a new `ContractCallManager` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_calls` - A map of contract calls indexed by rule ID.
+    /// * `receiver` - The channel to receive contract call messages.
+    /// * `db_client` - The Postgres client for database operations.
+    ///
+    /// # Returns
+    ///
+    /// A new instance of `ContractCallManager`.
+    pub fn new(
+        contract_calls: HashMap<RuleID, ContractCall<T>>,
+        receiver: Arc<Mutex<UnboundedReceiver<ContractCallRawMessage>>>,
+        db_client: PostgresClient,
+    ) -> Self {
+        Self {
+            contract_calls,
+            receiver,
+            db_client,
         }
     }
 

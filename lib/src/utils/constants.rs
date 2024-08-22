@@ -26,6 +26,3 @@ pub const INSERT_CONTRACT_EVENT_RULE: &str =
 pub const DB_SCHEMA_LOAD: &str = "SELECT * FROM %%TABLE_NAME%%";
 pub const DB_TABLE_NAME: &str = "%%TABLE_NAME%%";
 pub const DB_SCHEMA_MAX_ID: &str = "SELECT MAX(id) AS max_id FROM %%TABLE_NAME%%";
-
-/// The type of EVM chain ID's.
-pub type ChainID = u32;

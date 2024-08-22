@@ -1,23 +1,27 @@
-use ethers::types::U64;
 use ethers::{
     abi::{Abi, Event, ParamType},
     prelude::*,
+    types::U64,
 };
 
-use sqlx::postgres::PgRow;
-use sqlx::Row;
+use sqlx::{postgres::PgRow, Row};
 
-use watch_tower_lib::{cli::eth::EthClient, utils::constants::ChainID};
+use watch_tower_lib::{
+    cli::eth::EthClient,
+    utils::types::{ChainID, RuleID},
+};
 
 use super::{create_contracts, parse_i32_to_usize, parse_to_abi, parse_to_address};
 
-use crate::utils::constants::{
-    RuleID, DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-    DB_EVENT_INDEX_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
-    DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
-    DB_RULE_FILTER_COMPARATOR_COLUMN, DEFAULT_INDEX,
+use crate::utils::{
+    constants::{
+        DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
+        DB_EVENT_INDEX_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
+        DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_RULE_FILTER_COLUMN,
+        DB_RULE_FILTER_COMPARATOR_COLUMN, DEFAULT_INDEX,
+    },
+    error::{IndexType, WorkerError},
 };
-use crate::utils::error::{IndexType, WorkerError};
 
 /// Represents a log of contract events.
 #[derive(Clone, Debug)]

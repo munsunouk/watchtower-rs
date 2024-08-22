@@ -1,18 +1,16 @@
+use crate::{
+    rule::{contract_call::ContractCall, set_schedule},
+    utils::{
+        constants::{DEFAULT_BLOCK_NUMBER, MAX_BLOCK_LENGTH_LIMIT, NEW_BLOCK_OFFSET, NEXT_BLOCK},
+        error::WorkerError,
+        msg::ContractCallRawMessage,
+        traits::Fetcher,
+    },
+};
 use cron::Schedule;
-use ethers::abi::Token;
-use ethers::providers::JsonRpcClient;
-use ethers::types::U64;
+use ethers::{abi::Token, providers::JsonRpcClient, types::U64};
 use tokio::sync::mpsc::UnboundedSender;
 use watch_tower_lib::utils::error::ClientError;
-
-use crate::rule::contract_call::ContractCall;
-use crate::rule::set_schedule;
-use crate::utils::constants::{
-    DEFAULT_BLOCK_NUMBER, MAX_BLOCK_LENGTH_LIMIT, NEW_BLOCK_OFFSET, NEXT_BLOCK,
-};
-use crate::utils::error::WorkerError;
-use crate::utils::msg::ContractCallRawMessage;
-use crate::utils::traits::Fetcher;
 
 /// Struct representing a contract call fetcher.
 #[derive(Clone)]

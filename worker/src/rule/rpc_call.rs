@@ -1,13 +1,14 @@
+use std::sync::Arc;
+
 use super::parse_i32_to_usize;
 use ethers::types::U64;
 use reqwest::{Client, StatusCode};
-use sqlx::postgres::PgRow;
-use sqlx::Row;
-use watch_tower_lib::utils::error::ClientError;
+use sqlx::{postgres::PgRow, Row};
+use watch_tower_lib::{utils::error::ClientError, utils::types::RuleID};
 
 use crate::utils::constants::{
-    RuleID, DB_CALL_TIME_INTERVAL_COLUMN, DB_COMPARATOR_COLUMN, DB_EXPECTED_VALUE_COLUMN,
-    DB_ID_COLUMN, DB_URL_COLUMN,
+    DB_CALL_TIME_INTERVAL_COLUMN, DB_COMPARATOR_COLUMN, DB_EXPECTED_VALUE_COLUMN, DB_ID_COLUMN,
+    DB_URL_COLUMN,
 };
 use serde::{Deserialize, Serialize};
 
@@ -55,7 +56,7 @@ impl From<&PgRow> for RpcCallRule {
 #[derive(Clone)]
 pub struct RpcCall {
     pub rule: RpcCallRule,
-    pub client: Client,
+    pub client: Arc<Client>,
     request: JsonRpcRequest,
 }
 
@@ -70,7 +71,7 @@ impl RpcCall {
     /// # Returns
     ///
     /// A new instance of `RpcCall`.
-    pub fn new(client: Client, rule: RpcCallRule) -> Self {
+    pub fn new(client: Arc<Client>, rule: RpcCallRule) -> Self {
         let request = Self::get_rpc_request();
 
         Self {

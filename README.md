@@ -74,7 +74,7 @@ To run the worker, follow these steps:
 
 2. **Run the worker**:
    ```sh
-   ./target/release/watch_tower_worker
+   ./target/release/watch_tower_worker --config-path worker/src/utils/config/config.testnet.yaml
    ```
 
 The worker will start and begin processing tasks based on the configuration provided.

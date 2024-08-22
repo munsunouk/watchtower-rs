@@ -2,7 +2,7 @@
   "rpc_call_rule_data": [
     {
       "id": 1,
-      "name": "public-mainnet-01",
+      "name": "public-testnet-01",
       "url": "https://public-01.testnet.thebifrost.io/rpc",
       "expected_value": 200,
       "comparator": "!=",
