@@ -33,7 +33,7 @@ impl Fetcher for RpcCallFetcher {
     /// Processes the RPC call, fetching the RPC call status and sending the RPC call log.
     async fn process(&mut self) -> Result<(), WorkerError> {
         let status = match self.rpc_call.fetch_rpc_call_status().await {
-            Ok(token) => token,
+            Ok(status) => status,
             Err(err) => {
                 tracing::error!(
                     "[{}] ❗️ [Error: {}]",

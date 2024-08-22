@@ -71,7 +71,7 @@ impl<T: JsonRpcClient> Fetcher for ContractCallFetcher<T> {
                 from,
                 to
             );
-            self.replace_from_block(to);
+            self.set_from_block(to);
         }
 
         Ok(())
@@ -83,23 +83,25 @@ impl<T: JsonRpcClient> ContractCallFetcher<T> {
     ///
     /// # Arguments
     ///
-    /// * `contract_call` - The contract call to be fetched.
-    /// * `sender` - The channel sending event messages.
+    /// * `contract_call` - The contract call.
+    /// * `sender` - The sender for the contract call channel.
+    /// * `from_block` - The block number of RuleID.
+    /// * `call_time_interval` - The call time interval for each fetcher.
     ///
     /// # Returns
     ///
-    /// A new instance of `ContractCallFetcher`.
+    /// A `ContractCallFetcher` instance.
     pub fn new(
         contract_call: ContractCall<T>,
         sender: UnboundedSender<ContractCallRawMessage>,
-        from_block_number: U64,
+        from_block: U64,
         call_time_interval: u64,
     ) -> Self {
         Self {
             contract_call,
             sender,
             call_time_interval,
-            from_block: from_block_number,
+            from_block,
         }
     }
 
@@ -162,7 +164,7 @@ impl<T: JsonRpcClient> ContractCallFetcher<T> {
             from
         };
 
-        self.replace_from_block(from);
+        self.set_from_block(from);
 
         while from <= to {
             let token = self.contract_call.get_method_call(from.into()).await?;
@@ -175,7 +177,7 @@ impl<T: JsonRpcClient> ContractCallFetcher<T> {
 
     /// Replaces the from block with the given block number.
     #[inline]
-    fn replace_from_block(&mut self, to: U64) {
+    fn set_from_block(&mut self, to: U64) {
         self.from_block = to.saturating_add(U64::from(NEW_BLOCK_OFFSET));
     }
 }

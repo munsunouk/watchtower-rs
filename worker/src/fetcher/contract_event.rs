@@ -4,7 +4,7 @@ use ethers::{
     types::{Address, BlockNumber, Filter, Log, U64},
 };
 use futures::future::join_all;
-use std::collections::HashMap; // Add this import
+use std::collections::HashMap;
 
 use tokio::sync::mpsc::UnboundedSender;
 use watch_tower_lib::cli::eth::EthClient;
@@ -34,7 +34,7 @@ pub struct ContractEventFetcher<T> {
     /// The channel sending event messages.
     sender: UnboundedSender<ContractEventRawMessage>,
     /// the block numbers of RuleID by ChainId
-    from_block_numbers: HashMap<RuleID, U64>,
+    from_blocks: HashMap<RuleID, U64>,
     /// The call time interval for each fetcher.
     call_time_interval: u64,
     // The block from which to start fetching.
@@ -85,7 +85,7 @@ impl<T: JsonRpcClient> Fetcher for ContractEventFetcher<T> {
                 from,
                 to
             );
-            self.replace_from_block(to);
+            self.set_from_block(to);
         }
 
         Ok(())
@@ -93,29 +93,31 @@ impl<T: JsonRpcClient> Fetcher for ContractEventFetcher<T> {
 }
 
 impl<T: JsonRpcClient> ContractEventFetcher<T> {
-    /// Instantiates a new `ContractEventFetcher` instance.
+    /// Creates a new contract event fetcher.
     ///
     /// # Arguments
     ///
-    /// * `contract_event` - The contract event.
-    /// * `sender` - The channel sending event messages.
-    /// * `waiting_block` - The block waiting for enough confirmations.
+    /// * `client` - The client of the chain.
+    /// * `contract_events` - The contract events.
+    /// * `sender` - The sender for the contract event channel.
+    /// * `from_blocks` - The block numbers of RuleID by ChainId.
+    /// * `call_time_interval` - The call time interval for each fetcher.
     ///
     /// # Returns
     ///
-    /// A new instance of `ContractEventFetcher`.
+    /// A `ContractEventFetcher` instance.
     pub fn new(
         client: EthClient<T>,
         contract_events: HashMap<RuleID, ContractEvent<T>>,
         sender: UnboundedSender<ContractEventRawMessage>,
-        from_block_numbers: HashMap<RuleID, U64>,
+        from_blocks: HashMap<RuleID, U64>,
         call_time_interval: u64,
     ) -> Self {
         Self {
             client,
             sender,
             contract_events,
-            from_block_numbers,
+            from_blocks,
             call_time_interval,
             from_block: U64::from(DEFAULT_BLOCK_NUMBER),
         }
@@ -178,7 +180,7 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
 
     /// Gets the oldest block among Rules.
     fn get_oldest_block(&self) -> Result<&U64, WorkerError> {
-        self.from_block_numbers
+        self.from_blocks
             .values()
             .min()
             .ok_or(WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
@@ -189,7 +191,7 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
         let latest_block = self.get_latest_block_number().await?;
 
         let futures = self
-            .from_block_numbers
+            .from_blocks
             .iter_mut()
             .map(|(_, block)| async {
                 if *block == U64::from(DEFAULT_BLOCK_NUMBER) {
@@ -215,7 +217,7 @@ impl<T: JsonRpcClient> ContractEventFetcher<T> {
 
     /// Replaces the from block with the given block number.
     #[inline]
-    fn replace_from_block(&mut self, to: U64) {
+    fn set_from_block(&mut self, to: U64) {
         self.from_block = to.saturating_add(U64::from(NEW_BLOCK_OFFSET));
     }
 }

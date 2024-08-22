@@ -704,13 +704,13 @@ impl Runner {
     fn build_contract_call_fetcher<T: JsonRpcClient>(
         contract_call: ContractCall<T>,
         contract_call_sender: UnboundedSender<ContractCallRawMessage>,
-        from_block_number: U64,
+        from_block: U64,
         call_time_interval: u64,
     ) -> ContractCallFetcher<T> {
         ContractCallFetcher::new(
             contract_call,
             contract_call_sender,
-            from_block_number,
+            from_block,
             call_time_interval,
         )
     }
@@ -728,16 +728,14 @@ impl Runner {
     fn build_contract_call_fetchers(
         contract_calls: HashMap<RuleID, ContractCall<Http>>,
         contract_call_sender: UnboundedSender<ContractCallRawMessage>,
-        from_block_numbers: HashMap<RuleID, U64>,
+        from_blocks: HashMap<RuleID, U64>,
         call_time_intervals: HashMap<ChainID, u64>,
     ) -> Vec<ContractCallFetcher<Http>> {
         contract_calls
             .into_iter()
             .map(|(rule_id, contract_call)| {
                 let default_block_number = U64::from(DEFAULT_BLOCK_NUMBER);
-                let from_block_number = from_block_numbers
-                    .get(&rule_id)
-                    .unwrap_or(&default_block_number);
+                let from_block = from_blocks.get(&rule_id).unwrap_or(&default_block_number);
                 let call_time_interval = call_time_intervals
                     .get(&contract_call.rule.chain_id)
                     .unwrap_or(&DEFAULT_CALL_TIME_INTERVAL);
@@ -745,7 +743,7 @@ impl Runner {
                 Self::build_contract_call_fetcher(
                     contract_call,
                     contract_call_sender.clone(),
-                    *from_block_number,
+                    *from_block,
                     *call_time_interval,
                 )
             })
@@ -767,14 +765,14 @@ impl Runner {
         client: EthClient<T>,
         contract_events: HashMap<RuleID, ContractEvent<T>>,
         contract_event_sender: UnboundedSender<ContractEventRawMessage>,
-        from_block_numbers: HashMap<RuleID, U64>,
+        from_blocks: HashMap<RuleID, U64>,
         call_time_interval: u64,
     ) -> ContractEventFetcher<T> {
         ContractEventFetcher::new(
             client,
             contract_events,
             contract_event_sender,
-            from_block_numbers,
+            from_blocks,
             call_time_interval,
         )
     }
@@ -808,7 +806,7 @@ impl Runner {
                     }),
                     U64::from(DEFAULT_BLOCK_NUMBER),
                 );
-                let from_block_numbers = contract_event_blocks
+                let from_blocks = contract_event_blocks
                     .get(&chain_id)
                     .unwrap_or(&default_block_numbers);
                 let call_time_interval = call_time_intervals
@@ -823,7 +821,7 @@ impl Runner {
                     client.clone(),
                     contract_events,
                     contract_event_sender.clone(),
-                    from_block_numbers.clone(),
+                    from_blocks.clone(),
                     *call_time_interval,
                 );
                 Ok(result)
@@ -966,9 +964,10 @@ impl Runner {
 
                 match result {
                     Ok(res) => res,
-                    Err(_) => Err(WorkerError::GeneralShutdown(
-                        "Fetcher task panicked".to_string(),
-                    )),
+                    Err(err) => Err(WorkerError::GeneralShutdown(format!(
+                        "Fetcher task panicked: {:?}",
+                        err
+                    ))),
                 }
             }));
         }
@@ -986,9 +985,10 @@ impl Runner {
 
                 match result {
                     Ok(res) => res,
-                    Err(_) => Err(WorkerError::GeneralShutdown(
-                        "Manager task panicked".to_string(),
-                    )),
+                    Err(err) => Err(WorkerError::GeneralShutdown(format!(
+                        "Manager task panicked: {:?}",
+                        err
+                    ))),
                 }
             }));
         }
