@@ -128,7 +128,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_data() {
-        const DATA_PATH: &str = "./worker/src/utils/data/sample_data.json";
+        const DATA_PATH: &str = "./src/utils/data/sample_data.json";
+
         const DATABASE_URL: &str = "postgres://root:secret@localhost:5432/postgres";
 
         let mut rule_data = RuleData::new(DATA_PATH);

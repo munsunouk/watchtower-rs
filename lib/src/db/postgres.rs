@@ -209,13 +209,18 @@ impl PostgresClient {
 mod tests {
 
     use super::*;
+    use std::sync::Once;
     use tracing_subscriber;
+
+    static INIT: Once = Once::new();
 
     const DB_URL: &str = "postgres://root:secret@localhost:5432/postgres";
 
     #[tokio::test]
     async fn test_postgres_client() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
+        INIT.call_once(|| {
+            tracing_subscriber::fmt::init();
+        });
 
         let client = PostgresClient::new(DB_URL).await?;
 

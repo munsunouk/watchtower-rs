@@ -40,7 +40,7 @@ Before you begin, ensure you have the following installed on your machine:
 
    - Run the `test_postgres_client` function to create the necessary database schema:
      ```sh
-     cargo test --test test_postgres_client -- --nocapture
+     cargo test --package watch_tower_lib --lib -- db::postgres::tests::test_postgres_client --exact --show-output
      ```
 
 4. **Insert Rules**:
@@ -50,7 +50,7 @@ Before you begin, ensure you have the following installed on your machine:
 
    - Alternatively sample data is given in the json file, you can insert the sample data into the database by running the following command:
      ```sh
-     cargo test --test test_insert_data -- --nocapture
+     cargo test --package watch_tower_worker --bin watch_tower_worker -- utils::data::tests::test_insert_data --exact --show-output
      ```
 
 5. **Configure the database**:

@@ -25,4 +25,4 @@ pub const INSERT_CONTRACT_EVENT_RULE: &str =
 // DB SCHEMA
 pub const DB_SCHEMA_LOAD: &str = "SELECT * FROM %%TABLE_NAME%%";
 pub const DB_TABLE_NAME: &str = "%%TABLE_NAME%%";
-pub const DB_SCHEMA_MAX_ID: &str = "SELECT MAX(id) AS max_id FROM %%TABLE_NAME%%";
+pub const DB_SCHEMA_MAX_ID: &str = "SELECT COALESCE(MAX(id), 0) AS max_id FROM %%TABLE_NAME%%";
