@@ -94,24 +94,29 @@ impl RuleData {
         self.contract_event_rule_data = contract_event_rules;
     }
 
-    async fn insert_rule(&mut self, postgres_client: PostgresClient) {
+    /// Updates the rules in the database.
+    ///
+    /// # Arguments
+    ///
+    /// * `postgres_client` - The PostgreSQL client.
+    async fn update_rule(&mut self, postgres_client: PostgresClient) {
         self.check_rule_id(postgres_client.clone()).await;
 
         if let Some(rules) = self.rpc_call_rule_data.clone() {
             for rule in rules {
-                let _ = postgres_client.insert_rpc_call_rule(rule).await;
+                let _ = postgres_client.update_rpc_call_rule(rule).await;
             }
         }
 
         if let Some(rules) = self.contract_call_rule_data.clone() {
             for rule in rules {
-                let _ = postgres_client.insert_contract_call_rule(rule).await;
+                let _ = postgres_client.update_contract_call_rule(rule).await;
             }
         }
 
         if let Some(rules) = self.contract_event_rule_data.clone() {
             for rule in rules {
-                let _ = postgres_client.insert_contract_event_rule(rule).await;
+                let _ = postgres_client.update_contract_event_rule(rule).await;
             }
         }
     }
@@ -129,6 +134,6 @@ mod tests {
         let mut rule_data = RuleData::new(DATA_PATH);
 
         let postgres_client = PostgresClient::new(DATABASE_URL).await.unwrap();
-        rule_data.insert_rule(postgres_client).await;
+        rule_data.update_rule(postgres_client).await;
     }
 }

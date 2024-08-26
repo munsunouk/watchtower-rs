@@ -10,7 +10,7 @@ use crate::utils::constants::{
 
 use crate::db::data::{ContractCallRuleData, ContractEventRuleData, RpcCallRuleData};
 
-///Postgres's Pool type for the DatabasePool
+/// Postgres's Pool type for the DatabasePool
 #[derive(Debug, Clone)]
 pub struct PostgresClient {
     pool: Pool<Postgres>,
@@ -42,7 +42,7 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_rpc_call_log(
+    pub async fn update_rpc_call_log(
         &self,
         value: &str,
         rule_id: i32,
@@ -56,7 +56,7 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_contract_call_log(
+    pub async fn update_contract_call_log(
         &self,
         value: &str,
         block_number: i32,
@@ -72,7 +72,7 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_contract_event_log(
+    pub async fn update_contract_event_log(
         &self,
         value: &str,
         tx_hash: &str,
@@ -88,7 +88,7 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_contract_event_block_logs(
+    pub async fn update_contract_event_block_logs(
         &self,
         block_number: i32,
     ) -> Result<(), DatabaseError> {
@@ -100,7 +100,7 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_contract_call_block_logs(
+    pub async fn update_contract_call_block_logs(
         &self,
         id: i32,
         block_number: i32,
@@ -144,7 +144,7 @@ impl PostgresClient {
         Ok(result)
     }
 
-    pub async fn insert_rpc_call_rule(
+    pub async fn update_rpc_call_rule(
         &self,
         rule_data: RpcCallRuleData,
     ) -> Result<(), DatabaseError> {
@@ -161,7 +161,7 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_contract_call_rule(
+    pub async fn update_contract_call_rule(
         &self,
         rule_data: ContractCallRuleData,
     ) -> Result<(), DatabaseError> {
@@ -183,7 +183,7 @@ impl PostgresClient {
         Ok(())
     }
 
-    pub async fn insert_contract_event_rule(
+    pub async fn update_contract_event_rule(
         &self,
         rule_data: ContractEventRuleData,
     ) -> Result<(), DatabaseError> {

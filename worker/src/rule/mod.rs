@@ -537,7 +537,6 @@ pub fn parse_decode_token(
     param_type: &ParamType,
     rule_filter: &[String],
     rule_filter_comparator: &[String],
-
     expected_value_filter: &str,
     expected_value_filter_comparator: &str,
 ) -> Result<Option<String>, WorkerError> {

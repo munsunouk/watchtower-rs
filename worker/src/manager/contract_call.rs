@@ -58,7 +58,7 @@ impl<T: JsonRpcClient> Manager for ContractCallManager<T> {
                 )?;
 
                 if let Some(decoded_token) = decoded_token {
-                    self.insert_contract_call_log(
+                    self.update_contract_call_log(
                         msg.rule_id.try_into().map_err(|_| {
                             WorkerError::InvalidTypeConvertError(msg.rule_id.to_string())
                         })?,
@@ -75,7 +75,7 @@ impl<T: JsonRpcClient> Manager for ContractCallManager<T> {
                 last_block_number = block_number;
             }
 
-            self.insert_contract_call_block_logs(
+            self.update_contract_call_block_logs(
                 msg.rule_id
                     .try_into()
                     .map_err(|_| WorkerError::InvalidTypeConvertError(msg.rule_id.to_string()))?,
@@ -112,16 +112,16 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
         }
     }
 
-    /// Inserts a contract call log into the database.
+    /// Updates a contract call log into the database.
     ///
     /// # Arguments
     ///
     /// * `rule_id` - The ID of the rule associated with the contract call.
     /// * `decoded_token` - The decoded token value to be logged.
     /// * `block_number` - The block number associated with the contract call.
-    async fn insert_contract_call_log(&self, rule_id: i32, decoded_token: &str, block_number: i32) {
+    async fn update_contract_call_log(&self, rule_id: i32, decoded_token: &str, block_number: i32) {
         self.db_client
-            .insert_contract_call_log(decoded_token, block_number, rule_id)
+            .update_contract_call_log(decoded_token, block_number, rule_id)
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(
@@ -132,14 +132,14 @@ impl<T: JsonRpcClient> ContractCallManager<T> {
             });
     }
 
-    /// Inserts a contract call block log into the database.
+    /// Updates a contract call block log into the database.
     ///
     /// # Arguments
     ///
     /// * `block_number` - The block number associated with the contract call.
-    async fn insert_contract_call_block_logs(&self, rule_id: i32, block_number: i32) {
+    async fn update_contract_call_block_logs(&self, rule_id: i32, block_number: i32) {
         self.db_client
-            .insert_contract_call_block_logs(rule_id, block_number)
+            .update_contract_call_block_logs(rule_id, block_number)
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(

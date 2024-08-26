@@ -49,7 +49,7 @@ impl Manager for RpcCallManager {
             let result = parse_compare(&status, &expected_value, &rpc_call.rule.comparator);
 
             if result.is_some() {
-                self.insert_rpc_call_log(
+                self.update_rpc_call_log(
                     msg.rule_id.try_into().map_err(|_| {
                         WorkerError::InvalidTypeConvertError(msg.rule_id.to_string())
                     })?,
@@ -91,15 +91,15 @@ impl RpcCallManager {
         }
     }
 
-    /// Inserts an RPC call log into the database.
+    /// Updates an RPC call log into the database.
     ///
     /// # Arguments
     ///
     /// * `rule_id` - The ID of the rule associated with the RPC call.
     /// * `value` - The value to be logged.
-    async fn insert_rpc_call_log(&self, rule_id: i32, value: &str) {
+    async fn update_rpc_call_log(&self, rule_id: i32, value: &str) {
         self.db_client
-            .insert_rpc_call_log(value, rule_id)
+            .update_rpc_call_log(value, rule_id)
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(

@@ -43,7 +43,7 @@ impl<T: JsonRpcClient> Manager for ContractEventManager<T> {
                 .ok_or(WorkerError::InvalidMessage)?;
 
             if msg.event_logs.is_empty() {
-                self.insert_contract_event_block_logs(msg.block_number.try_into().map_err(
+                self.update_contract_event_block_logs(msg.block_number.try_into().map_err(
                     |_| WorkerError::InvalidTypeConvertError(msg.block_number.to_string()),
                 )?)
                 .await;
@@ -54,7 +54,7 @@ impl<T: JsonRpcClient> Manager for ContractEventManager<T> {
             let mut stream = tokio_stream::iter(msg.event_logs);
 
             while let Some(log) = stream.next().await {
-                for (_, event) in self.contract_events.iter() {
+                for event in self.contract_events.values() {
                     if event.is_target_event(log.topics.get(event.rule.event_index).ok_or(
                         WorkerError::InvalidIndex(IndexType::USize(event.rule.event_index)),
                     )?)? {
@@ -80,17 +80,17 @@ impl<T: JsonRpcClient> Manager for ContractEventManager<T> {
                         )?;
 
                         if let Some(decoded_value) = decoded_token {
-                            if let Some(tx_log) = log.transaction_hash {
-                                let tx_log = format!("{:?}", tx_log);
+                            if let Some(tx_hash) = log.transaction_hash {
+                                let tx_hash = format!("{:?}", tx_hash);
 
-                                self.insert_contract_event_log(
+                                self.update_contract_event_log(
                                     event.rule.id.try_into().map_err(|_| {
                                         WorkerError::InvalidTypeConvertError(
                                             event.rule.id.to_string(),
                                         )
                                     })?,
                                     &decoded_value,
-                                    &tx_log,
+                                    &tx_hash,
                                 )
                                 .await;
 
@@ -104,7 +104,7 @@ impl<T: JsonRpcClient> Manager for ContractEventManager<T> {
                     }
                 }
 
-                self.insert_contract_event_block_logs(msg.block_number.try_into().map_err(
+                self.update_contract_event_block_logs(msg.block_number.try_into().map_err(
                     |_| WorkerError::InvalidTypeConvertError(msg.block_number.to_string()),
                 )?)
                 .await;
@@ -137,14 +137,14 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
         }
     }
 
-    /// Inserts a contract event block log into the database.
+    /// Updates a contract event block log into the database.
     ///
     /// # Arguments
     ///
     /// * `block_number` - The block number associated with the contract event.
-    async fn insert_contract_event_block_logs(&self, block_number: i32) {
+    async fn update_contract_event_block_logs(&self, block_number: i32) {
         self.db_client
-            .insert_contract_event_block_logs(block_number)
+            .update_contract_event_block_logs(block_number)
             .await
             .unwrap_or_else(|err| {
                 let chain_id = self
@@ -168,16 +168,16 @@ impl<T: JsonRpcClient> ContractEventManager<T> {
             });
     }
 
-    /// Inserts a contract event log into the database.
+    /// Updates a contract event log into the database.
     ///
     /// # Arguments
     ///
     /// * `rule_id` - The ID of the rule associated with the contract event.
     /// * `value` - The value to be logged.
     /// * `tx_log` - The transaction log associated with the contract event.
-    async fn insert_contract_event_log(&self, rule_id: i32, value: &str, tx_log: &str) {
+    async fn update_contract_event_log(&self, rule_id: i32, value: &str, tx_log: &str) {
         self.db_client
-            .insert_contract_event_log(value, tx_log, rule_id)
+            .update_contract_event_log(value, tx_log, rule_id)
             .await
             .unwrap_or_else(|err| {
                 tracing::error!(
