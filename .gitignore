@@ -1,6 +1,10 @@
 target/
 Cargo.lock
 
+# Sample data
+worker/src/utils/data/
+worker/src/utils/configs/
+
 ### macOS ###
 # General
 .DS_Store
