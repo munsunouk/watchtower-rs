@@ -3,94 +3,26 @@ use ethers::{
     prelude::*,
 };
 
-use super::{create_contracts, encode_token, parse_i32_to_usize, parse_to_abi, parse_to_address};
+use std::convert::TryFrom;
+
+use super::{create_contracts, encode_token, parse_string_to_values};
 use sqlx::{postgres::PgRow, Row};
 use watch_tower_lib::{
     cli::eth::EthClient,
+    rule::contract_call::ContractCallRule,
     utils::{
-        error::ClientError,
+        constants::{
+            DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
+            DB_CHECK_BLOCK_INTERVAL_COLUMN, DB_ID_COLUMN, DB_METHOD_PARAMS_COLUMN, DB_NAME_COLUMN,
+            DB_TARGET_BLOCK_NUMBER_COLUMN, DB_VALUES_COLUMN, DEFAULT_INDEX,
+        },
+        error::{ClientError, IndexType},
+        parse_i32_to_usize, parse_to_abi, parse_to_address,
         types::{ChainID, RuleID},
     },
 };
 
-use crate::utils::{
-    constants::{
-        DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-        DB_CHECK_BLOCK_INTERVAL_COLUMN, DB_EXPECTED_VALUE_FILTER_COLUMN,
-        DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN, DB_ID_COLUMN, DB_METHOD_PARAMS_COLUMN,
-        DB_RULE_FILTER_COLUMN, DB_RULE_FILTER_COMPARATOR_COLUMN, DEFAULT_FN_INPUT_INDEX,
-        DEFAULT_INDEX,
-    },
-    error::{IndexType, WorkerError},
-};
-
-/// Represents a log of contract calls.
-#[derive(Clone, Debug)]
-pub struct ContractCallBlockLog {
-    pub id: RuleID,
-    pub block_number: U64,
-}
-
-impl From<&PgRow> for ContractCallBlockLog {
-    /// Creates a `ContractCallBlockLog` from a database row.
-    ///
-    /// # Arguments
-    ///
-    /// * `row` - A reference to a `PgRow`.
-    ///
-    /// # Returns
-    ///
-    /// A new instance of `ContractCallBlockLog`.
-    fn from(row: &PgRow) -> Self {
-        ContractCallBlockLog {
-            id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
-            block_number: U64::from(parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN))),
-        }
-    }
-}
-
-/// Represents a rule for contract calls.
-#[derive(Debug, Clone)]
-pub struct ContractCallRule {
-    pub id: RuleID,
-    pub chain_id: ChainID,
-    pub address: Address,
-    pub abi: Abi,
-    pub method_params: Vec<String>,
-    pub rule_filter: Vec<String>,
-    pub rule_filter_comparator: Vec<String>,
-    pub expected_value_filter: String,
-    pub expected_value_filter_comparator: String,
-    pub check_block_interval: U64,
-}
-
-impl From<&PgRow> for ContractCallRule {
-    /// Creates a `ContractCallRule` from a database row.
-    ///
-    /// # Arguments
-    ///
-    /// * `row` - A reference to a `PgRow`.
-    ///
-    /// # Returns
-    ///
-    /// A new instance of `ContractCallRule`.
-    fn from(row: &PgRow) -> Self {
-        ContractCallRule {
-            id: parse_i32_to_usize(row.get(DB_ID_COLUMN)),
-            chain_id: parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)) as ChainID,
-            address: parse_to_address(row.get(DB_ADDRESS_COLUMN)),
-            abi: parse_to_abi(row.get(DB_ABI_COLUMN)),
-            method_params: row.get(DB_METHOD_PARAMS_COLUMN),
-            rule_filter: row.get(DB_RULE_FILTER_COLUMN),
-            rule_filter_comparator: row.get(DB_RULE_FILTER_COMPARATOR_COLUMN),
-            expected_value_filter: row.get(DB_EXPECTED_VALUE_FILTER_COLUMN),
-            expected_value_filter_comparator: row.get(DB_EXPECTED_VALUE_FILTER_COMPARATOR_COLUMN),
-            check_block_interval: U64::from(parse_i32_to_usize(
-                row.get(DB_CHECK_BLOCK_INTERVAL_COLUMN),
-            )),
-        }
-    }
-}
+use crate::utils::{constants::DEFAULT_FN_INPUT_INDEX, error::WorkerError};
 
 /// Represents a contract call.
 #[derive(Clone)]
@@ -101,7 +33,8 @@ pub struct ContractCall<T> {
 }
 
 impl<T: JsonRpcClient> ContractCall<T> {
-    /// Creates a new `ContractCall` instance.
+    /// # Description
+    /// This function creates a new `ContractCall` instance.
     ///
     /// # Arguments
     ///
@@ -122,7 +55,8 @@ impl<T: JsonRpcClient> ContractCall<T> {
         }
     }
 
-    /// Gets the function from the contract ABI.
+    /// # Description
+    /// This function gets the function from the contract ABI.
     ///
     /// # Returns
     ///
@@ -131,12 +65,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
         let abi = self
             .contracts
             .first()
-            .unwrap_or_else(|| {
-                panic!(
-                    "{}",
-                    WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)).to_string()
-                )
-            })
+            .ok_or(WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?
             .abi();
 
         let function = abi
@@ -147,20 +76,20 @@ impl<T: JsonRpcClient> ContractCall<T> {
         Ok(function)
     }
 
-    /// Gets the function name.
+    /// # Description
+    /// This function gets the function name.
     ///
     /// # Returns
     ///
     /// A result containing the function name as a string.
-    pub fn get_function_name(&self) -> Result<String, WorkerError> {
+    pub fn get_function_name(&self) -> Result<&str, WorkerError> {
         let function = self.get_function()?;
 
-        let function_name = function.name.clone();
-
-        Ok(function_name)
+        Ok(&function.name)
     }
 
-    /// Gets the input parameter type.
+    /// # Description
+    /// This function gets the input parameter type.
     ///
     /// # Returns
     ///
@@ -168,12 +97,15 @@ impl<T: JsonRpcClient> ContractCall<T> {
     pub fn get_input_param_type(&self) -> Result<ParamType, WorkerError> {
         let function = self.get_function()?;
 
-        let function_input = function.inputs.clone();
+        let function_input = &function.inputs;
 
         let input_param_type = if !function_input.is_empty() {
-            let input_param = function_input
-                .get(DEFAULT_FN_INPUT_INDEX)
-                .unwrap_or_else(|| panic!("{}", WorkerError::InvalidTypeABI.to_string()));
+            let input_param =
+                function_input
+                    .get(DEFAULT_FN_INPUT_INDEX)
+                    .ok_or(WorkerError::InvalidIndex(IndexType::USize(
+                        DEFAULT_FN_INPUT_INDEX,
+                    )))?;
 
             input_param.kind.clone()
         } else {
@@ -183,7 +115,8 @@ impl<T: JsonRpcClient> ContractCall<T> {
         Ok(input_param_type)
     }
 
-    /// Gets the output parameter type.
+    /// # Description
+    /// This function gets the output parameter type.
     ///
     /// # Returns
     ///
@@ -191,7 +124,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
     pub fn get_output_param_type(&self) -> Result<ParamType, WorkerError> {
         let function = self.get_function()?;
 
-        let function_output = function.outputs.clone();
+        let function_output = &function.outputs;
 
         let output_param_types: Vec<ParamType> = function_output
             .iter()
@@ -203,7 +136,8 @@ impl<T: JsonRpcClient> ContractCall<T> {
         Ok(output_param_type)
     }
 
-    /// Gets the method parameter token.
+    /// # Description
+    /// This function gets the method parameter token.
     ///
     /// # Returns
     ///
@@ -215,7 +149,8 @@ impl<T: JsonRpcClient> ContractCall<T> {
         encode_token(method_params, &input_param_type)
     }
 
-    /// Gets the method call.
+    /// # Description
+    /// This function gets the method call.
     ///
     /// # Arguments
     ///
@@ -235,7 +170,7 @@ impl<T: JsonRpcClient> ContractCall<T> {
         self.client
             .contracts_call(
                 self.contracts.clone(),
-                &function_name,
+                function_name,
                 method_params,
                 block_id,
             )
@@ -245,24 +180,88 @@ impl<T: JsonRpcClient> ContractCall<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use std::str::FromStr;
     use tracing_subscriber;
 
-    use watch_tower_lib::{db::postgres::PostgresClient, utils::error::DatabaseError};
+    use watch_tower_lib::{
+        cli::{db::postgres::PostgresClient, eth::ProviderMetadata},
+        utils::{error::DatabaseError, DbRuleType},
+    };
 
     #[tokio::test]
     async fn test_postgres_client() -> Result<(), DatabaseError> {
         tracing_subscriber::fmt::init();
 
-        let client = PostgresClient::new("postgres://root:secret@localhost:5432/postgres").await?;
+        let client = PostgresClient::new("<YOUR_DATABASE_URL>").await?;
 
         // client.initiate().await?;
-        let db_result = client.select_table("contract_call_rule").await?;
+        let db_result = client.select_table(DbRuleType::ContractCall).await?;
 
-        let raw_rule = ContractCallRule::from(&db_result[0]);
+        let raw_rule = ContractCallRule::try_from(&db_result[0]).unwrap();
 
         println!("{:?}", raw_rule);
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_get_output_param_type() -> Result<(), WorkerError> {
+        let client = PostgresClient::new("<YOUR_DATABASE_URL>").await.unwrap();
+
+        let db_result = client.select_table(DbRuleType::ContractCall).await.unwrap();
+
+        let raw_rule = ContractCallRule::try_from(&db_result[0]).unwrap();
+
+        let function_output = raw_rule.abi.functions().next().unwrap().outputs.clone();
+
+        let output_param_types: Vec<ParamType> = function_output
+            .iter()
+            .map(|param| param.kind.clone())
+            .collect();
+
+        let output_param_type = ParamType::Tuple(output_param_types);
+
+        println!("{:?}", output_param_type);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_contract_call() {
+        let rpc = "<YOUR_RPC_URL>";
+
+        let client = EthClient::<Http>::new(
+            ProviderMetadata::new(
+                "bifrost".to_string(),
+                vec![rpc.to_string()],
+                3068 as ChainID,
+            ),
+            vec![Arc::new(Provider::try_from(rpc).unwrap())],
+        );
+
+        let abi_str = r#"
+[{"name": "latestRoundData", "type": "function", "inputs": [], "outputs": [{"name": "roundId", "type": "uint80", "internalType": "uint80"}, {"name": "answer", "type": "int256", "internalType": "int256"}, {"name": "startedAt", "type": "uint256", "internalType": "uint256"}, {"name": "updatedAt", "type": "uint256", "internalType": "uint256"}, {"name": "answeredInRound", "type": "uint80", "internalType": "uint80"}], "stateMutability": "view"}]"#;
+
+        let abi = parse_to_abi(serde_json::from_str(abi_str).unwrap()).unwrap();
+
+        let address = Address::from_str("0x77348eAee88F7bce55D0ff3cd74f69E91c2A7165").unwrap();
+
+        let contracts: Vec<Contract<Provider<Http>>> =
+            create_contracts(&address, &abi, client.get_providers());
+
+        let method_call = client
+            .contracts_call(
+                contracts,
+                "latestRoundData",
+                Token::Tuple(vec![]),
+                BlockId::Number(BlockNumber::Number(U64::from(21149110))),
+            )
+            .await
+            .unwrap();
+
+        println!("{:?}", method_call);
     }
 }

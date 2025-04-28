@@ -8,8 +8,8 @@ use ethers::{
     contract::Contract,
     providers::{JsonRpcClient, Provider},
     types::{
-        Block, BlockId, Filter, Log, SyncingStatus, Transaction, TransactionReceipt, TxpoolContent,
-        H256, U256, U64,
+        Address, Block, BlockId, Filter, Log, SyncingStatus, Transaction, TransactionReceipt,
+        TxpoolContent, H256, U256, U64,
     },
 };
 use serde::{de::DeserializeOwned, Serialize};
@@ -34,8 +34,8 @@ impl<T: JsonRpcClient> EthClient<T> {
     }
 
     /// Returns name which chain this client interacts with.
-    pub fn get_chain_name(&self) -> String {
-        self.metadata.name.clone()
+    pub fn get_chain_name(&self) -> &String {
+        &self.metadata.name
     }
 
     /// Returns id which chain this client interacts with.
@@ -53,28 +53,29 @@ impl<T: JsonRpcClient> EthClient<T> {
     /// until it exceeds the maximum retries.
     async fn rpc_call<P, R>(&self, method: &str, params: P) -> Result<R, ClientError>
     where
-        P: Debug + Serialize + Send + Sync + Clone,
+        P: Debug + Serialize + Send + Sync + Copy,
         R: Serialize + DeserializeOwned + Debug + Send,
     {
         let mut error_msg = String::default();
 
         for provider in self.providers.iter() {
-            match provider.request(method, params.clone()).await {
+            match provider.request(method, params).await {
                 Ok(result) => return Ok(result),
                 Err(error) => {
-                    error_msg = error.to_string();
+                    error_msg = format!(
+                        "[{}] ❗️ [method: {}] [Error: {}]",
+                        self.get_chain_name(),
+                        method,
+                        error.to_string()
+                    );
                 }
             }
             sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
         }
-        tracing::error!(
-            "[{}] ❗️ [method: {}] [Error: {}]",
-            &self.get_chain_name(),
-            method,
-            ClientError::InternalProviderError(error_msg.clone())
-        );
 
-        Err(ClientError::InternalProviderError(error_msg))
+        let client_error = ClientError::InternalProviderError(error_msg);
+
+        Err(client_error)
     }
 
     /// Make a contract call to the chain provider via the internal connection, and return the
@@ -100,32 +101,29 @@ impl<T: JsonRpcClient> EthClient<T> {
                     return Ok(result);
                 }
                 Err(error) => {
-                    error_msg = error.to_string();
+                    error_msg = format!(
+                        "[{}] ❗️ [method: {}] [Error: {}]",
+                        self.get_chain_name(),
+                        method,
+                        error.to_string()
+                    );
                 }
             }
             sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
         }
 
-        tracing::error!(
-            "[{}] ❗️ [method: {}] [Error: {}]",
-            &self.get_chain_name(),
-            method,
-            ClientError::InternalProviderError(error_msg.clone()),
-        );
+        let client_error = ClientError::InternalProviderError(error_msg);
 
-        Err(ClientError::InternalProviderError(error_msg))
+        Err(client_error)
     }
 
     /// Verifies whether the configured chain ID and the provider's actual chain ID matches.
     pub async fn verify_chain_id(&self) -> Result<(), ClientError> {
         let chain_id: U256 = self.rpc_call("eth_chainId", ()).await?;
         if self.get_chain_id() != chain_id.as_u32() {
-            tracing::error!(
-                "[{}] ❗️ [{}]",
-                &self.get_chain_name(),
-                ClientError::InvalidChainId
-            );
-            return Err(ClientError::InvalidChainId);
+            return Err(ClientError::InvalidChainId(
+                self.get_chain_name().to_string(),
+            ));
         }
         Ok(())
     }
@@ -148,9 +146,18 @@ impl<T: JsonRpcClient> EthClient<T> {
         self.rpc_call("eth_getBlockByNumber", (id, false)).await
     }
 
+    /// Retrieves the balance of the given address at the given block.
+    pub async fn get_balance(
+        &self,
+        address: Address,
+        block_id: BlockId,
+    ) -> Result<U256, ClientError> {
+        self.rpc_call("eth_getBalance", (address, block_id)).await
+    }
+
     /// Retrieves the transaction of the given transaction hash.
     pub async fn get_transaction(&self, hash: H256) -> Result<Option<Transaction>, ClientError> {
-        self.rpc_call("eth_getTransactionByHash", vec![hash]).await
+        self.rpc_call("eth_getTransactionByHash", (hash,)).await
     }
 
     /// Retrieves the transaction receipt of the given transaction hash.
@@ -158,7 +165,7 @@ impl<T: JsonRpcClient> EthClient<T> {
         &self,
         hash: H256,
     ) -> Result<Option<TransactionReceipt>, ClientError> {
-        self.rpc_call("eth_getTransactionReceipt", vec![hash]).await
+        self.rpc_call("eth_getTransactionReceipt", (hash,)).await
     }
 
     /// Returns the details of all transactions currently pending for inclusion in the next
@@ -169,11 +176,46 @@ impl<T: JsonRpcClient> EthClient<T> {
 
     /// Returns an array of all logs matching the given filter.
     pub async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ClientError> {
-        self.rpc_call("eth_getLogs", vec![filter]).await
+        self.rpc_call("eth_getLogs", (filter,)).await
     }
 
     /// Returns an object with data about the sync status or false.
     pub async fn is_syncing(&self) -> Result<SyncingStatus, ClientError> {
         self.rpc_call("eth_syncing", ()).await
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use ethers::{
+        providers::{Http, Provider},
+        types::U256,
+    };
+
+    use crate::utils::types::ChainID;
+
+    use super::{EthClient, ProviderMetadata};
+
+    #[tokio::test]
+    async fn test() {
+        let client = EthClient::<Http>::new(
+            ProviderMetadata::new(
+                "<YOUR CHAIN NAME>".to_string(),
+                vec!["<YOUR RPC URL>".to_string()],
+                3068 as ChainID,
+            ),
+            vec![Arc::new(Provider::try_from("<YOUR RPC URL>").unwrap())],
+        );
+
+        let balance: U256 = client
+            .rpc_call(
+                "eth_getBalance",
+                ["0x1e1d0be9865afe4a13435bba659e539690841c32", "latest"],
+            )
+            .await
+            .unwrap();
+        println!("balance: {:?}", balance);
     }
 }

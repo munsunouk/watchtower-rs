@@ -24,6 +24,8 @@ tokio-stream = { workspace = true }
 reqwest = { workspace = true }
 thiserror = { workspace = true }
 clap = { workspace = true }
-
+strum_macros = { workspace = true }
+strum = { workspace = true }
+postgres = { workspace = true }
 [[bin]]
 name = "watch_tower_worker"

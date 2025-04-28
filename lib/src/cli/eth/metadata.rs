@@ -21,7 +21,10 @@ impl ProviderMetadata {
                 .iter()
                 .map(|url| {
                     Url::parse(url).unwrap_or_else(|_| {
-                        panic!("{}", ClientError::InvalidProviderURL.to_string())
+                        panic!(
+                            "{}",
+                            ClientError::InvalidProviderURL(url.to_string()).to_string()
+                        )
                     })
                 })
                 .collect(),

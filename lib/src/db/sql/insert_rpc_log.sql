@@ -1,1 +1,0 @@
-INSERT INTO rpc_call_log (value, rule_id) VALUES ($1, $2)

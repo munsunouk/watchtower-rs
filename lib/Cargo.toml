@@ -17,6 +17,14 @@ ethers = { workspace = true }
 url = { workspace = true }
 chrono = { workspace = true }
 tracing-subscriber = { workspace = true }
-
+pest = { workspace = true }
+pest_derive = { workspace = true }
+reqwest = { workspace = true }
+serde_yaml = { workspace = true }
+validator = { workspace = true }
+slack = { workspace = true }
+futures = { workspace = true }
+postgres = { workspace = true }
+postgres-types = { workspace = true }
 [lib]
 name = "watch_tower_lib"

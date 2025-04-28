@@ -1,0 +1,33 @@
+WHITESPACE              = _{ " " | "\t" | "\n" }
+arithmetic_operator     =  { "+" | "-" }
+multiplicative_operator =  { "*" | "/" }
+logical_operator        =  { "&&" | "||" }
+comparison_operator     =  { ">=" | "<=" | "==" | "!=" | ">" | "<" }
+boolean_literal         =  { "true" | "false" }
+
+// Operators
+expression = { operation ~ (logical_operator ~ operation)* }
+operation  = { term ~ (comparison_operator ~ term)? }
+term       = { factor ~ (arithmetic_operator ~ factor)* }
+factor     = { primary ~ (multiplicative_operator ~ primary)* }
+primary    = { boolean_literal | contract_call_access | latest_block_call_access | number | identifier | "(" ~ expression ~ ")" }
+
+// specific identifiers
+blockchain = _{ "Ethereum" | "Bifrost" }
+service    = _{ "BiFi" | "Oracle" | "BtcFi" }
+contract   = _{ "USDC_POOL" | "USDT_POOL" | "WBTC_POOL" | "BFC_POOL" | "WBTC" | "BTC" | "BFC" | "BTCB" | "NATIVEBTC" }
+property   = _{ "Liquidity" | "LatestPrice" | "LatestUpdate" }
+
+identifier = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_")* }
+number     = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+
+// access
+contract_call_access     = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ property }
+latest_block_call_access = { "LatestBlock" ~ "(" ~ blockchain ~ ")" }
+
+// Statements
+assignment_stmt = { identifier ~ "=" ~ expression ~ ";" }
+expression_stmt = { expression ~ ";" }
+
+// Program
+program = { assignment_stmt | expression_stmt }

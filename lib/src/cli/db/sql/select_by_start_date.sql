@@ -1,0 +1,1 @@
+SELECT * FROM %%TABLE_NAME%% WHERE created_at >= to_timestamp($1)

@@ -1,0 +1,48 @@
+WHITESPACE              = _{ " " | "\t" | "\n" }
+arithmetic_operator     =  { "+" | "-" }
+multiplicative_operator =  { "*" | "/" }
+logical_operator        =  { "&&" | "||" }
+comparison_operator     =  { ">=" | "<=" | "==" | "!=" | ">" | "<" }
+boolean_literal         =  { "true" | "false" }
+
+eval_literal = { "*" | "/" | "+" | "-" | ">" | "<" | ">=" | "<=" | "==" | "!=" | "&&" | "||" }
+
+operation         =  { expression ~ (logical_operator ~ expression)* }
+expression        =  { term ~ (comparison_operator ~ term)? }
+term              =  { factor ~ (arithmetic_operator ~ factor)* }
+factor            =  { primary ~ (multiplicative_operator ~ primary)* }
+primary           =  { boolean_literal | number | assign_identifier | identifier | "(" ~ expression ~ ")" }
+number            = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+identifier        = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "-" | ".")* }
+assign_identifier = @{ "eval" ~ "(" ~ identifier ~ ")" }
+ethereum_address  = @{ "0x" ~ ASCII_HEX_DIGIT{40} }
+
+evaluation = { assign_command ~ (eval_literal ~ assign_command)* ~ return_command }
+
+// JSON Components
+abi_list   = { "[" ~ abi_object* ~ "]" }
+abi_object = { "{" ~ (json_pair | call_type_pair | event_type_pair) ~ ("," ~ (json_pair | call_type_pair | event_type_pair))* ~ "}" }
+
+json_pair       = { json_key ~ ":" ~ json_value }
+json_key        = { "\"" ~ identifier ~ "\"" }
+json_value      = { boolean_literal | json_string | number | json_array | abi_object | ethereum_address }
+json_string     = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+json_array      = { "[" ~ json_value* ~ ("," ~ json_value)* ~ "]" }
+json_values     = { "{" ~ identifier ~ ("," ~ identifier)* ~ "}" }
+call_type_pair  = { "\"name\"" ~ ":" ~ json_string ~ "," ~ "\"type\"" ~ ":" ~ json_string }
+event_type_pair = { "\"indexed\"" ~ ":" ~ json_string ~ "," ~ "\"internalType\"" ~ ":" ~ json_string ~ "," ~ "\"name\"" ~ ":" ~ json_string ~ "," ~ "\"type\"" ~ ":" ~ json_string }
+
+key_value_pair =  { identifier ~ "=" ~ value_content }
+value_content  = _{ ethereum_address | number | abi_list | json_values | identifier }
+// operation_value_content = _{ ethereum_address | number | abi_list | operation | json_values | identifier }
+
+// New format rules
+get_command        = { "get" ~ "(" ~ key_value_pair ~ ("," ~ key_value_pair)* ~ ")" }
+get_return_command = { "get" ~ "(" ~ key_value_pair ~ ("," ~ key_value_pair)* ~ ")" }
+assign_command     = { ("assign" ~ "(" ~ identifier ~ ",")? ~ get_command ~ (")")? }
+return_command     = { "," ~ get_return_command ~ (eval_literal ~ get_return_command)* }
+
+// Combined rules
+rule = _{ get_command | evaluation }
+
+rules = { rule | evaluation }
