@@ -10,24 +10,28 @@ expression = { operation ~ (logical_operator ~ operation)* }
 operation  = { term ~ (comparison_operator ~ term)? }
 term       = { factor ~ (arithmetic_operator ~ factor)* }
 factor     = { primary ~ (multiplicative_operator ~ primary)* }
-primary    = { boolean_literal | contract_call_access | latest_block_call_access | number | identifier | "(" ~ expression ~ ")" }
+primary    = { boolean_literal | function_call | number | identifier | "(" ~ expression ~ ")" }
 
 // specific identifiers
 blockchain = _{ "Ethereum" | "Bifrost" }
-service    = _{ "BiFi" | "Oracle" | "BtcFi" }
+service    = _{ "ChainlinkOracle" | "BifnetOracle" | "Bifagg" }
 contract   = _{ "USDC_POOL" | "USDT_POOL" | "WBTC_POOL" | "BFC_POOL" | "WBTC" | "BTC" | "BFC" | "BTCB" | "NATIVEBTC" }
-property   = _{ "Liquidity" | "LatestPrice" | "LatestUpdate" }
+
+// property
+contract_property   = _{ ("Liquidity" | "LatestPrice" | "LatestUpdate") ~ "(" ~ expression ~ ")" }
+blockchain_property =  { "LatestBlock" ~ "(" ~ expression? ~ ")" }
 
 identifier = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_")* }
 number     = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 
-// access
-contract_call_access     = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ property }
-latest_block_call_access = { "LatestBlock" ~ "(" ~ blockchain ~ ")" }
+// call
+function_call     = { contract_call | latest_block_call }
+contract_call     = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ contract_property }
+latest_block_call = { blockchain ~ "." ~ blockchain_property }
 
 // Statements
 assignment_stmt = { identifier ~ "=" ~ expression ~ ";" }
 expression_stmt = { expression ~ ";" }
 
 // Program
-program = { assignment_stmt | expression_stmt }
+program = { (assignment_stmt | expression_stmt)+ }

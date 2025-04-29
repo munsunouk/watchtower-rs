@@ -6,23 +6,26 @@ pub mod error;
 pub mod log;
 pub mod msg;
 pub mod setting;
-pub mod state;
 pub mod traits;
 pub mod types;
+use constants::CONFIG_PATH;
 use ethers::{
     abi::Token,
     providers::Http,
     types::{Address, BlockId, BlockNumber, Filter, Log, U256, U64},
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use std::convert::TryFrom;
 use std::sync::atomic::Ordering::SeqCst;
 use tokio::runtime::Runtime;
-use watch_tower_lib::utils::{error::ClientError, parse_token_to_i64};
+use watch_tower_lib::{
+    config::set_config,
+    utils::{error::ClientError, parse_token_to_i64},
+};
 
 use crate::rule::{
-    get::{get_latest_block_number, get_u256},
-    store::{assign, eval, eval_u256, Store},
+    get::{get, get_latest_block_number, get_u256},
+    store::{assign, eval, SymbolTable, TokenConvert},
     ContractCall, ContractEvent,
 };
 
@@ -132,21 +135,18 @@ pub fn run_with_runtime() -> Result<(), WorkerError> {
     }
 }
 
-async fn get_result() -> Result<(), WorkerError> {
-    let mut store = Store::new();
+use std::fs;
 
-    let abi = json!([{
-        "name": "latestRoundData",
-        "type": "function",
-        "inputs": [],
-        "outputs": [
-            {"name": "roundId", "type": "uint80", "internalType": "uint80"},
-            {"name": "answer", "type": "int256", "internalType": "int256"},
-            {"name": "startedAt", "type": "uint256", "internalType": "uint256"},
-            {"name": "updatedAt", "type": "uint256", "internalType": "uint256"},
-            {"name": "answeredInRound", "type": "uint80", "internalType": "uint80"}
-        ]
-    }]);
+async fn get_result() -> Result<(), WorkerError> {
+    let mut store = SymbolTable::new();
+
+    let config = set_config(CONFIG_PATH);
+    let abi_path = config.abi_config.get(0).unwrap().path.clone();
+    let abi_content = fs::read_to_string(abi_path).map_err(|e| {
+        WorkerError::InvalidTypeConvertError(format!("Failed to read ABI file: {}", e))
+    })?;
+    let abi: Value = serde_json::from_str(&abi_content)
+        .map_err(|e| WorkerError::InvalidTypeConvertError(format!("Failed to parse ABI: {}", e)))?;
 
     assign(
         &mut store,
@@ -154,33 +154,33 @@ async fn get_result() -> Result<(), WorkerError> {
         get_latest_block_number(3068).await,
     );
 
-    let val1 = get_u256((
+    let val1 = get::<U256, _>((
         3068,
         "0x6A74c7356820Dc036d0e43e07eDeaCBeF3DDD882".to_string(),
         abi.clone(),
         vec![],
         "1".to_string(),
-        eval_u256(&store, "block_number"),
+        eval::<U256>(&store, "block_number"),
     ))
     .await;
 
-    let val2 = get_u256((
+    let val2 = get::<U256, _>((
         3068,
         "0xC60afe0AAfC863ED24B4a8A26D952C581bDAE6b2".to_string(),
         abi.clone(),
         vec![],
         "1".to_string(),
-        eval_u256(&store, "block_number") - 1,
+        eval::<U256>(&store, "block_number") - 1,
     ))
     .await;
 
-    let val3 = get_u256((
+    let val3 = get::<U256, _>((
         3068,
         "0x40c8BB8036351EF29b41ea8AFEbA76ac2d8A96bF".to_string(),
         abi,
         vec![],
         "1".to_string(),
-        eval_u256(&store, "block_number") - 2,
+        eval::<U256>(&store, "block_number") - 2,
     ))
     .await;
 

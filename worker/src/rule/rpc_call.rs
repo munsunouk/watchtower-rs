@@ -134,64 +134,11 @@ mod test {
     use ethers::abi::ParamType;
     use reqwest::{Client, Method};
     use serde_json::json;
-    use watch_tower_lib::{
-        cli::db::data::RpcCallRuleData,
-        utils::{constants::RPC_CALL_RULE_TYPE, evaluation::parse_rules},
-    };
+    use watch_tower_lib::{cli::db::data::RpcCallRuleData, utils::constants::RPC_CALL_RULE_TYPE};
 
     use crate::rule::{convert_value_to_param_type, decodes_token};
 
     use super::*;
-
-    #[tokio::test]
-    async fn test_fetch_api_call_with_body() {
-        let test_input = "rpccall { Public_Call1 to url <YOUR_RPC_URL> call type body method type POST body { \"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"eth_getBalance\", \"params\": [\"0x51c9abb01e2ef6495daafc56778b499e8d3992ff\", \"latest\"] } values{balance is 1.0.0} call every 10 seconds } filter balance >= 0 move balance";
-
-        // let (rules, _eval_rules) = parse_rules(test_input).unwrap();
-        // let client = Arc::new(Client::new());
-
-        // for rule in rules {
-        //     if let Some(rule) = rule {
-        //         if let Some(Token::String(ref token_type)) = rule.get("type") {
-        //             match token_type.as_str() {
-        //                 RPC_CALL_RULE_TYPE => {
-        //                     let rule_data = RpcCallRuleData::from_tokens(rule).unwrap();
-
-        //                     let method_type = parse_string_to_method(rule_data.method_type);
-        //                     let url = rule_data.url;
-        //                     let params = rule_data.api_body;
-
-        //                     let res = client
-        //                         .request(method_type, url.clone())
-        //                         .json(&params)
-        //                         .send()
-        //                         .await
-        //                         .unwrap();
-
-        //                     let status: U64 = res.status().as_u16().into();
-        //                     let body = res.json::<Value>().await.unwrap();
-        //                     println!("{:?}", body);
-
-        //                     let status_token = Token::Uint(U256::from(status.as_u64()));
-        //                     let body_token = convert_value_to_token(&body).unwrap();
-        //                     println!("body_token: {:?}", body_token);
-
-        //                     let tokens = Token::Tuple(vec![status_token, body_token]);
-        //                     let body_param_type = convert_value_to_param_type(&body).unwrap();
-        //                     let param_type =
-        //                         ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
-        //                     println!("tokens:{:?}", tokens);
-
-        //                     let result =
-        //                         decodes_token(&tokens, &param_type, &vec![vec![1, 2]]).unwrap();
-        //                     println!("result: {:?}", result);
-        //                 }
-        //                 _ => {}
-        //             }
-        //         }
-        //     }
-        // }
-    }
 
     // #[tokio::test]
     // async fn test_fetch_api_call_with_query() {

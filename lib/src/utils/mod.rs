@@ -1,6 +1,5 @@
 pub mod constants;
 pub mod error;
-pub mod evaluation;
 pub mod types;
 
 use crate::{
@@ -24,7 +23,6 @@ use constants::{
     RPC_CALL_LOG_TYPE, RPC_CALL_RULE, RPC_CALL_RULE_TYPE, STRING_COMPARATOR_TYPE,
     UINT_ARITHMETIC_TYPE, UINT_COMPARATOR_TYPE,
 };
-use evaluation::EvaluationRule;
 use reqwest::Method;
 use serde_json::{from_str, Value};
 use sqlx::types::Json;
@@ -327,7 +325,7 @@ pub fn compare_token(left: &Token, right: &Token, comparator: &str) -> Option<To
 /// * `right` - The right token.
 /// * `operator` - The operator string.
 ///
-fn arithmetic_token(left: &Token, right: &Token, operator: &str) -> Option<Token> {
+pub fn arithmetic_token(left: &Token, right: &Token, operator: &str) -> Option<Token> {
     match (left, right) {
         (Token::Uint(value), Token::Uint(expected_value))
         | (Token::Uint(value), Token::Int(expected_value)) => {
@@ -541,30 +539,30 @@ pub async fn load_contract_event_rules(
     Ok(contract_events)
 }
 
-/// # Description
-/// This function loads evaluations from the database.
-/// # Arguments
-/// * `db_client` - A reference to the Postgres client.
-///
-/// # Returns
-///
-/// A vector of `EvaluationRule`.
-pub async fn load_evaluations(
-    db_client: &PostgresClient,
-) -> Result<Vec<EvaluationRule>, GeneralError> {
-    let result = db_client
-        .select_table(DbRuleType::Evaluation)
-        .await
-        .map_err(|e| GeneralError::InvalidDatabase(e.to_string()))?;
+// /// # Description
+// /// This function loads evaluations from the database.
+// /// # Arguments
+// /// * `db_client` - A reference to the Postgres client.
+// ///
+// /// # Returns
+// ///
+// /// A vector of `EvaluationRule`.
+// pub async fn load_evaluations(
+//     db_client: &PostgresClient,
+// ) -> Result<Vec<EvaluationRule>, GeneralError> {
+//     let result = db_client
+//         .select_table(DbRuleType::Evaluation)
+//         .await
+//         .map_err(|e| GeneralError::InvalidDatabase(e.to_string()))?;
 
-    result
-        .iter()
-        .map(|row| {
-            EvaluationRule::try_from(row)
-                .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))
-        })
-        .collect::<Result<Vec<_>, _>>()
-}
+//     result
+//         .iter()
+//         .map(|row| {
+//             EvaluationRule::try_from(row)
+//                 .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))
+//         })
+//         .collect::<Result<Vec<_>, _>>()
+// }
 
 #[cfg(test)]
 mod test {

@@ -1,86 +1,64 @@
+use ethers::{abi::Token, types::U256};
 use std::collections::HashMap;
 
-use ethers::{abi::Token, types::U256};
-
-pub struct Store {
-    pub u256: HashMap<String, U256>,
-    pub bool: HashMap<String, bool>,
-    pub string: HashMap<String, String>,
-    pub array: HashMap<String, Vec<Token>>,
+pub trait TokenConvert {
+    fn to_token(self) -> Token;
+    fn from_token(token: Token) -> Self;
 }
 
-impl Store {
+impl TokenConvert for U256 {
+    fn to_token(self) -> Token {
+        Token::Int(self)
+    }
+
+    fn from_token(token: Token) -> Self {
+        if let Token::Int(v) = token {
+            v
+        } else {
+            panic!("Expected Token::Int, got {:?}", token);
+        }
+    }
+}
+
+pub struct SymbolTable {
+    pub store: HashMap<String, Token>,
+}
+
+impl SymbolTable {
     pub fn new() -> Self {
         Self {
-            u256: HashMap::new(),
-            bool: HashMap::new(),
-            string: HashMap::new(),
-            array: HashMap::new(),
+            store: HashMap::new(),
         }
     }
 
-    pub fn assign<T>(&mut self, key: String, value: T)
-    where
-        T: Into<StoreValue>,
-    {
-        match value.into() {
-            StoreValue::U256(v) => {
-                self.u256.insert(key, v);
-            }
-            StoreValue::Bool(v) => {
-                self.bool.insert(key, v);
-            }
-            StoreValue::String(v) => {
-                self.string.insert(key, v);
-            }
-            StoreValue::Array(v) => {
-                self.array.insert(key, v);
-            }
-        }
+    pub fn assign<T: TokenConvert>(&mut self, key: String, value: T) {
+        self.store.insert(key, value.to_token());
     }
 
-    pub fn eval<T>(&self, key: &str) -> T
-    where
-        T: From<StoreValue>,
-    {
-        if let Some(v) = self.u256.get(key) {
-            return StoreValue::U256(*v).into();
-        }
-        if let Some(v) = self.bool.get(key) {
-            return StoreValue::Bool(*v).into();
-        }
-        if let Some(v) = self.string.get(key) {
-            return StoreValue::String(v.clone()).into();
-        }
-        if let Some(v) = self.array.get(key) {
-            return StoreValue::Array(v.clone()).into();
-        } else {
-            panic!("Invalid key");
-        }
+    pub fn eval<T: TokenConvert>(&self, key: &str) -> T {
+        self.store
+            .get(key)
+            .cloned()
+            .map(T::from_token)
+            .unwrap_or_else(|| panic!("Invalid key: {}", key))
     }
 }
 
-pub fn assign<T>(store: &mut Store, key: String, value: T)
-where
-    T: Into<StoreValue>,
-{
-    store.assign(key, value);
-}
+// pub fn assign<T: TokenConvert>(store: &mut SymbolTable, key: String, value: T) {
+//     store.assign(key, value);
+// }
 
-pub fn eval<T>(store: &Store, key: &str) -> T
-where
-    T: From<StoreValue>,
-{
+// pub fn assign<T: TokenConvert>(store: &mut SymbolTable, key: String, value: T) {
+//     store.assign(key, value);
+// }
+
+pub fn eval<T: TokenConvert>(store: &SymbolTable, key: &str) -> T {
     store.eval(key)
 }
 
-pub fn eval_u256(store: &Store, key: &str) -> U256 {
-    eval::<U256>(store, key)
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StoreValue {
-    U256(U256),
+    Uint(U256),
     Bool(bool),
     String(String),
     Array(Vec<Token>),
@@ -88,7 +66,7 @@ pub enum StoreValue {
 
 impl From<U256> for StoreValue {
     fn from(v: U256) -> Self {
-        StoreValue::U256(v)
+        StoreValue::Uint(v)
     }
 }
 
@@ -113,7 +91,7 @@ impl From<Vec<Token>> for StoreValue {
 impl From<StoreValue> for U256 {
     fn from(value: StoreValue) -> Self {
         match value {
-            StoreValue::U256(v) => v,
+            StoreValue::Uint(v) => v,
             _ => panic!("Cannot convert StoreValue to U256"),
         }
     }

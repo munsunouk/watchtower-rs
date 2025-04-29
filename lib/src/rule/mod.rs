@@ -25,7 +25,6 @@ use crate::{
         constants::{DEFAULT_INDEX, FILTER_INDEX_SPLIT_CHAR},
         convert_hex_param, convert_hex_token,
         error::{GeneralError, IndexType},
-        evaluation::EvaluationRule,
         DbRuleType,
     },
 };

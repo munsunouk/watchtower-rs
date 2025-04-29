@@ -19,6 +19,8 @@ pub struct Configuration {
     pub sentry_config: SentryConfig,
     #[validate]
     pub postgres_config: PostgresConfig,
+    #[validate]
+    pub abi_config: Vec<AbiConfig>,
 }
 
 /// # Description
@@ -60,10 +62,15 @@ pub struct PostgresConfig {
 }
 
 /// # Description
-/// This struct represents the configuration for Slack.
+/// This struct represents the configuration for ABI.
 /// # Arguments
-/// * `token` - The Slack token.
-/// * `channel` - The Slack channel.
+/// * `name` - The name of the ABI.
+/// * `path` - The path to the ABI file.
+#[derive(Default, Debug, Clone, Deserialize, Validate)]
+pub struct AbiConfig {
+    pub name: String,
+    pub path: String,
+}
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
 pub struct SlackConfig {
     #[validate(length(min = 1))]

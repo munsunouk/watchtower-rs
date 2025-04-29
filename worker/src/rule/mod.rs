@@ -2,7 +2,7 @@
 pub mod contract_call;
 /// Module for contract event rules and related functionality.
 pub mod contract_event;
-pub mod db;
+// pub mod db;
 pub mod get;
 /// Module for RPC call rules and related functionality.
 pub mod rpc_call;
@@ -26,8 +26,12 @@ use ethers::{
 use watch_tower_lib::{
     cli::db::postgres::PostgresClient,
     utils::{
-        constants::DEFAULT_INDEX, convert_hex_param, convert_hex_token, error::IndexType,
-        evaluation::EvaluationRule, DbRuleType,
+        constants::DEFAULT_INDEX,
+        convert_hex_param,
+        convert_hex_token,
+        error::IndexType,
+        DbRuleType,
+        // evaluation::EvaluationRule,
     },
 };
 
