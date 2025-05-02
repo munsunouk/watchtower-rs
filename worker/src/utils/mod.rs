@@ -23,10 +23,13 @@ use watch_tower_lib::{
     utils::{error::ClientError, parse_token_to_i64},
 };
 
-use crate::rule::{
-    get::{get, get_latest_block_number, get_u256},
-    store::{assign, eval, SymbolTable, TokenConvert},
-    ContractCall, ContractEvent,
+use crate::{
+    parse::parse_result,
+    rule::{
+        get::{get, get_latest_block_number},
+        store::{assign, eval, SymbolTable, TokenConvert},
+        ContractCall, ContractEvent,
+    },
 };
 
 use self::{
@@ -135,56 +138,35 @@ pub fn run_with_runtime() -> Result<(), WorkerError> {
     }
 }
 
-use std::fs;
-
 async fn get_result() -> Result<(), WorkerError> {
-    let mut store = SymbolTable::new();
-
     let config = set_config(CONFIG_PATH);
-    let abi_path = config.abi_config.get(0).unwrap().path.clone();
-    let abi_content = fs::read_to_string(abi_path).map_err(|e| {
-        WorkerError::InvalidTypeConvertError(format!("Failed to read ABI file: {}", e))
-    })?;
-    let abi: Value = serde_json::from_str(&abi_content)
-        .map_err(|e| WorkerError::InvalidTypeConvertError(format!("Failed to parse ABI: {}", e)))?;
 
-    assign(
-        &mut store,
-        "block_number".to_string(),
-        get_latest_block_number(3068).await,
-    );
+    let mut symbol_table = SymbolTable::new();
 
-    let val1 = get::<U256, _>((
-        3068,
-        "0x6A74c7356820Dc036d0e43e07eDeaCBeF3DDD882".to_string(),
-        abi.clone(),
-        vec![],
-        "1".to_string(),
-        eval::<U256>(&store, "block_number"),
-    ))
-    .await;
+    // let input = "
+    //     bifrostBN = Bifrost.LatestBlock();
 
-    let val2 = get::<U256, _>((
-        3068,
-        "0xC60afe0AAfC863ED24B4a8A26D952C581bDAE6b2".to_string(),
-        abi.clone(),
-        vec![],
-        "1".to_string(),
-        eval::<U256>(&store, "block_number") - 1,
-    ))
-    .await;
+    //     ChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
+    //     BifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN - 1);
+    //     BifaggBTC = Bifrost.Bifagg.BTC.LatestPrice(bifrostBN -2);
 
-    let val3 = get::<U256, _>((
-        3068,
-        "0x40c8BB8036351EF29b41ea8AFEbA76ac2d8A96bF".to_string(),
-        abi,
-        vec![],
-        "1".to_string(),
-        eval::<U256>(&store, "block_number") - 2,
-    ))
-    .await;
+    //     (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifnetBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifaggBTC;
+    //     ";
 
-    let result = (val1 + val2 + val3) / 3;
+    let input = "
+        bifrostBN = Bifrost.LatestBlock(); 
+        eth_address = 0x51c9abb01e2ef6495daafc56778b499e8d3992ff;
+
+        Bifrost.EthBalance(eth_address, bifrostBN);
+        ";
+
+    // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3;
+    // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC;
+    // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifnetBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifaggBTC;
+
+    let result = parse_result(&config, &mut symbol_table, input)
+        .await
+        .unwrap();
 
     println!("result: {:?}", result);
 

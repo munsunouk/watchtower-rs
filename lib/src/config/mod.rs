@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashMap};
 use validator::Validate;
 
 use crate::utils::{error::GeneralError, types::ChainID};
@@ -20,7 +20,11 @@ pub struct Configuration {
     #[validate]
     pub postgres_config: PostgresConfig,
     #[validate]
-    pub abi_config: Vec<AbiConfig>,
+    pub contract_config: Vec<ContractConfig>,
+    #[validate]
+    pub call_target: Vec<ContractTargetValue>,
+    #[validate]
+    pub blockchain_target: Vec<BlockchainTargetValue>,
 }
 
 /// # Description
@@ -62,20 +66,64 @@ pub struct PostgresConfig {
 }
 
 /// # Description
-/// This struct represents the configuration for ABI.
+/// This struct represents the configuration for Address.
 /// # Arguments
-/// * `name` - The name of the ABI.
-/// * `path` - The path to the ABI file.
+/// * `service` - The service name.
+/// * `contract` - The contract name.
+/// * `address` - The address of the Address.
+/// * `params` - The params of the Address.
+/// * `target_index` - The target index of the Address.
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
-pub struct AbiConfig {
-    pub name: String,
+pub struct ContractConfig {
+    pub service: String,
+    pub contract: String,
+    pub address: String,
     pub path: String,
 }
+
+/// # Description
+/// This struct represents the configuration for ContractTargetValue.
+/// # Arguments
+/// * `name` - The name of the ContractTargetValue.
+/// * `params` - The params of the ContractTargetValue.
+/// * `target_index` - The target index of the ContractTargetValue.
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
+pub struct ContractTargetValue {
+    pub name: String,
+    pub params: Vec<String>,
+    pub target_index: String,
+}
+
+/// # Description
+/// This struct represents the configuration for Metadata.
+/// # Arguments
+/// * `address` - The address of the Metadata.
+#[derive(Default, Debug, Clone, Deserialize, Validate)]
+pub struct Metadata {
+    pub address: String,
+}
+
+/// # Description
+/// This struct represents the configuration for BlockchainTargetValue.
+/// # Arguments
+/// * `name` - The name of the BlockchainTargetValue.
+/// * `function_name` - The function name of the BlockchainTargetValue.
+/// * `metadata` - The metadata of the BlockchainTargetValue.
+#[derive(Default, Debug, Clone, Deserialize, Validate)]
+pub struct BlockchainTargetValue {
+    pub name: String,
+    pub params: Vec<String>,
+    pub metadata: Option<Metadata>,
+}
+
+/// # Description
+/// This struct represents the configuration for Slack.
+/// # Arguments
+/// * `token` - The Slack token.
+/// * `channel` - The Slack channel.
 pub struct SlackConfig {
-    #[validate(length(min = 1))]
     pub token: String,
-    #[validate(length(min = 1))]
+
     pub channel: String,
 }
 

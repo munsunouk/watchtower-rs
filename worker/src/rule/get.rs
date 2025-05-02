@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use ethers::{
     abi::{decode, Token},
     providers::Http,
-    types::{H256, U256},
+    types::{BlockId, BlockNumber, H256, U256},
 };
 use serde_json::Value;
 use tokio_stream::StreamExt;
@@ -13,7 +13,10 @@ use watch_tower_lib::{
     rule::{
         contract_call::ContractCallRule, contract_event::ContractEventRule, rpc_call::RpcCallRule,
     },
-    utils::{parse_i32_to_usize, parse_token_to_i64, types::ChainID, DbRuleType, RpcCallType},
+    utils::{
+        parse_i32_to_usize, parse_string_to_address, parse_token_to_i64, parse_u256_to_u64,
+        types::ChainID, DbRuleType, RpcCallType,
+    },
 };
 
 use crate::{
@@ -341,6 +344,28 @@ impl GetContext {
 
         Ok(Token::Uint(U256::from(block_number.as_u64())))
     }
+
+    pub async fn get_eth_balance(
+        &self,
+        chain_id: i32,
+        address: String,
+        block_number: U256,
+    ) -> Result<Token, WorkerError> {
+        let chain_id =
+            parse_i32_to_usize(chain_id).map_err(|e| WorkerError::InvalidMessage)? as ChainID;
+
+        let block_number = BlockId::Number(BlockNumber::Number(parse_u256_to_u64(block_number)));
+
+        let address = parse_string_to_address(address).map_err(|e| WorkerError::InvalidMessage)?;
+
+        let client = self.eth_clients.get(&chain_id).unwrap();
+        let balance = client
+            .get_balance(address, block_number)
+            .await
+            .map_err(|err| WorkerError::InvalidMessage)?;
+
+        Ok(Token::Uint(balance))
+    }
 }
 
 pub trait TokenConvertible: Sized {
@@ -384,34 +409,26 @@ impl TokenConvertible for Vec<Token> {
     }
 }
 
-pub async fn get<T, P>(params: P) -> T
+pub async fn get<P>(params: P) -> Token
 where
     P: Into<GetRequest>,
-    T: TokenConvertible,
 {
     let config = set_config(CONFIG_PATH);
     let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
-    let token = get_context.raw_get(params).await;
-    T::from_token(token)
+    get_context.raw_get(params).await
 }
 
-pub async fn get_latest_block_number(chain_id: i32) -> U256 {
+pub async fn get_latest_block_number(chain_id: i32) -> Token {
     let config = set_config(CONFIG_PATH);
     let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
-    let token = get_context.get_latest_block_number(chain_id).await.unwrap();
-    U256::from_token(token)
+    get_context.get_latest_block_number(chain_id).await.unwrap()
 }
 
-pub async fn get_string<P>(params: P) -> String
-where
-    P: Into<GetRequest>,
-{
-    get::<String, P>(params).await
-}
-
-pub async fn get_u256<P>(params: P) -> U256
-where
-    P: Into<GetRequest>,
-{
-    get::<U256, P>(params).await
+pub async fn get_eth_balance(chain_id: i32, address: String, block_number: U256) -> Token {
+    let config = set_config(CONFIG_PATH);
+    let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
+    get_context
+        .get_eth_balance(chain_id, address, block_number)
+        .await
+        .unwrap()
 }

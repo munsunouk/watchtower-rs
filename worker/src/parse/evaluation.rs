@@ -7,6 +7,10 @@ use sqlx::{postgres::PgRow, Row};
 use watch_tower_lib::cli::db::postgres::{
     select_assign_data_sync, select_fetched_raw_data_with_filter, PostgresClient, Query, SelectData,
 };
+use watch_tower_lib::config::{
+    BlockchainTargetValue, Configuration, ContractConfig, ContractTargetValue, EVMProvider,
+};
+use watch_tower_lib::utils::types::ChainID;
 use watch_tower_lib::utils::{
     constants::{
         BOOLEAN_LITERAL_FALSE, BOOLEAN_LITERAL_TRUE, DB_EXPECTED_VALUE_COLUMN, DB_ID_COLUMN,
@@ -24,6 +28,9 @@ use watch_tower_lib::utils::error::IndexType;
 use pest::iterators::Pair;
 use pest::Parser;
 use pest_derive::Parser;
+use std::fs;
+use std::future::Future;
+use std::pin::Pin;
 use std::{collections::HashMap, str::FromStr};
 
 use watch_tower_lib::utils::{
@@ -37,7 +44,9 @@ use watch_tower_lib::utils::{
 
 use futures::executor::block_on;
 
-use crate::rule::store::{assign, SymbolTable, TokenConvert};
+use crate::rule::get::{get, get_eth_balance, get_latest_block_number, ContractParams};
+use crate::rule::store::{assign, eval, SymbolTable, TokenConvert};
+use crate::utils::error::WorkerError;
 
 /// # Description
 /// This struct represents an evaluation rule.
@@ -67,6 +76,14 @@ impl TryFrom<&PgRow> for EvaluationRule {
 #[grammar = "parse/evaluation.pest"]
 pub struct RuleEvaluationParser;
 
+pub type ParsePairFuture<'a> = Pin<Box<dyn Future<Output = Result<Token, GeneralError>> + 'a>>;
+
+pub struct Context<'a> {
+    pub config: &'a Configuration,
+    pub symbol_table: &'a mut SymbolTable,
+    pub variables: &'a mut HashMap<String, ParseResultType>,
+}
+
 /// ParseValues is the function to parse the values.
 /// # Description
 /// This function parses the values of the rule.
@@ -76,107 +93,480 @@ pub struct RuleEvaluationParser;
 /// * `rule_name` - The rule name.
 /// # Returns
 /// * `(HashMap<(String, String), String>, Vec<Token>)` - The rule values and values.
-pub fn parse_pair(
-    symbol_table: &mut SymbolTable,
-    result_vec: &mut HashMap<String, String>,
-    pair: Pair<Rule>,
-) -> Result<Token, GeneralError> {
-    let mut rule_values = HashMap::new();
-    let mut values = Vec::new();
+pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePairFuture<'a> {
+    Box::pin(async move {
+        match pair.as_rule() {
+            Rule::program => {
+                let inner = pair.into_inner();
 
-    match pair.as_rule() {
-        Rule::expression_stmt => {
-            let inner = pair.into_inner();
+                let mut result = Token::Bool(true);
 
-            let result = for unwrapped_pair in inner {
-                parse_pair(symbol_table, result_vec, unwrapped_pair)?;
-            };
+                for unwrapped_pair in inner {
+                    result = parse_pair(unwrapped_pair, context).await?;
+                }
 
-            Ok(result)
-        }
-
-        Rule::assignment_stmt => {
-            let mut inner = pair.into_inner();
-
-            let identifer = inner
-                .next()
-                .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-
-            let _equal = inner
-                .next()
-                .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-
-            let expression = while let Some(op) = inner.next() {
-                let next = inner
-                    .next()
-                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-
-                parse_pair(symbol_table, result_vec, next)?;
-            };
-
-            assign(symbol_table, identifer.as_str().to_string(), expression);
-
-            Ok(Token::Bool(true))
-        }
-
-        // operation level parsing
-        Rule::expression => {
-            let mut inner = pair.into_inner();
-            let first = inner
-                .next()
-                .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-            let mut result = parse_pair(symbol_table, result_vec, first)?;
-
-            while let Some(op) = inner.next() {
-                let next = inner
-                    .next()
-                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                let right = parse_pair(symbol_table, result_vec, next)?;
-
-                result = match op.as_str() {
-                    LOGIC_OPERATOR_AND => {
-                        if result.type_check(&ParamType::Bool) && right.type_check(&ParamType::Bool)
-                        {
-                            Token::Bool(
-                                result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
-                                    && right.into_bool().ok_or(GeneralError::InvalidTypeConvert)?,
-                            )
-                        } else {
-                            return Err(GeneralError::InvalidTypeConvert);
-                        }
-                    }
-                    LOGIC_OPERATOR_OR => {
-                        if result.type_check(&ParamType::Bool) && right.type_check(&ParamType::Bool)
-                        {
-                            Token::Bool(
-                                result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
-                                    || right.into_bool().ok_or(GeneralError::InvalidTypeConvert)?,
-                            )
-                        } else {
-                            return Err(GeneralError::InvalidTypeConvert);
-                        }
-                    }
-                    _ => return Err(GeneralError::InvalidOperator(op.as_str().to_string())),
-                };
+                Ok(result)
             }
-            Ok(result)
+
+            Rule::expression_stmt => {
+                let inner = pair.into_inner();
+
+                let mut result = Token::Bool(true);
+
+                for unwrapped_pair in inner {
+                    result = parse_pair(unwrapped_pair, context).await?;
+                }
+
+                Ok(result)
+            }
+
+            Rule::assignment_stmt => {
+                let mut inner = pair.into_inner();
+
+                let identifer = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+
+                let first = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+                let result = parse_pair(first, context).await?;
+
+                assign(
+                    context.symbol_table,
+                    identifer.as_str().to_string(),
+                    result.clone(),
+                );
+                context.variables.clear();
+
+                Ok(result)
+            }
+
+            // operation level parsing
+            Rule::expression => {
+                let mut inner = pair.into_inner();
+                let first = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+                let mut result = parse_pair(first, context).await?;
+
+                while let Some(op) = inner.next() {
+                    let next = inner
+                        .next()
+                        .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+                    let right = parse_pair(next, context).await?;
+
+                    result = match op.as_str() {
+                        LOGIC_OPERATOR_AND => {
+                            if result.type_check(&ParamType::Bool)
+                                && right.type_check(&ParamType::Bool)
+                            {
+                                Token::Bool(
+                                    result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
+                                        && right
+                                            .into_bool()
+                                            .ok_or(GeneralError::InvalidTypeConvert)?,
+                                )
+                            } else {
+                                return Err(GeneralError::InvalidTypeConvert);
+                            }
+                        }
+                        LOGIC_OPERATOR_OR => {
+                            if result.type_check(&ParamType::Bool)
+                                && right.type_check(&ParamType::Bool)
+                            {
+                                Token::Bool(
+                                    result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
+                                        || right
+                                            .into_bool()
+                                            .ok_or(GeneralError::InvalidTypeConvert)?,
+                                )
+                            } else {
+                                return Err(GeneralError::InvalidTypeConvert);
+                            }
+                        }
+                        _ => return Err(GeneralError::InvalidOperator(op.as_str().to_string())),
+                    };
+                }
+                Ok(result)
+            }
+
+            Rule::operation => {
+                let mut inner = pair.into_inner();
+                let left = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
+                    .map(|p| parse_pair(p, context))?;
+                let left = left.await?;
+
+                if let Some(op) = inner.next() {
+                    let right = inner
+                        .next()
+                        .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
+                        .map(|p| parse_pair(p, context))?;
+                    let right = right.await?;
+
+                    let err_msg = format!("{:?}, {:?}, {}", left, right, op.as_str().to_string());
+
+                    compare_token(&left, &right, op.as_str())
+                        .ok_or(GeneralError::InvalidOperator(err_msg))
+                } else {
+                    Ok(left)
+                }
+            }
+
+            Rule::term => {
+                let mut inner = pair.into_inner();
+                let mut result = parse_pair(inner.next().unwrap(), context).await?;
+
+                while let Some(op) = inner.next() {
+                    let next = inner
+                        .next()
+                        .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+                    let right = parse_pair(next, context).await?;
+
+                    result = arithmetic_token(&result, &right, op.as_str())
+                        .unwrap_or_else(|| Token::Uint(U256::from(0)));
+                }
+
+                Ok(result)
+            }
+
+            Rule::factor => {
+                let mut inner = pair.into_inner();
+                let first = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+                let mut result = parse_pair(first, context).await?;
+
+                while let Some(op) = inner.next() {
+                    let next = inner
+                        .next()
+                        .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+                    let right = parse_pair(next, context).await?;
+
+                    result = arithmetic_token(&result, &right, op.as_str())
+                        .unwrap_or_else(|| Token::Uint(U256::from(0)));
+                }
+                Ok(result)
+            }
+
+            Rule::params => {
+                let mut inner = pair.into_inner();
+
+                let mut result = Token::Bool(true);
+
+                if let Some(first) = inner.next() {
+                    result = parse_pair(first, context).await?;
+
+                    context.variables.insert(
+                        "function_params".to_string(),
+                        ParseResultType::Token(result.clone()),
+                    );
+                }
+
+                Ok(result)
+            }
+
+            Rule::primary => {
+                let mut inner = pair.into_inner();
+                let first = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+                parse_pair(first, context).await
+            }
+
+            Rule::boolean_literal => match pair.as_str() {
+                BOOLEAN_LITERAL_TRUE => Ok(Token::Bool(true)),
+                BOOLEAN_LITERAL_FALSE => Ok(Token::Bool(false)),
+                _ => Err(GeneralError::InvalidOperator(pair.as_str().to_string())),
+            },
+
+            Rule::number => Ok(Token::Uint(parse_string_to_uint(
+                pair.as_str().to_string(),
+            )?)),
+
+            Rule::call_stmt => {
+                let inner = pair.into_inner();
+
+                let mut result = Token::Bool(false);
+
+                for unwrapped_pair in inner {
+                    result = parse_pair(unwrapped_pair, context).await?;
+                }
+
+                context.variables.clear();
+
+                Ok(result)
+            }
+
+            Rule::blockchain_call => {
+                let inner = pair.into_inner();
+
+                let mut result = Token::Bool(false);
+
+                for unwrapped_pair in inner {
+                    parse_pair(unwrapped_pair, context).await?;
+                }
+
+                let chain_id = match context.variables.get("chain_id").unwrap() {
+                    ParseResultType::ChainID(id) => *id as i32,
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                if let Some(ParseResultType::String(name)) = context.variables.get("name") {
+                    if name == "LatestBlock" {
+                        result = get_latest_block_number(chain_id).await;
+                    } else if name == "EthBalance" {
+                        let address = match context.variables.get("address").unwrap() {
+                            ParseResultType::String(addr) => addr.clone(),
+                            _ => return Err(GeneralError::InvalidTypeConvert),
+                        };
+
+                        let target_block_number =
+                            match context.variables.get("function_params").unwrap() {
+                                ParseResultType::Token(token) => {
+                                    if token.type_check(&ParamType::Uint(256)) {
+                                        token.clone().into_uint().unwrap()
+                                    } else {
+                                        return Err(GeneralError::InvalidTypeConvert);
+                                    }
+                                }
+                                _ => return Err(GeneralError::InvalidTypeConvert),
+                            };
+
+                        result = get_eth_balance(chain_id, address, target_block_number).await;
+                    }
+                }
+
+                Ok(result)
+            }
+
+            Rule::contract_call => {
+                let inner = pair.into_inner();
+
+                for unwrapped_pair in inner {
+                    parse_pair(unwrapped_pair, context).await?;
+                }
+
+                let chain_id = match context.variables.get("chain_id").unwrap() {
+                    ParseResultType::ChainID(id) => *id as i32,
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let address = match context.variables.get("address").unwrap() {
+                    ParseResultType::String(addr) => addr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let abi = match context.variables.get("abi").unwrap() {
+                    ParseResultType::ABI(abi) => abi.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let params = match context.variables.get("method_params").unwrap() {
+                    ParseResultType::Array(params) => params.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let target_index = match context.variables.get("target_index").unwrap() {
+                    ParseResultType::String(idx) => idx.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let target_block_number = match context.variables.get("function_params").unwrap() {
+                    ParseResultType::Token(token) => {
+                        if token.type_check(&ParamType::Uint(256)) {
+                            token.clone().into_uint().unwrap()
+                        } else {
+                            return Err(GeneralError::InvalidTypeConvert);
+                        }
+                    }
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let result = get((
+                    chain_id,
+                    address,
+                    abi,
+                    params,
+                    target_index,
+                    target_block_number,
+                ))
+                .await;
+
+                Ok(result)
+            }
+
+            Rule::blockchain => {
+                let blockchain = pair.as_str();
+
+                for provider in context.config.evm_providers.clone() {
+                    let EVMProvider {
+                        name,
+                        provider: _,
+                        id,
+                    } = provider;
+
+                    if name == blockchain {
+                        context
+                            .variables
+                            .insert("chain_id".to_string(), ParseResultType::ChainID(id));
+                    }
+                }
+
+                Ok(Token::Bool(true))
+            }
+
+            Rule::service => {
+                let service = pair.as_str();
+
+                for contract_config in context.config.contract_config.clone() {
+                    let ContractConfig {
+                        service: parsed_service,
+                        path,
+                        ..
+                    } = contract_config;
+
+                    if service == parsed_service {
+                        let abi_content = fs::read_to_string(path).map_err(|e| {
+                            GeneralError::InvalidTypeConvertError(format!(
+                                "Failed to read ABI file: {}",
+                                e
+                            ))
+                        })?;
+                        let abi: Value = serde_json::from_str(&abi_content).map_err(|e| {
+                            GeneralError::InvalidTypeConvertError(format!(
+                                "Failed to parse ABI: {}",
+                                e
+                            ))
+                        })?;
+
+                        context
+                            .variables
+                            .insert("abi".to_string(), ParseResultType::ABI(abi));
+                        context.variables.insert(
+                            "service".to_string(),
+                            ParseResultType::String(service.to_string()),
+                        );
+                    }
+                }
+
+                Ok(Token::Bool(true))
+            }
+
+            Rule::contract => {
+                let contract_str = pair.as_str();
+
+                for contract_config in context.config.contract_config.clone() {
+                    let ContractConfig {
+                        service: parsed_service,
+                        contract,
+                        address,
+                        ..
+                    } = contract_config;
+
+                    if let Some(ParseResultType::String(service)) = context.variables.get("service")
+                    {
+                        if *service == parsed_service && contract_str == contract {
+                            context
+                                .variables
+                                .insert("address".to_string(), ParseResultType::String(address));
+                        }
+                    }
+                }
+
+                Ok(Token::Bool(true))
+            }
+
+            Rule::identifier => {
+                let identifier = pair.as_str();
+                let result = eval(context.symbol_table, identifier);
+                let result_clone = result.clone();
+                context.variables.insert(
+                    "identifier".to_string(),
+                    ParseResultType::Token(result_clone),
+                );
+                Ok(result)
+            }
+
+            Rule::call_target => {
+                let call_target_str = pair.as_str();
+
+                for call_target in context.config.call_target.clone() {
+                    let ContractTargetValue {
+                        name,
+                        params,
+                        target_index,
+                    } = call_target;
+
+                    if call_target_str == name {
+                        context
+                            .variables
+                            .insert("method_params".to_string(), ParseResultType::Array(params));
+                        context.variables.insert(
+                            "target_index".to_string(),
+                            ParseResultType::String(target_index),
+                        );
+                    }
+                }
+
+                Ok(Token::Bool(true))
+            }
+
+            Rule::blockchain_target => {
+                let blockchain_target_str = pair.as_str();
+
+                for blockchain_target in context.config.blockchain_target.clone() {
+                    let BlockchainTargetValue {
+                        name,
+                        params,
+                        metadata,
+                    } = blockchain_target;
+
+                    if blockchain_target_str == name {
+                        context
+                            .variables
+                            .insert("name".to_string(), ParseResultType::String(name));
+
+                        if let Some(metadata) = metadata {
+                            context.variables.insert(
+                                "address".to_string(),
+                                ParseResultType::String(metadata.address),
+                            );
+                        }
+                    }
+                }
+
+                Ok(Token::Bool(true))
+            }
+
+            Rule::contract_property => {
+                let inner = pair.into_inner();
+
+                let mut result = Token::Bool(false);
+
+                for unwrapped_pair in inner {
+                    result = parse_pair(unwrapped_pair, context).await?;
+                }
+
+                Ok(result)
+            }
+
+            Rule::blockchain_property => {
+                let inner = pair.into_inner();
+
+                let mut result = Token::Bool(false);
+
+                for unwrapped_pair in inner {
+                    result = parse_pair(unwrapped_pair, context).await?;
+                }
+
+                Ok(result)
+            }
+
+            _ => Err(GeneralError::InvalidRuleDecode(format!(
+                "Unexpected rule: {:?}",
+                pair.as_rule()
+            ))),
         }
-
-        Rule::number => Ok(Token::Uint(parse_string_to_uint(
-            pair.as_str().to_string(),
-        )?)),
-
-        Rule::boolean_literal => match pair.as_str() {
-            BOOLEAN_LITERAL_TRUE => Ok(Token::Bool(true)),
-            BOOLEAN_LITERAL_FALSE => Ok(Token::Bool(false)),
-            _ => Err(GeneralError::InvalidOperator(pair.as_str().to_string())),
-        },
-
-        _ => Err(GeneralError::InvalidRuleDecode(format!(
-            "Unexpected rule: {:?}",
-            pair.as_rule()
-        ))),
-    }
+    })
 }
 
 /// CheckFunctionLength is the function to check the function length.
@@ -225,6 +615,17 @@ pub fn parse_abi_text(abi_text: &str) -> Result<Value, GeneralError> {
     serde_json::from_str(abi_text).map_err(|_| GeneralError::InvalidTypeABI)
 }
 
+#[derive(Debug, Clone)]
+pub enum ParseResultType {
+    String(String),
+    Number(U256),
+    Bool(bool),
+    ABI(Value),
+    ChainID(ChainID),
+    Array(Vec<String>),
+    Token(Token),
+}
+
 /// # Description
 /// This function evaluates a rule filter.
 /// # Arguments
@@ -232,7 +633,8 @@ pub fn parse_abi_text(abi_text: &str) -> Result<Value, GeneralError> {
 /// * `values` - The values.
 /// # Returns
 /// A `Result` struct.
-pub fn parse_result(
+pub async fn parse_result(
+    config: &Configuration,
     symbol_table: &mut SymbolTable,
     program_input: &str,
 ) -> Result<Token, GeneralError> {
@@ -243,103 +645,15 @@ pub fn parse_result(
         }
     };
     let mut result = Token::Bool(false);
-    let mut result_vec = Vec::new();
-
+    let mut context = Context {
+        config,
+        symbol_table,
+        variables: &mut HashMap::new(),
+    };
     for pair in pairs {
-        result = parse_pair(symbol_table, result_vec, pair);
+        result = parse_pair(pair, &mut context).await?;
     }
     Ok(result)
-}
-
-/// # Description
-/// This function sets the rule dependencies.
-/// # Arguments
-/// * `evaluations` - The evaluations.
-/// # Returns
-/// A `HashMap` struct.
-pub fn set_rule_dependencies(
-    evaluations: &HashMap<RuleID, EvaluationRule>,
-) -> Result<HashMap<(DbRuleType, RuleID), Vec<RuleID>>, GeneralError> {
-    let mut rule_to_evaluations = HashMap::new();
-
-    for (eval_id, eval) in evaluations {
-        let rule_pairs = RuleEvaluationParser::parse(Rule::operation, &eval.rule_filter)
-            .map_err(|_| GeneralError::InvalidTypeConvert)?;
-
-        for pair in rule_pairs {
-            extract_rule_dependencies(pair, &mut rule_to_evaluations, *eval_id)?;
-        }
-
-        let value_pairs = RuleEvaluationParser::parse(Rule::operation, &eval.expected_value)
-            .map_err(|_| GeneralError::InvalidTypeConvert)?;
-
-        for pair in value_pairs {
-            extract_rule_dependencies(pair, &mut rule_to_evaluations, *eval_id)?;
-        }
-    }
-
-    Ok(rule_to_evaluations)
-}
-
-/// # Description
-/// This function extracts the rule dependencies.
-/// # Arguments
-/// * `pair` - The pair.
-/// * `rule_to_evaluations` - The rule to evaluations.
-/// * `eval_id` - The evaluation ID.
-pub fn extract_rule_dependencies(
-    pair: Pair<Rule>,
-    rule_to_evaluations: &mut HashMap<(DbRuleType, RuleID), Vec<RuleID>>,
-    eval_id: RuleID,
-) -> Result<(), GeneralError> {
-    match pair.as_rule() {
-        Rule::identifier => {
-            let pair_split = pair
-                .as_str()
-                .split(RULE_FILTER_SPLIT_CHAR)
-                .collect::<Vec<&str>>();
-
-            let rule_type_str = match pair_split.get(DEFAULT_INDEX) {
-                Some(val) => val,
-                None => {
-                    return Err(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)));
-                }
-            };
-
-            let rule_type = match DbRuleType::from_str(rule_type_str) {
-                Ok(val) => val,
-                Err(_) => {
-                    return Err(GeneralError::InvalidRuleDecode(rule_type_str.to_string()));
-                }
-            };
-
-            let rule_id_str = match pair_split.get(RULE_ID_SPLIT_INDEX) {
-                Some(val) => val,
-                None => {
-                    return Err(GeneralError::InvalidIndex(IndexType::USize(
-                        RULE_ID_SPLIT_INDEX,
-                    )));
-                }
-            };
-
-            let rule_id = rule_id_str.parse::<RuleID>().map_err(|_| {
-                GeneralError::InvalidRuleDecode(format!("Invalid rule ID: {}", rule_id_str))
-            })?;
-
-            let entry = rule_to_evaluations.entry((rule_type, rule_id)).or_default();
-
-            if !entry.iter().any(|&id| id == eval_id) {
-                entry.push(eval_id);
-            }
-            Ok(())
-        }
-        _ => {
-            for inner_pair in pair.into_inner() {
-                extract_rule_dependencies(inner_pair, rule_to_evaluations, eval_id)?;
-            }
-            Ok(())
-        }
-    }
 }
 
 #[cfg(test)]
@@ -348,18 +662,24 @@ mod tests {
     use ethers::{abi::Int, types::U256};
     use watch_tower_lib::{config::set_config, utils::parse_compare};
 
+    use crate::utils::constants::CONFIG_PATH;
+
     use super::*;
 
-    fn setup() -> String {
-        let config = set_config("/Users/munseon-ug/rust/watchtower/config.yaml");
-        config.postgres_config.url
+    fn setup() -> Configuration {
+        set_config("/Users/munseon-ug/rust/watchtower/worker/config.yaml")
     }
 
     #[test]
 
     fn test_new_parse_rule() {
         // 1) 유동성 조회 후 저장
-        let test_input = "bifrostBN = Bifrost.LatestBlock(); ChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN); BifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN -1); BifaggBTC = Bifrost.Bifagg.BTC.LatestPrice(bifrostBN -2); result = (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3";
+        let test_input = "
+        bifrostBN = Bifrost.LatestBlock(); 
+        ChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN); 
+        BifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN -1); 
+        BifaggBTC = Bifrost.Bifagg.BTC.LatestPrice(bifrostBN -2); 
+        result = (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3;";
 
         let pairs = RuleEvaluationParser::parse(Rule::program, test_input).unwrap();
         println!("pairs: {:?}", pairs);
@@ -367,11 +687,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_result() {
-        let test_input = "bifrostBN = Bifrost.LatestBlock();";
+        let test_input = "
+        bifrostBN = Bifrost.LatestBlock(); 
+
+        ChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN); 
+        BifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN - 1); 
+        BifaggBTC = Bifrost.Bifagg.BTC.LatestPrice(bifrostBN -2); 
+
+        (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3;";
 
         let mut symbol_table = SymbolTable::new();
+        let config = setup();
 
-        let result = parse_result(&mut symbol_table, test_input).unwrap();
+        let result = parse_result(&config, &mut symbol_table, test_input)
+            .await
+            .unwrap();
 
         println!("result: {:?}", result);
     }

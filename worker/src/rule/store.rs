@@ -31,28 +31,27 @@ impl SymbolTable {
         }
     }
 
-    pub fn assign<T: TokenConvert>(&mut self, key: String, value: T) {
-        self.store.insert(key, value.to_token());
+    pub fn assign(&mut self, key: String, value: Token) {
+        self.store.insert(key, value);
     }
 
-    pub fn eval<T: TokenConvert>(&self, key: &str) -> T {
+    pub fn eval(&self, key: &str) -> Token {
         self.store
             .get(key)
             .cloned()
-            .map(T::from_token)
             .unwrap_or_else(|| panic!("Invalid key: {}", key))
     }
+}
+
+pub fn assign(store: &mut SymbolTable, key: String, value: Token) {
+    store.assign(key, value);
 }
 
 // pub fn assign<T: TokenConvert>(store: &mut SymbolTable, key: String, value: T) {
 //     store.assign(key, value);
 // }
 
-// pub fn assign<T: TokenConvert>(store: &mut SymbolTable, key: String, value: T) {
-//     store.assign(key, value);
-// }
-
-pub fn eval<T: TokenConvert>(store: &SymbolTable, key: &str) -> T {
+pub fn eval(store: &SymbolTable, key: &str) -> Token {
     store.eval(key)
 }
 

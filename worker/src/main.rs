@@ -2,6 +2,7 @@ use clap::Parser;
 use runner::Runner;
 use utils::{error::WorkerError, run_with_runtime};
 
+mod parse;
 mod rule;
 mod runner;
 mod utils;

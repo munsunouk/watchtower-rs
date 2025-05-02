@@ -10,28 +10,37 @@ expression = { operation ~ (logical_operator ~ operation)* }
 operation  = { term ~ (comparison_operator ~ term)? }
 term       = { factor ~ (arithmetic_operator ~ factor)* }
 factor     = { primary ~ (multiplicative_operator ~ primary)* }
-primary    = { boolean_literal | function_call | number | identifier | "(" ~ expression ~ ")" }
+primary    = { boolean_literal | call_stmt | number | identifier | "(" ~ expression ~ ")" }
 
 // specific identifiers
-blockchain = _{ "Ethereum" | "Bifrost" }
-service    = _{ "ChainlinkOracle" | "BifnetOracle" | "Bifagg" }
-contract   = _{ "USDC_POOL" | "USDT_POOL" | "WBTC_POOL" | "BFC_POOL" | "WBTC" | "BTC" | "BFC" | "BTCB" | "NATIVEBTC" }
+link              = { "BRP" }
+blockchain        = { "Ethereum" | "Bifrost" | "Base" | "Kaia" }
+service           = { "ChainlinkOracle" | "BifnetOracle" | "Bifagg" | "KlaytnChainlinkOracle" | "BaseChainlinkOracle" }
+contract          = { "WBTC" | "BTC" | "BFC" | "BTCB" | "USDC" | "USDT" | "ETH" | "BTCBTCUSD" | "JPYBTCUSD" | "BTCBTCUSD" | "BNB" | "ETH" | "POL" | "DAI" | "BFC" | "BIFI" | "XRP" | "JPY" | "JPYEURO" | "EURO" | "LP_BTCUSDUSDC" | "WSTBFC" | "BTCUSD" }
+call_target       = { "LatestPrice" }
+blockchain_target = { "LatestBlock" | "EthBalance" | "UsdcBalance" | "UsdtBalance" | "BnbBalance" | "PolBalance" | "DaiBalance" | "BtcBalance" | "AggregatorBalance" | "AirdropBalance" | "Kaia_BtcBalance" | "Kaia_DaiBalance" | "Kaia_UsdtBalance" | "Kaia_UsdcBalance" | "Kaia_XrpBalance" | "Kaia_EthBalance" | "Kaia_UsdcBalance" | "BtcusdBalance" | "WsbfcBalance" | "JpyBalance" | "EuroBalance" | "Lp_Btcusdusdc" | "Base_Btcusd" | "Base_Jpybtcusd" }
+rpc_target        = { "BTCTvl" }
+
+params = { "(" ~ expression? ~ ")" }
 
 // property
-contract_property   = _{ ("Liquidity" | "LatestPrice" | "LatestUpdate") ~ "(" ~ expression ~ ")" }
-blockchain_property =  { "LatestBlock" ~ "(" ~ expression? ~ ")" }
+rpc_property        = { rpc_target ~ params }
+contract_property   = { call_target ~ params }
+blockchain_property = { blockchain_target ~ params }
 
 identifier = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_")* }
 number     = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 
 // call
-function_call     = { contract_call | latest_block_call }
-contract_call     = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ contract_property }
-latest_block_call = { blockchain ~ "." ~ blockchain_property }
+rpc_call        = { link ~ "." ~ service ~ "." ~ rpc_property }
+contract_call   = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ contract_property }
+contract_event  = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ contract_property }
+blockchain_call = { blockchain ~ "." ~ blockchain_property }
 
 // Statements
-assignment_stmt = { identifier ~ "=" ~ expression ~ ";" }
-expression_stmt = { expression ~ ";" }
+call_stmt       = { rpc_call | contract_call | blockchain_call }
+assignment_stmt = { WHITESPACE? ~ identifier ~ "=" ~ expression ~ ";" ~ WHITESPACE? }
+expression_stmt = { WHITESPACE? ~ expression ~ ";" ~ WHITESPACE? }
 
 // Program
-program = { (assignment_stmt | expression_stmt)+ }
+program = _{ (assignment_stmt | expression_stmt)+ }
