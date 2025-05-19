@@ -1,4 +1,4 @@
-use ethers::abi::{ParamType, Token};
+use ethers::abi::{Param, ParamType, Token};
 
 use ethers::types::U256;
 use serde_json::Value;
@@ -8,7 +8,8 @@ use watch_tower_lib::cli::db::postgres::{
     select_assign_data_sync, select_fetched_raw_data_with_filter, PostgresClient, Query, SelectData,
 };
 use watch_tower_lib::config::{
-    BlockchainTargetValue, Configuration, ContractConfig, ContractTargetValue, EVMProvider,
+    BlockchainTargetValue, Configuration, ContractCallTargetValue, ContractConfig,
+    ContractEventTargetValue, EVMProvider, RPCConfig, RPCTargetValue,
 };
 use watch_tower_lib::utils::types::ChainID;
 use watch_tower_lib::utils::{
@@ -44,7 +45,7 @@ use watch_tower_lib::utils::{
 
 use futures::executor::block_on;
 
-use crate::rule::get::{get, get_eth_balance, get_latest_block_number, ContractParams};
+use crate::rule::get::{get, get_eth_balance, get_latest_block_number, ContractParams, RpcParams};
 use crate::rule::store::{assign, eval, SymbolTable, TokenConvert};
 use crate::utils::error::WorkerError;
 
@@ -138,6 +139,8 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     result.clone(),
                 );
                 context.variables.clear();
+
+                let result = Token::Bool(true);
 
                 Ok(result)
             }
@@ -252,17 +255,18 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
             }
 
             Rule::params => {
-                let mut inner = pair.into_inner();
+                let mut inner = pair.into_inner().peekable();
 
                 let mut result = Token::Bool(true);
 
-                if let Some(first) = inner.next() {
-                    result = parse_pair(first, context).await?;
-
-                    context.variables.insert(
-                        "function_params".to_string(),
-                        ParseResultType::Token(result.clone()),
-                    );
+                if inner.peek().is_some() {
+                    for unwrapped_pair in inner {
+                        result = parse_pair(unwrapped_pair, context).await?;
+                        context.variables.insert(
+                            "function_params".to_string(),
+                            ParseResultType::Token(result.clone()),
+                        );
+                    }
                 }
 
                 Ok(result)
@@ -342,6 +346,62 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 Ok(result)
             }
 
+            Rule::rpc_call => {
+                let inner = pair.into_inner();
+
+                for unwrapped_pair in inner {
+                    parse_pair(unwrapped_pair, context).await?;
+                }
+
+                let url = match context.variables.get("url").unwrap() {
+                    ParseResultType::String(url) => url.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let call_type = match context.variables.get("call_type").unwrap() {
+                    ParseResultType::String(call_type) => call_type.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let method_type = match context.variables.get("method_type").unwrap() {
+                    ParseResultType::String(method_type) => method_type.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let api_body = if let Some(ParseResultType::JSON(api_body)) =
+                    context.variables.get("api_body")
+                {
+                    Some(api_body.clone())
+                } else {
+                    None
+                };
+
+                let api_query = if let Some(ParseResultType::JSON(api_query)) =
+                    context.variables.get("api_query")
+                {
+                    Some(api_query.clone())
+                } else {
+                    None
+                };
+
+                let target_index = match context.variables.get("target_index").unwrap() {
+                    ParseResultType::String(idx) => idx.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let result = get((
+                    url,
+                    call_type,
+                    method_type,
+                    api_body,
+                    api_query,
+                    target_index,
+                ))
+                .await;
+
+                Ok(result)
+            }
+
             Rule::contract_call => {
                 let inner = pair.into_inner();
 
@@ -358,11 +418,11 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
                 let abi = match context.variables.get("abi").unwrap() {
-                    ParseResultType::ABI(abi) => abi.clone(),
+                    ParseResultType::JSON(abi) => abi.clone(),
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
-                let params = match context.variables.get("method_params").unwrap() {
-                    ParseResultType::Array(params) => params.clone(),
+                let mut params = match context.variables.get("method_params").unwrap() {
+                    ParseResultType::ArrayParam(params) => params.clone(),
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
                 let target_index = match context.variables.get("target_index").unwrap() {
@@ -370,22 +430,90 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
 
-                let target_block_number = match context.variables.get("function_params").unwrap() {
-                    ParseResultType::Token(token) => {
-                        if token.type_check(&ParamType::Uint(256)) {
-                            token.clone().into_uint().unwrap()
-                        } else {
-                            return Err(GeneralError::InvalidTypeConvert);
+                let mut target_block_number =
+                    get_latest_block_number(chain_id).await.into_uint().unwrap();
+
+                if let Some(ParseResultType::HashMap(identifier)) =
+                    context.variables.get("identifier")
+                {
+                    for (key, value) in identifier.iter() {
+                        if key.contains("BlockNumber") {
+                            if let ParseResultType::Token(token) = value {
+                                if token.type_check(&ParamType::Uint(256)) {
+                                    target_block_number = token.clone().into_uint().unwrap();
+                                }
+                            }
+                        } else if key.contains("MethodParams") {
+                            if let ParseResultType::Token(token) = value {
+                                params.push(Some(token.clone()));
+                            }
                         }
                     }
-                    _ => return Err(GeneralError::InvalidTypeConvert),
-                };
+                }
 
                 let result = get((
                     chain_id,
                     address,
                     abi,
                     params,
+                    target_index,
+                    target_block_number,
+                ))
+                .await;
+
+                Ok(result)
+            }
+
+            Rule::contract_event => {
+                let inner = pair.into_inner();
+
+                for unwrapped_pair in inner {
+                    parse_pair(unwrapped_pair, context).await?;
+                }
+
+                let chain_id = match context.variables.get("chain_id").unwrap() {
+                    ParseResultType::ChainID(id) => *id as i32,
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let address = match context.variables.get("address").unwrap() {
+                    ParseResultType::String(addr) => addr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let abi = match context.variables.get("abi").unwrap() {
+                    ParseResultType::JSON(abi) => abi.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let event_index = match context.variables.get("event_index").unwrap() {
+                    ParseResultType::EventIndex(idx) => idx.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+                let target_index = match context.variables.get("target_index").unwrap() {
+                    ParseResultType::String(idx) => idx.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let mut target_block_number =
+                    get_latest_block_number(chain_id).await.into_uint().unwrap();
+
+                if let Some(ParseResultType::HashMap(identifier)) =
+                    context.variables.get("identifier")
+                {
+                    for (key, value) in identifier.iter() {
+                        if key.contains("BlockNumber") {
+                            if let ParseResultType::Token(token) = value {
+                                if token.type_check(&ParamType::Uint(256)) {
+                                    target_block_number = token.clone().into_uint().unwrap();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let result = get((
+                    chain_id,
+                    address,
+                    abi,
+                    event_index,
                     target_index,
                     target_block_number,
                 ))
@@ -408,6 +536,9 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                         context
                             .variables
                             .insert("chain_id".to_string(), ParseResultType::ChainID(id));
+                        context
+                            .variables
+                            .insert("blockchain".to_string(), ParseResultType::String(name));
                     }
                 }
 
@@ -417,34 +548,88 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
             Rule::service => {
                 let service = pair.as_str();
 
-                for contract_config in context.config.contract_config.clone() {
-                    let ContractConfig {
-                        service: parsed_service,
-                        path,
-                        ..
-                    } = contract_config;
+                if let Some(_) = context.variables.get("chain_id") {
+                    for contract_config in context.config.contract_config.clone() {
+                        let ContractConfig {
+                            service: parsed_service,
+                            blockchain,
+                            path,
+                            ..
+                        } = contract_config;
 
-                    if service == parsed_service {
-                        let abi_content = fs::read_to_string(path).map_err(|e| {
-                            GeneralError::InvalidTypeConvertError(format!(
-                                "Failed to read ABI file: {}",
-                                e
-                            ))
-                        })?;
-                        let abi: Value = serde_json::from_str(&abi_content).map_err(|e| {
-                            GeneralError::InvalidTypeConvertError(format!(
-                                "Failed to parse ABI: {}",
-                                e
-                            ))
-                        })?;
+                        if *service == parsed_service
+                            && *blockchain
+                                == *match context.variables.get("blockchain").unwrap() {
+                                    ParseResultType::String(s) => s,
+                                    _ => return Err(GeneralError::InvalidTypeConvert),
+                                }
+                        {
+                            context.variables.insert(
+                                "service".to_string(),
+                                ParseResultType::String(service.to_string()),
+                            );
+                        }
+                    }
+                } else {
+                    for rpc_config in context.config.rpc_config.clone() {
+                        let RPCConfig {
+                            name,
+                            url,
+                            call_type,
+                            method_type,
+                            api_body,
+                            api_query,
+                        } = rpc_config;
 
-                        context
-                            .variables
-                            .insert("abi".to_string(), ParseResultType::ABI(abi));
-                        context.variables.insert(
-                            "service".to_string(),
-                            ParseResultType::String(service.to_string()),
-                        );
+                        let mut value_api_body: Option<Value> = None;
+                        let mut value_api_query: Option<Value> = None;
+
+                        if let Some(api_body) = api_body {
+                            value_api_body =
+                                Some(serde_json::from_str(&api_body).map_err(|e| {
+                                    GeneralError::InvalidTypeConvertError(format!(
+                                        "Failed to parse JSON: {},{}",
+                                        api_body, e
+                                    ))
+                                })?);
+                        }
+
+                        if let Some(api_query) = api_query {
+                            value_api_query = serde_json::from_str(&api_query).map_err(|e| {
+                                GeneralError::InvalidTypeConvertError(format!(
+                                    "Failed to parse JSON: {},{}",
+                                    api_query, e
+                                ))
+                            })?;
+                        }
+
+                        if name == service {
+                            context
+                                .variables
+                                .insert("url".to_string(), ParseResultType::String(url));
+                            context.variables.insert(
+                                "call_type".to_string(),
+                                ParseResultType::String(call_type),
+                            );
+                            context.variables.insert(
+                                "method_type".to_string(),
+                                ParseResultType::String(method_type),
+                            );
+
+                            if let Some(value_api_body) = value_api_body {
+                                context.variables.insert(
+                                    "api_body".to_string(),
+                                    ParseResultType::JSON(value_api_body),
+                                );
+                            }
+
+                            if let Some(value_api_query) = value_api_query {
+                                context.variables.insert(
+                                    "api_query".to_string(),
+                                    ParseResultType::JSON(value_api_query),
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -457,14 +642,41 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 for contract_config in context.config.contract_config.clone() {
                     let ContractConfig {
                         service: parsed_service,
+                        blockchain: parsed_blockchain,
                         contract,
                         address,
+                        path,
                         ..
                     } = contract_config;
 
-                    if let Some(ParseResultType::String(service)) = context.variables.get("service")
-                    {
-                        if *service == parsed_service && contract_str == contract {
+                    if let (
+                        Some(ParseResultType::String(service)),
+                        Some(ParseResultType::String(blockchain)),
+                    ) = (
+                        context.variables.get("service"),
+                        context.variables.get("blockchain"),
+                    ) {
+                        if *service == parsed_service
+                            && contract_str == contract
+                            && *blockchain == parsed_blockchain
+                        {
+                            let abi_content = fs::read_to_string(path).map_err(|e| {
+                                GeneralError::InvalidTypeConvertError(format!(
+                                    "Failed to read ABI file: {}",
+                                    e
+                                ))
+                            })?;
+                            let abi: Value = serde_json::from_str(&abi_content).map_err(|e| {
+                                GeneralError::InvalidTypeConvertError(format!(
+                                    "Failed to parse ABI: {}",
+                                    e
+                                ))
+                            })?;
+
+                            context
+                                .variables
+                                .insert("abi".to_string(), ParseResultType::JSON(abi));
+
                             context
                                 .variables
                                 .insert("address".to_string(), ParseResultType::String(address));
@@ -478,28 +690,41 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
             Rule::identifier => {
                 let identifier = pair.as_str();
                 let result = eval(context.symbol_table, identifier);
-                let result_clone = result.clone();
-                context.variables.insert(
-                    "identifier".to_string(),
-                    ParseResultType::Token(result_clone),
-                );
+
+                if let Some(ParseResultType::HashMap(existing)) =
+                    context.variables.get("identifier")
+                {
+                    let mut new_hashmap = existing.clone();
+                    new_hashmap.insert(
+                        identifier.to_string(),
+                        ParseResultType::Token(result.clone()),
+                    );
+                    context.variables.insert(
+                        "identifier".to_string(),
+                        ParseResultType::HashMap(new_hashmap),
+                    );
+                } else {
+                    let mut new_hashmap = HashMap::new();
+                    new_hashmap.insert(
+                        identifier.to_string(),
+                        ParseResultType::Token(result.clone()),
+                    );
+                    context.variables.insert(
+                        "identifier".to_string(),
+                        ParseResultType::HashMap(new_hashmap),
+                    );
+                }
+
                 Ok(result)
             }
 
-            Rule::call_target => {
-                let call_target_str = pair.as_str();
+            Rule::rpc_call_target => {
+                let rpc_call_target_str = pair.as_str();
 
-                for call_target in context.config.call_target.clone() {
-                    let ContractTargetValue {
-                        name,
-                        params,
-                        target_index,
-                    } = call_target;
+                for rpc_call_target in context.config.rpc_call_target.clone() {
+                    let RPCTargetValue { name, target_index } = rpc_call_target;
 
-                    if call_target_str == name {
-                        context
-                            .variables
-                            .insert("method_params".to_string(), ParseResultType::Array(params));
+                    if rpc_call_target_str == name {
                         context.variables.insert(
                             "target_index".to_string(),
                             ParseResultType::String(target_index),
@@ -510,17 +735,67 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 Ok(Token::Bool(true))
             }
 
-            Rule::blockchain_target => {
-                let blockchain_target_str = pair.as_str();
+            Rule::contract_call_target => {
+                let contract_call_target_str = pair.as_str();
 
-                for blockchain_target in context.config.blockchain_target.clone() {
+                for contract_call_target in context.config.contract_call_target.clone() {
+                    let ContractCallTargetValue {
+                        name,
+                        params,
+                        target_index,
+                    } = contract_call_target;
+
+                    if contract_call_target_str == name {
+                        context.variables.insert(
+                            "method_params".to_string(),
+                            ParseResultType::ArrayParam(params.clone()),
+                        );
+                        context.variables.insert(
+                            "target_index".to_string(),
+                            ParseResultType::String(target_index),
+                        );
+                    }
+                }
+
+                Ok(Token::Bool(true))
+            }
+
+            Rule::contract_event_target => {
+                let contract_event_target_str = pair.as_str();
+
+                for contract_event_target in context.config.contract_event_target.clone() {
+                    let ContractEventTargetValue {
+                        name,
+                        event_index,
+                        target_index,
+                    } = contract_event_target;
+
+                    if contract_event_target_str == name {
+                        context.variables.insert(
+                            "event_index".to_string(),
+                            ParseResultType::EventIndex(event_index),
+                        );
+                        context.variables.insert(
+                            "target_index".to_string(),
+                            ParseResultType::String(target_index),
+                        );
+                    }
+                }
+
+                Ok(Token::Bool(true))
+            }
+
+            Rule::blockchain_call_target => {
+                let blockchain_call_target_str = pair.as_str();
+
+                for blockchain_call_target in context.config.blockchain_call_target.clone() {
                     let BlockchainTargetValue {
                         name,
                         params,
                         metadata,
-                    } = blockchain_target;
+                    } = blockchain_call_target;
 
-                    if blockchain_target_str == name {
+                    if blockchain_call_target_str == name {
                         context
                             .variables
                             .insert("name".to_string(), ParseResultType::String(name));
@@ -537,7 +812,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 Ok(Token::Bool(true))
             }
 
-            Rule::contract_property => {
+            Rule::rpc_call_property => {
                 let inner = pair.into_inner();
 
                 let mut result = Token::Bool(false);
@@ -549,7 +824,31 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 Ok(result)
             }
 
-            Rule::blockchain_property => {
+            Rule::contract_call_property => {
+                let inner = pair.into_inner();
+
+                let mut result = Token::Bool(false);
+
+                for unwrapped_pair in inner {
+                    result = parse_pair(unwrapped_pair, context).await?;
+                }
+
+                Ok(result)
+            }
+
+            Rule::contract_event_property => {
+                let inner = pair.into_inner();
+
+                let mut result = Token::Bool(false);
+
+                for unwrapped_pair in inner {
+                    result = parse_pair(unwrapped_pair, context).await?;
+                }
+
+                Ok(result)
+            }
+
+            Rule::blockchain_call_property => {
                 let inner = pair.into_inner();
 
                 let mut result = Token::Bool(false);
@@ -620,10 +919,13 @@ pub enum ParseResultType {
     String(String),
     Number(U256),
     Bool(bool),
-    ABI(Value),
+    JSON(Value),
     ChainID(ChainID),
     Array(Vec<String>),
+    ArrayParam(Vec<Option<Token>>),
     Token(Token),
+    EventIndex(i32),
+    HashMap(HashMap<String, ParseResultType>),
 }
 
 /// # Description
@@ -635,9 +937,10 @@ pub enum ParseResultType {
 /// A `Result` struct.
 pub async fn parse_result(
     config: &Configuration,
-    symbol_table: &mut SymbolTable,
     program_input: &str,
 ) -> Result<Token, GeneralError> {
+    let mut symbol_table = SymbolTable::new();
+
     let pairs = match RuleEvaluationParser::parse(Rule::program, program_input) {
         Ok(pairs) => pairs,
         Err(_) => {
@@ -647,7 +950,7 @@ pub async fn parse_result(
     let mut result = Token::Bool(false);
     let mut context = Context {
         config,
-        symbol_table,
+        symbol_table: &mut symbol_table,
         variables: &mut HashMap::new(),
     };
     for pair in pairs {
@@ -673,13 +976,10 @@ mod tests {
     #[test]
 
     fn test_new_parse_rule() {
-        // 1) 유동성 조회 후 저장
         let test_input = "
-        bifrostBN = Bifrost.LatestBlock(); 
-        ChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN); 
-        BifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN -1); 
-        BifaggBTC = Bifrost.Bifagg.BTC.LatestPrice(bifrostBN -2); 
-        result = (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3;";
+         bifrost_BlockNumber = BifrostTestnet.LatestBlock();
+         BifrostTestnet.BIFI.LendingPool.BtcUSD(bifrost_BlockNumber);
+        ";
 
         let pairs = RuleEvaluationParser::parse(Rule::program, test_input).unwrap();
         println!("pairs: {:?}", pairs);
@@ -687,21 +987,121 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_result() {
+        // let test_input = "
+        //  bifrost_BlockNumber = 24454853;
+        //  Bifrost.CCCP.Socket.BridgeAmount(bifrost_BlockNumber);
+        // ";
+
         let test_input = "
-        bifrostBN = Bifrost.LatestBlock(); 
+         bifrost_BlockNumber = Bifrost.LatestBlock();
+         Bifrost.BIFI.LendingPool.BtcUSD_deposit_liquidity(bifrost_BlockNumber);
+        ";
 
-        ChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN); 
-        BifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN - 1); 
-        BifaggBTC = Bifrost.Bifagg.BTC.LatestPrice(bifrostBN -2); 
+        // target 들 매개변수로 변경
+        // 유저 보다 먼저 확인하는 작업
+        // logger, test case 추가
+        // 스마트 라우터 공통
+        // let test_input = "
+        //  bifrostBN = Bifrost.LatestBlock();
 
-        (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3;";
+        //  reserve0 = Bifrost.Everdex.Poolinfo.BtcUSD/USDC_BtcUSD_Liquidity(bifrostBN);
+        //  reserve1 = Bifrost.Everdex.Poolinfo.BtcUSD/USDC_USDC_Liquidity(bifrostBN);
+        //  reserve0 * 100 / (reserve1 * 1000000000000);
+        // ";
 
-        let mut symbol_table = SymbolTable::new();
+        // let test_input = "
+        //  bifrostBN = Bifrost.LatestBlock();
+        //  reserve0 = Bifrost.Everdex.     .stBFC/BFC_stBFC_Liquidity(bifrostBN);
+        //  reserve1 = Bifrost.Everdex.SmartRouter.stBFC/BFC_BFC_Liquidity(bifrostBN);
+
+        //  reserve0 * 100 / reserve1;
+        // ";
+
+        // let test_input = "
+        //  bifrost_BlockNumber = Bifrost.LatestBlock();
+        //  totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
+        //  currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrost_BlockNumber);
+        //  Bifrost.BRP.VaultAddress.VaultAddress(bifrost_BlockNumber, currentRound_MethodParams);
+        // ";
+
+        //주석
+        // symbol_table parse_result 안
+        // let test_input = "
+
+        // kaiaBN = Kaia.LatestBlock();
+        // bifrostBN = Bifrost.LatestBlock();
+
+        // bifrostChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
+        // kaiaChainlinkBTC = Kaia.ChainlinkOracle.BTC.LatestPrice(kaiaBN);
+
+        // (bifrostChainlinkBTC + kaiaChainlinkBTC) / 2;";
+
         let config = setup();
 
-        let result = parse_result(&config, &mut symbol_table, test_input)
-            .await
-            .unwrap();
+        let result = parse_result(&config, test_input).await.unwrap();
+
+        println!("result: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_parse_result1() {
+        let test_input = "
+         bifrost_BlockNumber = Bifrost.LatestBlock();
+         reserve0 = Bifrost.Everdex.SmartRouter.stBFC/BFC_stBFC_Liquidity(bifrost_BlockNumber);
+         reserve1 = Bifrost.Everdex.SmartRouter.stBFC/BFC_BFC_Liquidity(bifrost_BlockNumber);
+
+         reserve0 * 100 / reserve1 > 95;
+        ";
+
+        let config = setup();
+
+        let result = parse_result(&config, test_input).await.unwrap();
+
+        println!("result: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_parse_result2() {
+        let test_input = "
+         bifrost_BlockNumber = Bifrost.LatestBlock();
+         liquidity = Bifrost.BIFI.LendingPool.BtcUSD_deposit_liquidity(bifrost_BlockNumber);
+         liquidity > 5000000000000000000000000;
+        ";
+
+        let config = setup();
+
+        let result = parse_result(&config, test_input).await.unwrap();
+
+        println!("result: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_parse_result3() {
+        let test_input = "
+         bifrost_BlockNumber = 24454853;
+         amount = Bifrost.CCCP.Socket.BridgeAmount(bifrost_BlockNumber);
+         amount > 9500;
+        ";
+
+        let config = setup();
+
+        let result = parse_result(&config, test_input).await.unwrap();
+
+        println!("result: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_parse_result4() {
+        let test_input = "
+         bifrost_BlockNumber = Bifrost.LatestBlock();
+         totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
+         currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrost_BlockNumber);
+         Bifrost.BRP.VaultAddress.VaultAddress(bifrost_BlockNumber, currentRound_MethodParams);
+        ";
+
+        let config = setup();
+
+        let result = parse_result(&config, test_input).await.unwrap();
 
         println!("result: {:?}", result);
     }

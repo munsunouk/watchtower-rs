@@ -82,105 +82,43 @@ pub fn create_contracts<T: JsonRpcClient>(
 /// This function encodes parameters into a token.
 /// # Arguments
 ///
-/// * `params` - A vector of parameter strings.
+/// * `params` - A vector of tokens.
 /// * `param_type` - The parameter type.
 ///
 /// # Returns
 ///
 /// A `Token` instance.
-pub fn encode_token(params: Vec<String>, param_type: &ParamType) -> Result<Token, WorkerError> {
+pub fn encode_token(
+    params: Vec<Option<Token>>,
+    param_type: &ParamType,
+) -> Result<Token, WorkerError> {
     if params.is_empty() {
         return Ok(Token::Tuple(vec![])); // Default case for empty params
     }
 
+    // Filter out None values and unwrap Some values
+    let unwrapped_params: Vec<Token> = params
+        .into_iter()
+        .filter_map(|opt_token| opt_token)
+        .collect();
+
+    if unwrapped_params.is_empty() {
+        return Ok(Token::Tuple(vec![]));
+    }
+
     match param_type {
-        ParamType::String => Ok(Token::String(
-            params
-                .get(DEFAULT_PARAM_VALUE)
-                .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                    DEFAULT_PARAM_VALUE,
-                )))?
-                .clone(),
+        ParamType::String => Ok(unwrapped_params[0].clone()),
+        ParamType::Address => Ok(unwrapped_params[0].clone()),
+        ParamType::Bool => Ok(unwrapped_params[0].clone()),
+        ParamType::Uint(_) => Ok(unwrapped_params[0].clone()),
+        ParamType::Int(_) => Ok(unwrapped_params[0].clone()),
+        ParamType::Bytes => Ok(unwrapped_params[0].clone()),
+        ParamType::FixedBytes(_) => Ok(unwrapped_params[0].clone()),
+        ParamType::Array(inner_type) => Ok(Token::Array(unwrapped_params)),
+        ParamType::FixedArray(inner_type, size) => Ok(Token::FixedArray(
+            unwrapped_params.into_iter().take(*size).collect(),
         )),
-        ParamType::Address => Ok(Token::Address(
-            params
-                .get(DEFAULT_PARAM_VALUE)
-                .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                    DEFAULT_PARAM_VALUE,
-                )))?
-                .parse::<Address>()
-                .map_err(|_| WorkerError::InvalidTypeConvert)?,
-        )),
-        ParamType::Bool => Ok(Token::Bool(
-            params
-                .get(DEFAULT_PARAM_VALUE)
-                .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                    DEFAULT_PARAM_VALUE,
-                )))?
-                .parse::<bool>()
-                .map_err(|_| WorkerError::InvalidTypeConvert)?,
-        )),
-        ParamType::Uint(_) => Ok(Token::Uint(
-            params
-                .get(DEFAULT_PARAM_VALUE)
-                .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                    DEFAULT_PARAM_VALUE,
-                )))?
-                .parse::<Uint>()
-                .map_err(|_| WorkerError::InvalidTypeConvert)?,
-        )),
-        ParamType::Int(_) => Ok(Token::Int(
-            params
-                .get(DEFAULT_PARAM_VALUE)
-                .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                    DEFAULT_PARAM_VALUE,
-                )))?
-                .parse::<Int>()
-                .map_err(|_| WorkerError::InvalidTypeConvert)?,
-        )),
-        ParamType::Bytes => Ok(Token::Bytes(
-            hex::decode(
-                params
-                    .get(DEFAULT_PARAM_VALUE)
-                    .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                        DEFAULT_PARAM_VALUE,
-                    )))?,
-            )
-            .map_err(|_| WorkerError::InvalidTypeConvert)?,
-        )),
-        ParamType::FixedBytes(_) => Ok(Token::FixedBytes(
-            hex::decode(
-                params
-                    .get(DEFAULT_PARAM_VALUE)
-                    .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                        DEFAULT_PARAM_VALUE,
-                    )))?,
-            )
-            .map_err(|_| WorkerError::InvalidTypeConvert)?,
-        )),
-        ParamType::Array(inner_type) => {
-            let tokens: Vec<Token> = params
-                .into_iter()
-                .map(|p| encode_token(vec![p], inner_type))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Token::Array(tokens))
-        }
-        ParamType::FixedArray(inner_type, size) => {
-            let tokens: Vec<Token> = params
-                .into_iter()
-                .take(*size)
-                .map(|p| encode_token(vec![p], inner_type))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Token::FixedArray(tokens))
-        }
-        ParamType::Tuple(inner_types) => {
-            let tokens: Vec<Token> = inner_types
-                .iter()
-                .zip(params.into_iter())
-                .map(|(t, p)| encode_token(vec![p], t))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Token::Tuple(tokens))
-        }
+        ParamType::Tuple(inner_types) => Ok(Token::Tuple(unwrapped_params)),
     }
 }
 
@@ -300,6 +238,7 @@ pub fn decode_token(
             (ParamType::FixedBytes(_), Token::FixedBytes(value)) => {
                 Ok(Token::FixedBytes(value.clone()))
             }
+            (ParamType::Array(_), Token::Array(value)) => Ok(Token::Array(value.clone())),
             _ => Err(WorkerError::InvalidTypeConvert),
         };
     }

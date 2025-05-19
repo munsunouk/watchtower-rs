@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use ethers::{
-    abi::{decode, Token},
+    abi::{decode, Param, Token},
     providers::Http,
     types::{BlockId, BlockNumber, H256, U256},
 };
@@ -37,7 +37,7 @@ pub struct ContractParams {
     pub chain_id: i32,
     pub address: String,
     pub abi: Value,
-    pub params: Vec<String>,
+    pub params: Vec<Option<Token>>,
     pub target_index: String,
     pub target_block_number: U256,
 }
@@ -66,8 +66,8 @@ pub enum GetRequest {
     ContractEvent(ContractEventParams),
 }
 
-impl From<(i32, String, Value, Vec<String>, String, U256)> for GetRequest {
-    fn from(tuple: (i32, String, Value, Vec<String>, String, U256)) -> Self {
+impl From<(i32, String, Value, Vec<Option<Token>>, String, U256)> for GetRequest {
+    fn from(tuple: (i32, String, Value, Vec<Option<Token>>, String, U256)) -> Self {
         GetRequest::Contract(ContractParams {
             chain_id: tuple.0,
             address: tuple.1,
@@ -201,7 +201,7 @@ impl GetContext {
         chain_id: i32,
         address: String,
         abi: Value,
-        params: Vec<String>,
+        params: Vec<Option<Token>>,
         target_index: String,
         target_block_number: U256,
     ) -> Result<Token, WorkerError> {
@@ -209,11 +209,11 @@ impl GetContext {
             chain_id,
             address,
             abi,
-            params,
+            params.clone(),
             target_index,
             target_block_number,
         )
-        .map_err(|err| WorkerError::InvalidMessage)?;
+        .unwrap();
 
         let target_block_number = rule.target_block_number.clone();
         let contract_call = build_contract_call(
@@ -225,20 +225,20 @@ impl GetContext {
             Ok(param_type) => param_type,
             Err(e) => {
                 WorkerError::InvalidParamType(DbRuleType::ContractCall, e.to_string()).log();
-                return Err(WorkerError::InvalidMessage);
+                return Err(e);
             }
         };
 
         let raw_token = get_block_token(&contract_call, target_block_number)
             .await
-            .map_err(|err| WorkerError::InvalidMessage)?;
+            .unwrap();
 
         let token = decodes_token(
             &raw_token,
             &output_param_type,
             &contract_call.rule.target_index,
         )
-        .map_err(|err| WorkerError::InvalidMessage)?;
+        .unwrap();
 
         println!(
             "block_number: {:?}, token: {:?}",
@@ -292,7 +292,8 @@ impl GetContext {
 
         let mut stream = tokio_stream::iter(logs);
 
-        let mut vec_token = Vec::new();
+        // let mut vec_token = Vec::new();
+        let mut token = Token::Bool(false);
 
         while let Some(log) = stream.next().await {
             match contract_event.is_target_event(
@@ -320,7 +321,8 @@ impl GetContext {
                     )
                     .map_err(|err| WorkerError::InvalidMessage)?;
 
-                    vec_token.push(decoded_token);
+                    // vec_token.push(decoded_token);
+                    token = decoded_token;
                 }
                 Err(e) => {
                     WorkerError::InvalidMessage.log();
@@ -329,7 +331,18 @@ impl GetContext {
             }
         }
 
-        Ok(Token::Array(vec_token))
+        // println!(
+        //     "block_number: {:?}, token: {:?}",
+        //     target_block_number, vec_token
+        // );
+
+        println!(
+            "block_number: {:?}, token: {:?}",
+            target_block_number, token
+        );
+
+        // Ok(Token::Array(vec_token))
+        Ok(token)
     }
 
     pub async fn get_latest_block_number(&self, chain_id: i32) -> Result<Token, WorkerError> {

@@ -1,0 +1,57 @@
+[
+  {
+    "inputs": [],
+    "name": "callProxyMarket_getMarket",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "handlerID",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "handlerAddr",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "tokenPrice",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "depositTotalAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "borrowTotalAmount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "depositInterestRate",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "borrowInterestRate",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct CallProxy.callProxyMarket_HandlerAsset[]",
+        "name": "",
+        "type": "tuple[]"
+      },
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

@@ -62,4 +62,5 @@ pub const CONTROLLER_NAME: &str = "Controller";
 pub const EVALUATOR_NAME: &str = "Evaluator";
 
 /// Config Path
-pub const CONFIG_PATH: &str = "./worker/config.yaml";
+// pub const CONFIG_PATH: &str = "./worker/config.yaml";
+pub const CONFIG_PATH: &str = "/Users/munseon-ug/rust/watchtower/worker/config.yaml";

@@ -1,5 +1,10 @@
+use ethers::{
+    abi::{Param, ParamType, Token},
+    types::U256,
+    utils::hex,
+};
 use serde::Deserialize;
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, clone, collections::HashMap};
 use validator::Validate;
 
 use crate::utils::{error::GeneralError, types::ChainID};
@@ -14,6 +19,8 @@ use crate::utils::{error::GeneralError, types::ChainID};
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct Configuration {
     #[validate]
+    pub rpc_config: Vec<RPCConfig>,
+    #[validate]
     pub evm_providers: Vec<EVMProvider>,
     #[validate]
     pub sentry_config: SentryConfig,
@@ -22,12 +29,30 @@ pub struct Configuration {
     #[validate]
     pub contract_config: Vec<ContractConfig>,
     #[validate]
-    pub call_target: Vec<ContractTargetValue>,
+    pub rpc_call_target: Vec<RPCTargetValue>,
     #[validate]
-    pub blockchain_target: Vec<BlockchainTargetValue>,
+    pub contract_call_target: Vec<ContractCallTargetValue>,
+    #[validate]
+    pub blockchain_call_target: Vec<BlockchainTargetValue>,
+    #[validate]
+    pub contract_event_target: Vec<ContractEventTargetValue>,
 }
 
 /// # Description
+/// This struct represents the configuration for a URL.
+/// # Arguments
+/// * `name` - The name of the URL.
+/// * `url` - The URL.
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct RPCConfig {
+    pub name: String,
+    pub url: String,
+    pub call_type: String,
+    pub method_type: String,
+    pub api_body: Option<String>,
+    pub api_query: Option<String>,
+}
+
 /// This struct represents the configuration for an EVM provider.
 /// # Arguments
 /// * `name` - The network name.
@@ -76,6 +101,7 @@ pub struct PostgresConfig {
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
 pub struct ContractConfig {
     pub service: String,
+    pub blockchain: String,
     pub contract: String,
     pub address: String,
     pub path: String,
@@ -88,9 +114,216 @@ pub struct ContractConfig {
 /// * `params` - The params of the ContractTargetValue.
 /// * `target_index` - The target index of the ContractTargetValue.
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
-pub struct ContractTargetValue {
+pub struct ContractCallTargetValue {
     pub name: String,
-    pub params: Vec<String>,
+    #[serde(deserialize_with = "deserialize_params")]
+    pub params: Vec<Option<Token>>,
+    pub target_index: String,
+}
+
+/// # Description
+/// This struct represents the configuration for ContractEventTargetValue.
+/// # Arguments
+/// * `name` - The name of the ContractEventTargetValue.
+/// * `params` - The params of the ContractEventTargetValue.
+/// * `target_index` - The target index of the ContractEventTargetValue.
+#[derive(Default, Debug, Clone, Deserialize, Validate)]
+pub struct ContractEventTargetValue {
+    pub name: String,
+    pub event_index: i32,
+    pub target_index: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum ParamValue {
+    String(String),
+    Number(i64),
+    Boolean(bool),
+    Array(Vec<ParamValue>),
+    Tuple(Vec<ParamValue>),
+    Address(String),
+    Bytes(String),
+    FixedBytes(String),
+    Uint(String),
+    Int(String),
+}
+
+impl std::fmt::Display for ParamValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParamValue::String(s) => write!(f, "{}", s),
+            ParamValue::Number(n) => write!(f, "{}", n),
+            ParamValue::Boolean(b) => write!(f, "{}", b),
+            ParamValue::Array(arr) => write!(
+                f,
+                "[{}]",
+                arr.iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            ParamValue::Tuple(tuple) => write!(
+                f,
+                "({})",
+                tuple
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            ParamValue::Address(addr) => write!(f, "{}", addr),
+            ParamValue::Bytes(bytes) => write!(f, "{}", bytes),
+            ParamValue::FixedBytes(bytes) => write!(f, "{}", bytes),
+            ParamValue::Uint(uint) => write!(f, "{}", uint),
+            ParamValue::Int(int) => write!(f, "{}", int),
+        }
+    }
+}
+
+fn get_param_type(value: &ParamValue) -> ParamType {
+    match value {
+        ParamValue::String(_) => ParamType::String,
+        ParamValue::Number(_) => ParamType::Uint(256),
+        ParamValue::Boolean(_) => ParamType::Bool,
+        ParamValue::Address(_) => ParamType::Address,
+        ParamValue::Bytes(_) => ParamType::Bytes,
+        ParamValue::FixedBytes(_) => ParamType::FixedBytes(32),
+        ParamValue::Uint(_) => ParamType::Uint(256),
+        ParamValue::Int(_) => ParamType::Int(256),
+        ParamValue::Array(arr) => {
+            if arr.is_empty() {
+                ParamType::Array(Box::new(ParamType::String))
+            } else {
+                ParamType::Array(Box::new(get_param_type(&arr[0])))
+            }
+        }
+        ParamValue::Tuple(tuple) => ParamType::Tuple(tuple.iter().map(get_param_type).collect()),
+    }
+}
+
+fn deserialize_params<'de, D>(deserializer: D) -> Result<Vec<Option<Token>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let values: Vec<ParamValue> = Vec::deserialize(deserializer)?;
+
+    let tokens: Vec<Option<Token>> = values
+        .into_iter()
+        .map(|value| {
+            match value {
+                ParamValue::String(s) => {
+                    if s.starts_with("0x") {
+                        // Try to parse as address
+                        if let Ok(addr) = s.parse::<ethers::types::Address>() {
+                            Some(Token::Address(addr))
+                        } else {
+                            Some(Token::String(s))
+                        }
+                    } else {
+                        Some(Token::String(s))
+                    }
+                }
+                ParamValue::Number(n) => Some(Token::Uint(ethers::types::U256::from(n))),
+                ParamValue::Boolean(b) => Some(Token::Bool(b)),
+                ParamValue::Address(addr) => {
+                    if let Ok(addr) = addr.parse::<ethers::types::Address>() {
+                        Some(Token::Address(addr))
+                    } else {
+                        None
+                    }
+                }
+                ParamValue::Bytes(bytes) => {
+                    if let Ok(bytes) = hex::decode(bytes) {
+                        Some(Token::Bytes(bytes))
+                    } else {
+                        None
+                    }
+                }
+                ParamValue::FixedBytes(bytes) => {
+                    if let Ok(bytes) = hex::decode(bytes) {
+                        Some(Token::FixedBytes(bytes))
+                    } else {
+                        None
+                    }
+                }
+                ParamValue::Uint(uint) => {
+                    if let Ok(n) = uint.parse::<u64>() {
+                        Some(Token::Uint(ethers::types::U256::from(n)))
+                    } else {
+                        None
+                    }
+                }
+                ParamValue::Int(int) => {
+                    if let Ok(n) = int.parse::<i64>() {
+                        Some(Token::Int(U256::from(n)))
+                    } else {
+                        None
+                    }
+                }
+                ParamValue::Array(arr) => {
+                    let tokens: Vec<Option<Token>> = arr
+                        .into_iter()
+                        .map(|v| match v {
+                            ParamValue::String(s) => {
+                                if s.starts_with("0x") {
+                                    if let Ok(addr) = s.parse::<ethers::types::Address>() {
+                                        Some(Token::Address(addr))
+                                    } else {
+                                        Some(Token::String(s))
+                                    }
+                                } else {
+                                    Some(Token::String(s))
+                                }
+                            }
+                            ParamValue::Number(n) => {
+                                Some(Token::Uint(ethers::types::U256::from(n)))
+                            }
+                            ParamValue::Boolean(b) => Some(Token::Bool(b)),
+                            _ => None,
+                        })
+                        .collect();
+                    Some(Token::Array(tokens.into_iter().filter_map(|t| t).collect()))
+                }
+                ParamValue::Tuple(tuple) => {
+                    let tokens: Vec<Option<Token>> = tuple
+                        .into_iter()
+                        .map(|v| match v {
+                            ParamValue::String(s) => {
+                                if s.starts_with("0x") {
+                                    if let Ok(addr) = s.parse::<ethers::types::Address>() {
+                                        Some(Token::Address(addr))
+                                    } else {
+                                        Some(Token::String(s))
+                                    }
+                                } else {
+                                    Some(Token::String(s))
+                                }
+                            }
+                            ParamValue::Number(n) => {
+                                Some(Token::Uint(ethers::types::U256::from(n)))
+                            }
+                            ParamValue::Boolean(b) => Some(Token::Bool(b)),
+                            _ => None,
+                        })
+                        .collect();
+                    Some(Token::Tuple(tokens.into_iter().filter_map(|t| t).collect()))
+                }
+            }
+        })
+        .collect();
+
+    Ok(tokens)
+}
+
+/// # Description
+/// This struct represents the configuration for RPCTargetValue.
+/// # Arguments
+/// * `name` - The name of the RPCTargetValue.
+/// * `target_index` - The target index of the RPCTargetValue.
+#[derive(Default, Debug, Clone, Deserialize, Validate)]
+pub struct RPCTargetValue {
+    pub name: String,
     pub target_index: String,
 }
 
@@ -137,10 +370,16 @@ pub struct SlackConfig {
 ///
 /// A `Result` containing the `Configuration` instance.
 pub fn set_config(spec: &str) -> Configuration {
-    let user_config_file = std::fs::File::open(spec)
-        .unwrap_or_else(|_| panic!("{}", GeneralError::InvalidConfigFilePath.to_string()));
-    let user_config: Configuration = serde_yaml::from_reader(user_config_file)
-        .unwrap_or_else(|_| panic!("{}", GeneralError::InvalidConfigFileStructure.to_string()));
+    let user_config_file = std::fs::File::open(spec).unwrap_or_else(|_| {
+        panic!(
+            "{}, {}",
+            GeneralError::InvalidConfigFilePath.to_string(),
+            spec
+        )
+    });
+    // let user_config: Configuration = serde_yaml::from_reader(user_config_file)
+    //     .unwrap_or_else(|_| panic!("{}", GeneralError::InvalidConfigFileStructure.to_string()));
 
+    let user_config: Configuration = serde_yaml::from_reader(user_config_file).unwrap();
     user_config
 }

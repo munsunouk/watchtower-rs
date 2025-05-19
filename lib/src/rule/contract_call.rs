@@ -1,5 +1,5 @@
 use ethers::{
-    abi::{Abi, Function, ParamType, Token},
+    abi::{Abi, Function, Param, ParamType, Token},
     prelude::*,
 };
 use serde_json::Value;
@@ -63,7 +63,7 @@ pub struct ContractCallRule {
     pub chain_id: ChainID,
     pub address: Address,
     pub abi: Abi,
-    pub method_params: Vec<String>,
+    pub method_params: Vec<Option<Token>>,
     pub target_index: Vec<usize>,
     pub target_block_number: U64,
 }
@@ -99,7 +99,12 @@ impl TryFrom<&PgRow> for ContractCallRule {
             abi: parse_to_abi(row.get(DB_ABI_COLUMN)).map_err(|e| {
                 GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
             })?,
-            method_params: row.get(DB_METHOD_PARAMS_COLUMN),
+            method_params: serde_json::from_str(row.get(DB_METHOD_PARAMS_COLUMN)).map_err(|e| {
+                GeneralError::InvalidTypeConvertError(format!(
+                    "Failed to parse method params: {}",
+                    e
+                ))
+            })?,
             target_index,
             target_block_number: target_block_number,
         })
@@ -111,7 +116,7 @@ impl ContractCallRule {
         chain_id: i32,
         address: String,
         abi: Value,
-        params: Vec<String>,
+        params: Vec<Option<Token>>,
         target_index: String,
         target_block_number: U256,
     ) -> Result<Self, GeneralError> {

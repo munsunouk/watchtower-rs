@@ -141,8 +141,6 @@ pub fn run_with_runtime() -> Result<(), WorkerError> {
 async fn get_result() -> Result<(), WorkerError> {
     let config = set_config(CONFIG_PATH);
 
-    let mut symbol_table = SymbolTable::new();
-
     // let input = "
     //     bifrostBN = Bifrost.LatestBlock();
 
@@ -164,9 +162,7 @@ async fn get_result() -> Result<(), WorkerError> {
     // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC;
     // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifnetBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifaggBTC;
 
-    let result = parse_result(&config, &mut symbol_table, input)
-        .await
-        .unwrap();
+    let result = parse_result(&config, input).await.unwrap();
 
     println!("result: {:?}", result);
 
