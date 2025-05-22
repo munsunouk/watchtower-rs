@@ -192,7 +192,6 @@ impl GetContext {
             .map_err(|err| WorkerError::InvalidMessage)?;
 
         println!("token: {:?}", token);
-
         Ok(token)
     }
 

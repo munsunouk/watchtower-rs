@@ -13,9 +13,9 @@ pub use contract_event::ContractEvent;
 pub use rpc_call::RpcCall;
 
 use cron::Schedule;
-use serde_json::Value;
+use serde_json::{json, Value};
 
-use std::{str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use ethers::{
     abi::{Abi, Int, ParamType, Token, Uint},
@@ -25,19 +25,23 @@ use ethers::{
 
 use watch_tower_lib::{
     cli::db::postgres::PostgresClient,
+    rule::TargetIndex,
     utils::{
         constants::DEFAULT_INDEX,
         convert_hex_param,
         convert_hex_token,
-        error::IndexType,
+        error::{GeneralError, IndexType},
         DbRuleType,
         // evaluation::EvaluationRule,
     },
 };
 
-use crate::utils::{
-    constants::{DEFAULT_PARAM_VALUE, FILTER_INDEX_SPLIT_CHAR},
-    error::WorkerError,
+use crate::{
+    parse::evaluation::ParseResultType,
+    utils::{
+        constants::{DEFAULT_PARAM_VALUE, FILTER_INDEX_SPLIT_CHAR},
+        error::WorkerError,
+    },
 };
 
 /// # Description
@@ -294,11 +298,11 @@ pub fn decode_token(
 ///
 /// # Returns
 ///
-/// `Ok(())` if the index is valid, `Err(WorkerError)` otherwise.
-fn check_target_index(param_type: &ParamType, target_index: &[usize]) -> Result<(), WorkerError> {
+/// `true` if the index is valid, `false` otherwise.
+fn check_target_index(param_type: &ParamType, target_index: &[usize]) -> bool {
     if target_index.is_empty() {
         // Base case: If the index is empty, it's valid at this level.
-        return Ok(());
+        return true;
     }
 
     // We checked is_empty, so split_first is safe.
@@ -306,11 +310,12 @@ fn check_target_index(param_type: &ParamType, target_index: &[usize]) -> Result<
 
     match param_type {
         ParamType::Tuple(inner_types) => {
-            let inner_type = inner_types
-                .get(*current_index)
-                .ok_or(WorkerError::InvalidIndex(IndexType::USize(*current_index)))?;
-            // Recurse with the inner type and the rest of the index path.
-            check_target_index(inner_type, rest_index)
+            if let Some(inner_type) = inner_types.get(*current_index) {
+                // Recurse with the inner type and the rest of the index path.
+                check_target_index(inner_type, rest_index)
+            } else {
+                false
+            }
         }
         ParamType::Array(inner_type) | ParamType::FixedArray(inner_type, _) => {
             // For arrays/fixed arrays, we need to check the inner type against the rest of the index path.
@@ -320,11 +325,11 @@ fn check_target_index(param_type: &ParamType, target_index: &[usize]) -> Result<
         }
         // If it's not a tuple or array, but the index path is not empty (`rest_index` is not empty),
         // it means the index goes deeper than the type structure allows.
-        _ if !rest_index.is_empty() => Err(WorkerError::InvalidIndexDepth),
+        _ if !rest_index.is_empty() => false,
         // If it's not a tuple or array, and we have reached this point, it means target_index
         // had exactly one element (`current_index`). This signifies an attempt to index
         // into a non-indexable (simple) type like Uint, Address, Bool, etc.
-        _ => Err(WorkerError::InvalidIndexAccessOnNonCompositeType),
+        _ => false,
     }
 }
 
@@ -340,17 +345,87 @@ fn check_target_index(param_type: &ParamType, target_index: &[usize]) -> Result<
 pub fn decodes_token(
     token: &Token,
     param_type: &ParamType,
-    target_index: &Vec<usize>,
+    target_index: &Vec<TargetIndex>,
 ) -> Result<Token, WorkerError> {
     // Ensure the token and param_type are wrapped correctly first.
     let (wrapped_token, wrapped_param_type) =
         ensure_token_wrapper(token.clone(), param_type.clone());
 
-    // Validate the target index against the (potentially wrapped) parameter type structure.
-    check_target_index(&wrapped_param_type, target_index)?;
+    // Convert TargetIndex to usize indices, handling ForEach
+    let mut indices = Vec::new();
+    let mut foreach_positions = Vec::new();
 
-    // Proceed with decoding using the wrapped types and validated index.
-    decode_token(&wrapped_token, &wrapped_param_type, target_index)
+    // First pass: collect indices and foreach positions
+    for (i, idx) in target_index.iter().enumerate() {
+        match idx {
+            TargetIndex::Index(n) => indices.push(*n),
+            TargetIndex::ForEach => {
+                indices.push(0); // Start with 0
+                foreach_positions.push(i);
+            }
+        }
+    }
+
+    // If no foreach, just try once
+    if foreach_positions.is_empty() {
+        if check_target_index(&wrapped_param_type, &indices) {
+            return decode_token(&wrapped_token, &wrapped_param_type, &indices);
+        }
+        return Err(WorkerError::InvalidIndexDepth);
+    }
+
+    let mut decoded_tokens = Vec::new();
+    let max_tries = 1000; // Limit to prevent infinite loops
+
+    // Function to try all combinations recursively
+    fn try_combinations(
+        indices: &mut Vec<usize>,
+        foreach_positions: &[usize],
+        current_pos: usize,
+        max_tries: usize,
+        wrapped_token: &Token,
+        wrapped_param_type: &ParamType,
+        decoded_tokens: &mut Vec<Token>,
+    ) -> Result<(), WorkerError> {
+        if current_pos >= foreach_positions.len() {
+            if check_target_index(wrapped_param_type, indices) {
+                decoded_tokens.push(decode_token(wrapped_token, wrapped_param_type, indices)?);
+            }
+            return Ok(());
+        }
+
+        let pos = foreach_positions[current_pos];
+        for try_num in 0..max_tries {
+            indices[pos] = try_num;
+            try_combinations(
+                indices,
+                foreach_positions,
+                current_pos + 1,
+                max_tries,
+                wrapped_token,
+                wrapped_param_type,
+                decoded_tokens,
+            )?;
+        }
+        Ok(())
+    }
+
+    // Start recursive combination trying
+    try_combinations(
+        &mut indices,
+        &foreach_positions,
+        0,
+        max_tries,
+        &wrapped_token,
+        &wrapped_param_type,
+        &mut decoded_tokens,
+    )?;
+
+    if decoded_tokens.is_empty() {
+        return Err(WorkerError::InvalidIndexDepth);
+    }
+
+    Ok(Token::Array(decoded_tokens))
 }
 
 /// # Description
@@ -397,6 +472,91 @@ fn ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamTyp
             Token::Tuple(vec![token]),
             ParamType::Tuple(vec![param_type]),
         )
+    }
+}
+
+pub fn parse_meta_data(
+    variables: &mut HashMap<String, ParseResultType>,
+) -> Result<ParseResultType, GeneralError> {
+    let meta_data = variables.get("meta_data").unwrap();
+    match meta_data {
+        ParseResultType::String(meta_data) if meta_data == "VaultAddress" => {
+            if let Some(ParseResultType::HashMap(identifier)) = variables.get("identifier") {
+                for (key, value) in identifier.iter() {
+                    if key.contains(meta_data) {
+                        if let ParseResultType::Token(token) = value {
+                            if token.type_check(&ParamType::Array(Box::new(ParamType::String))) {
+                                if let Token::Array(tokens) = token {
+                                    let strings: Result<Vec<String>, GeneralError> = tokens
+                                        .iter()
+                                        .map(|t| match t {
+                                            Token::String(s) => Ok(s.clone()),
+                                            _ => Err(GeneralError::InvalidTypeConvert),
+                                        })
+                                        .collect();
+                                    let joined_string = strings?.join("|");
+                                    return Ok(ParseResultType::HashMap(HashMap::from([(
+                                        "api_query".to_string(),
+                                        ParseResultType::JSON(json!({
+                                            "active": joined_string
+                                        })),
+                                    )])));
+                                }
+                            } else if token.type_check(&ParamType::String) {
+                                if let Token::String(s) = token {
+                                    return Ok(ParseResultType::HashMap(HashMap::from([(
+                                        "api_query".to_string(),
+                                        ParseResultType::JSON(json!({
+                                            "active": s
+                                        })),
+                                    )])));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(GeneralError::InvalidTypeConvert)
+        }
+        _ => Ok(ParseResultType::Bool(false)),
+    }
+}
+
+pub fn decode_meta_data(
+    token: &Token,
+    variables: &mut HashMap<String, ParseResultType>,
+) -> Result<Token, GeneralError> {
+    let meta_data = variables.get("meta_data").unwrap();
+    match meta_data {
+        ParseResultType::String(meta_data) if meta_data == "VaultAddress" => {
+            if let Token::Array(arr) = token {
+                let sum = arr.iter().fold(U256::zero(), |acc, token| {
+                    if let Token::Uint(value) = token {
+                        acc + value
+                    } else {
+                        acc
+                    }
+                });
+                Ok(Token::Uint(sum))
+            } else {
+                Err(GeneralError::InvalidTypeConvert)
+            }
+        }
+        ParseResultType::String(meta_data) if meta_data == "any" => {
+            if let Token::Array(arr) = token {
+                let any = arr.iter().any(|token| {
+                    if let Token::Uint(value) = token {
+                        !value.is_zero()
+                    } else {
+                        false
+                    }
+                });
+                Ok(Token::Bool(any))
+            } else {
+                Err(GeneralError::InvalidTypeConvert)
+            }
+        }
+        _ => Ok(token.clone()),
     }
 }
 

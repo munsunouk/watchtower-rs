@@ -10,16 +10,16 @@ expression = { operation ~ (logical_operator ~ operation)* }
 operation  = { term ~ (comparison_operator ~ term)? }
 term       = { factor ~ (arithmetic_operator ~ factor)* }
 factor     = { primary ~ (multiplicative_operator ~ primary)* }
-primary    = { boolean_literal | call_stmt | number | identifier | "(" ~ expression ~ ")" }
+primary    = { boolean_literal | call_stmt | hex_address | number | identifier | "(" ~ expression ~ ")" }
 
 // specific identifiers
 blockchain             = { "Ethereum" | "BifrostTestnet" | "Bifrost" | "Base" | "Kaia" }
 service                = { "ChainlinkOracle" | "BifnetOracle" | "Bifagg" | "Everdex" | "BRP" | "CCCP" | "BIFI" }
-contract               = { "WBTC" | "BTC" | "BTCB" | "USDC" | "USDT" | "ETH" | "BTCBTCUSD" | "JPYBTCUSD" | "BTCBTCUSD" | "BNB" | "POL" | "DAI" | "BFC" | "BIFI" | "XRP" | "JPY" | "JPYEURO" | "EURO" | "LP_BTCUSDUSDC" | "WSTBFC" | "BTCUSD" | "SmartRouter" | "Poolinfo" | "Swap" | "TotalSupply" | "VaultAddress" | "CurrentRound" | "Socket" | "LendingPool" }
-contract_call_target   = { "LatestPrice" | "stBFC/BFC_stBFC_Liquidity" | "stBFC/BFC_BFC_Liquidity" | "DAI/USDC/USDT_USDT_Liquidity" | "BtcUSD/USDC_USDC_Liquidity" | "BtcUSD/USDC_BtcUSD_Liquidity" | "USDC/ETH_USDC_Liquidity" | "BFC/ETH_BFC_Liquidity" | "BFC/BTC_BFC_Liquidity" | "BIFI/BFC_BIFI_Liquidity" | "BFC/POL_BFC_Liquidity" | "BFC/USDC" | "TotalSupply" | "VaultAddress" | "CurrentRound" | "BtcUSD_deposit_liquidity" }
+contract               = { "WBTC" | "BTC" | "BTCB" | "USDC" | "USDT" | "ETH" | "BTCBTCUSD" | "JPYBTCUSD" | "BTCBTCUSD" | "BNB" | "POL" | "DAI" | "BFC" | "BIFI" | "XRP" | "JPY" | "JPYEURO" | "EURO" | "LP_BTCUSDUSDC" | "WSTBFC" | "BTCUSD" | "SmartRouter" | "Poolinfo" | "Swap" | "TotalSupply" | "VaultAddress" | "CurrentRound" | "Socket" | "LendingPool" | "Registration" }
+contract_call_target   = { "LatestPrice" | "Liquidity" | "stBFC/BFC_stBFC_Liquidity" | "stBFC/BFC_BFC_Liquidity" | "DAI/USDC/USDT_USDT_Liquidity" | "BtcUSD/USDC_USDC_Liquidity" | "BtcUSD/USDC_BtcUSD_Liquidity" | "USDC/ETH_USDC_Liquidity" | "BFC/ETH_BFC_Liquidity" | "BFC/BTC_BFC_Liquidity" | "BIFI/BFC_BIFI_Liquidity" | "BFC/POL_BFC_Liquidity" | "BFC/USDC" | "TotalSupply" | "VaultAddress" | "CurrentRound" | "BtcUSD_deposit_liquidity" | "SystemVault" }
 contract_event_target  = { "BridgeAmount" }
 blockchain_call_target = { "LatestBlock" | "EthBalance" | "UsdcBalance" | "UsdtBalance" | "BnbBalance" | "PolBalance" | "DaiBalance" | "BtcBalance" | "AggregatorBalance" | "AirdropBalance" | "Kaia_BtcBalance" | "Kaia_DaiBalance" | "Kaia_UsdtBalance" | "Kaia_UsdcBalance" | "Kaia_XrpBalance" | "Kaia_EthBalance" | "Kaia_UsdcBalance" | "BtcusdBalance" | "WsbfcBalance" | "JpyBalance" | "EuroBalance" | "Lp_Btcusdusdc" | "Base_Btcusd" | "Base_Jpybtcusd" | "TotalSupply" | "VaultAddress" | "CurrentRound" }
-rpc_call_target        = { "BTCTvl" }
+rpc_call_target        = { "VaultBalance" }
 
 params = { "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
 
@@ -29,8 +29,9 @@ contract_call_property   = { contract_call_target ~ params }
 contract_event_property  = { contract_event_target ~ params }
 blockchain_call_property = { blockchain_call_target ~ params }
 
-identifier = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/")* }
-number     = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+identifier  = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/")* }
+number      = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+hex_address = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 
 // call
 rpc_call        = { service ~ "." ~ rpc_call_property }

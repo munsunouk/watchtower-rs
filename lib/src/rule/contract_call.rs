@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use std::convert::TryFrom;
 
-use super::parse_string_to_index;
+use super::{parse_string_to_index, parse_string_to_target_index, TargetIndex};
 use crate::{
     cli::eth::EthClient,
     utils::{
@@ -64,7 +64,7 @@ pub struct ContractCallRule {
     pub address: Address,
     pub abi: Abi,
     pub method_params: Vec<Option<Token>>,
-    pub target_index: Vec<usize>,
+    pub target_index: Vec<TargetIndex>,
     pub target_block_number: U64,
 }
 
@@ -87,9 +87,10 @@ impl TryFrom<&PgRow> for ContractCallRule {
         let target_block_number = parse_string_to_u64(row.get(DB_TARGET_BLOCK_NUMBER_COLUMN))
             .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))?;
 
-        let target_index = parse_string_to_index(row.get(DB_VALUES_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let target_index =
+            parse_string_to_target_index(row.get(DB_VALUES_COLUMN)).map_err(|e| {
+                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
+            })?;
 
         Ok(Self {
             chain_id,
@@ -126,7 +127,7 @@ impl ContractCallRule {
 
         let target_block_number = parse_u256_to_u64(target_block_number);
 
-        let target_index = parse_string_to_index(target_index).map_err(|e| {
+        let target_index = parse_string_to_target_index(target_index).map_err(|e| {
             GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
         })?;
 

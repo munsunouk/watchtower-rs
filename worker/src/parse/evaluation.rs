@@ -45,7 +45,9 @@ use watch_tower_lib::utils::{
 
 use futures::executor::block_on;
 
+use crate::rule::decode_meta_data;
 use crate::rule::get::{get, get_eth_balance, get_latest_block_number, ContractParams, RpcParams};
+use crate::rule::parse_meta_data;
 use crate::rule::store::{assign, eval, SymbolTable, TokenConvert};
 use crate::utils::error::WorkerError;
 
@@ -256,20 +258,21 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
 
             Rule::params => {
                 let mut inner = pair.into_inner().peekable();
-
-                let mut result = Token::Bool(true);
+                let mut params_vec = Vec::new();
 
                 if inner.peek().is_some() {
                     for unwrapped_pair in inner {
-                        result = parse_pair(unwrapped_pair, context).await?;
-                        context.variables.insert(
-                            "function_params".to_string(),
-                            ParseResultType::Token(result.clone()),
-                        );
+                        let result = parse_pair(unwrapped_pair, context).await?;
+                        params_vec.push(Some(result.clone()));
                     }
                 }
 
-                Ok(result)
+                context.variables.insert(
+                    "function_params".to_string(),
+                    ParseResultType::ArrayParam(params_vec),
+                );
+
+                Ok(Token::Bool(true))
             }
 
             Rule::primary => {
@@ -290,6 +293,15 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 pair.as_str().to_string(),
             )?)),
 
+            Rule::hex_address => {
+                let address = pair.as_str();
+                Ok(Token::Address(
+                    ethers::types::Address::from_str(address).map_err(|_| {
+                        GeneralError::InvalidRuleDecode(format!("Invalid address: {}", address))
+                    })?,
+                ))
+            }
+
             Rule::call_stmt => {
                 let inner = pair.into_inner();
 
@@ -297,6 +309,10 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
 
                 for unwrapped_pair in inner {
                     result = parse_pair(unwrapped_pair, context).await?;
+                }
+
+                if let Some(_meta_data) = context.variables.get("meta_data") {
+                    result = decode_meta_data(&result, context.variables)?;
                 }
 
                 context.variables.clear();
@@ -329,9 +345,13 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
 
                         let target_block_number =
                             match context.variables.get("function_params").unwrap() {
-                                ParseResultType::Token(token) => {
-                                    if token.type_check(&ParamType::Uint(256)) {
-                                        token.clone().into_uint().unwrap()
+                                ParseResultType::ArrayParam(params) => {
+                                    if let Some(Some(token)) = params.first() {
+                                        if token.type_check(&ParamType::Uint(256)) {
+                                            token.clone().into_uint().unwrap()
+                                        } else {
+                                            return Err(GeneralError::InvalidTypeConvert);
+                                        }
                                     } else {
                                         return Err(GeneralError::InvalidTypeConvert);
                                     }
@@ -367,6 +387,62 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     ParseResultType::String(method_type) => method_type.clone(),
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
+
+                if context.variables.get("meta_data").is_some() {
+                    let meta_data = parse_meta_data(context.variables)?;
+
+                    if let ParseResultType::HashMap(meta_data) = meta_data {
+                        if let Some(ParseResultType::JSON(meta_api_query)) =
+                            meta_data.get("api_query")
+                        {
+                            if let Some(ParseResultType::JSON(existing_api_query)) =
+                                context.variables.get("api_query")
+                            {
+                                let mut merged = existing_api_query.clone();
+                                if let Some(obj) = merged.as_object_mut() {
+                                    if let Some(meta_obj) = meta_api_query.as_object() {
+                                        for (key, value) in meta_obj {
+                                            obj.insert(key.clone(), value.clone());
+                                        }
+                                    }
+                                }
+                                context
+                                    .variables
+                                    .insert("api_query".to_string(), ParseResultType::JSON(merged));
+                            } else {
+                                context.variables.insert(
+                                    "api_query".to_string(),
+                                    ParseResultType::JSON(meta_api_query.clone()),
+                                );
+                            }
+                        }
+
+                        if let Some(ParseResultType::JSON(meta_api_body)) =
+                            meta_data.get("api_body")
+                        {
+                            if let Some(ParseResultType::JSON(existing_api_body)) =
+                                context.variables.get("api_body")
+                            {
+                                let mut merged = existing_api_body.clone();
+                                if let Some(obj) = merged.as_object_mut() {
+                                    if let Some(meta_obj) = meta_api_body.as_object() {
+                                        for (key, value) in meta_obj {
+                                            obj.insert(key.clone(), value.clone());
+                                        }
+                                    }
+                                }
+                                context
+                                    .variables
+                                    .insert("api_body".to_string(), ParseResultType::JSON(merged));
+                            } else {
+                                context.variables.insert(
+                                    "api_body".to_string(),
+                                    ParseResultType::JSON(meta_api_body.clone()),
+                                );
+                            }
+                        }
+                    }
+                }
 
                 let api_body = if let Some(ParseResultType::JSON(api_body)) =
                     context.variables.get("api_body")
@@ -722,13 +798,21 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let rpc_call_target_str = pair.as_str();
 
                 for rpc_call_target in context.config.rpc_call_target.clone() {
-                    let RPCTargetValue { name, target_index } = rpc_call_target;
+                    let RPCTargetValue {
+                        name,
+                        meta_data,
+                        target_index,
+                    } = rpc_call_target;
 
                     if rpc_call_target_str == name {
                         context.variables.insert(
                             "target_index".to_string(),
                             ParseResultType::String(target_index),
                         );
+
+                        context
+                            .variables
+                            .insert("meta_data".to_string(), ParseResultType::String(meta_data));
                     }
                 }
 
@@ -977,8 +1061,7 @@ mod tests {
 
     fn test_new_parse_rule() {
         let test_input = "
-         bifrost_BlockNumber = BifrostTestnet.LatestBlock();
-         BifrostTestnet.BIFI.LendingPool.BtcUSD(bifrost_BlockNumber);
+        24454853;
         ";
 
         let pairs = RuleEvaluationParser::parse(Rule::program, test_input).unwrap();
@@ -1046,9 +1129,10 @@ mod tests {
     #[tokio::test]
     async fn test_parse_result1() {
         let test_input = "
-         bifrost_BlockNumber = Bifrost.LatestBlock();
-         reserve0 = Bifrost.Everdex.SmartRouter.stBFC/BFC_stBFC_Liquidity(bifrost_BlockNumber);
-         reserve1 = Bifrost.Everdex.SmartRouter.stBFC/BFC_BFC_Liquidity(bifrost_BlockNumber);
+
+         stBFC/BFC_MethodParams = 0x7FD303FCA8c485955700CA7B5f71068878e8EDBa;
+         reserve0 = Bifrost.Everdex.SmartRouter.Liquidity(stBFC/BFC_MethodParams);
+         reserve1 = Bifrost.Everdex.SmartRouter.stBFC/BFC_BFC_Liquidity();
 
          reserve0 * 100 / reserve1 > 95;
         ";
@@ -1064,7 +1148,7 @@ mod tests {
     async fn test_parse_result2() {
         let test_input = "
          bifrost_BlockNumber = Bifrost.LatestBlock();
-         liquidity = Bifrost.BIFI.LendingPool.BtcUSD_deposit_liquidity(bifrost_BlockNumber);
+         liquidity = Bifrost.BIFI.LendingPool.Liquidity(bifrost_BlockNumber, stBFC|BFC);
          liquidity > 5000000000000000000000000;
         ";
 
@@ -1094,9 +1178,19 @@ mod tests {
     async fn test_parse_result4() {
         let test_input = "
          bifrost_BlockNumber = Bifrost.LatestBlock();
-         totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
+
          currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrost_BlockNumber);
-         Bifrost.BRP.VaultAddress.VaultAddress(bifrost_BlockNumber, currentRound_MethodParams);
+         BRPVaultAddress = Bifrost.BRP.VaultAddress.VaultAddress(bifrost_BlockNumber, currentRound_MethodParams);
+         systemVaultAddress = Bifrost.BRP.Registration.SystemVault(bifrost_BlockNumber, currentRound_MethodParams);
+
+         vaultBalance = BRP.VaultBalance(BRPVaultAddress);
+         systemvaultBalance = BRP.VaultBalance(systemVaultAddress);
+         btcLiq = vaultBalance + systemvaultBalance;
+
+         totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
+         unifiedBTCLiq = totalSupply - 1110100;
+         unifiedBTCLiq - btcLiq > 1000000;
+         
         ";
 
         let config = setup();

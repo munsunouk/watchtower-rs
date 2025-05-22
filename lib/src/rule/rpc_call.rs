@@ -18,10 +18,11 @@ use ethers::{
 use reqwest::Method;
 use serde_json::Value;
 use sqlx::{postgres::PgRow, Row};
+use std::str::FromStr;
 
 use crate::utils::error::GeneralError;
 
-use super::parse_string_to_index;
+use super::{parse_string_to_index, parse_string_to_target_index, TargetIndex};
 
 /// # Description
 /// This struct represents a rule for RPC calls.
@@ -37,7 +38,7 @@ pub struct RpcCallRule {
     pub method_type: Method,
     pub api_body: Option<Value>,
     pub api_query: Option<Value>,
-    pub target_index: Vec<usize>,
+    pub target_index: Vec<TargetIndex>,
 }
 
 impl TryFrom<&PgRow> for RpcCallRule {
@@ -63,9 +64,10 @@ impl TryFrom<&PgRow> for RpcCallRule {
             GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
         })?;
 
-        let target_index = parse_string_to_index(row.get(DB_VALUES_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let target_index =
+            parse_string_to_target_index(row.get(DB_VALUES_COLUMN)).map_err(|e| {
+                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
+            })?;
 
         Ok(RpcCallRule {
             url: row.get(DB_URL_COLUMN),
@@ -93,7 +95,7 @@ impl RpcCallRule {
 
         let method_type = parse_string_to_method(method_type);
 
-        let target_index = parse_string_to_index(target_index).map_err(|e| {
+        let target_index = parse_string_to_target_index(target_index).map_err(|e| {
             GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
         })?;
 

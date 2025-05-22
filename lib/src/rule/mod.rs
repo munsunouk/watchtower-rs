@@ -68,3 +68,33 @@ pub fn parse_string_to_index(value: String) -> Result<Vec<usize>, GeneralError> 
         })
         .collect::<Result<Vec<usize>, GeneralError>>()
 }
+
+pub fn parse_string_to_target_index(value: String) -> Result<Vec<TargetIndex>, GeneralError> {
+    value
+        .split(FILTER_INDEX_SPLIT_CHAR)
+        .map(|s| {
+            s.parse()
+                .map_err(|_| GeneralError::InvalidTypeConvertError(s.to_string()))
+        })
+        .collect::<Result<Vec<TargetIndex>, GeneralError>>()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetIndex {
+    Index(usize),
+    ForEach,
+}
+
+impl FromStr for TargetIndex {
+    type Err = GeneralError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "~" {
+            Ok(TargetIndex::ForEach)
+        } else {
+            s.parse::<usize>()
+                .map(TargetIndex::Index)
+                .map_err(|_| GeneralError::InvalidTypeConvertError(s.to_string()))
+        }
+    }
+}

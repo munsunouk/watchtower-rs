@@ -324,6 +324,7 @@ where
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
 pub struct RPCTargetValue {
     pub name: String,
+    pub meta_data: String,
     pub target_index: String,
 }
 

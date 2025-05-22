@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-use super::parse_string_to_index;
+use super::{parse_string_to_index, parse_string_to_target_index, TargetIndex};
 
 /// # Description
 /// This struct represents a log of contract events.
@@ -72,7 +72,7 @@ pub struct ContractEventRule {
     pub address: Address,
     pub abi: Abi,
     pub event_index: usize,
-    pub target_index: Vec<usize>,
+    pub target_index: Vec<TargetIndex>,
     pub target_block_number: U64,
 }
 
@@ -107,7 +107,7 @@ impl TryFrom<&PgRow> for ContractEventRule {
                 GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
             })?,
             event_index,
-            target_index: parse_string_to_index(row.get(DB_VALUES_COLUMN))?,
+            target_index: parse_string_to_target_index(row.get(DB_VALUES_COLUMN))?,
             target_block_number: parse_i64_to_u64(row.get(DB_BLOCK_NUMBER_COLUMN)),
         })
     }
@@ -128,7 +128,7 @@ impl ContractEventRule {
             GeneralError::InvalidTypeConvertError(format!("Failed to parse chain ID: {}", e))
         })? as ChainID;
 
-        let target_index = parse_string_to_index(target_index).map_err(|e| {
+        let target_index = parse_string_to_target_index(target_index).map_err(|e| {
             GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
         })?;
 

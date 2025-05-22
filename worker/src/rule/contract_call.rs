@@ -99,17 +99,22 @@ impl<T: JsonRpcClient> ContractCall<T> {
 
         let function_input = &function.inputs;
 
-        let input_param_type = if !function_input.is_empty() {
+        let input_param_type = if function_input.is_empty() {
+            ParamType::Tuple(vec![])
+        } else if function_input.len() == 1 {
             let input_param =
                 function_input
                     .get(DEFAULT_FN_INPUT_INDEX)
                     .ok_or(WorkerError::InvalidIndex(IndexType::USize(
                         DEFAULT_FN_INPUT_INDEX,
                     )))?;
-
             input_param.kind.clone()
         } else {
-            ParamType::Tuple(vec![])
+            let input_param_types: Vec<ParamType> = function_input
+                .iter()
+                .map(|param| param.kind.clone())
+                .collect();
+            ParamType::Tuple(input_param_types)
         };
 
         Ok(input_param_type)
