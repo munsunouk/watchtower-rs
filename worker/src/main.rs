@@ -22,3 +22,5 @@ fn main() -> Result<(), WorkerError> {
     let args = Args::parse();
     run_with_runtime(&args.rule_path)
 }
+
+// changed for auth commit
