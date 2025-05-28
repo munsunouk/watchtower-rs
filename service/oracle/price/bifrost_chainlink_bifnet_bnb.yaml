@@ -1,0 +1,10 @@
+name: Bifrost Chainlink-Bifnet BNB Price Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  bifrostChainlinkBNB = Bifrost.ChainlinkOracle.BNB.LatestPrice(bifrostBN);
+  bifrostBifnetBNB = Bifrost.BifnetOracle.BNB.LatestPrice(bifrostBN);
+
+  diff = (bifrostChainlinkBNB * 100) / bifrostBifnetBNB;
+  diff < 105 && diff > 95;

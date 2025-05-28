@@ -1,27 +1,22 @@
-use ethers::abi::{Param, ParamType, Token};
+use ethers::abi::{ParamType, Token};
 
 use ethers::types::U256;
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::{postgres::PgRow, Row};
 
-use watch_tower_lib::cli::db::postgres::{
-    select_assign_data_sync, select_fetched_raw_data_with_filter, PostgresClient, Query, SelectData,
-};
 use watch_tower_lib::config::{
-    BlockchainTargetValue, Configuration, ContractCallTargetValue, ContractConfig,
-    ContractEventTargetValue, EVMProvider, RPCConfig, RPCTargetValue,
+    set_param_config, BlockchainTargetValue, Configuration, ContractCallTargetValue,
+    ContractConfig, ContractEventTargetValue, EVMProvider, RPCTargetValue,
 };
 use watch_tower_lib::utils::types::ChainID;
 use watch_tower_lib::utils::{
     constants::{
         BOOLEAN_LITERAL_FALSE, BOOLEAN_LITERAL_TRUE, DB_EXPECTED_VALUE_COLUMN, DB_ID_COLUMN,
         DB_RULE_FILTER_COLUMN, DEFAULT_INDEX, LOGIC_OPERATOR_AND, LOGIC_OPERATOR_OR,
-        RULE_FILTER_SPLIT_CHAR, RULE_ID_SPLIT_INDEX, VALUE_ID_SPLIT_INDEX,
     },
     error::GeneralError,
     parse_i32_to_usize, parse_string_to_uint, parse_to_abi,
     types::RuleID,
-    DbRuleType,
 };
 
 use watch_tower_lib::utils::error::IndexType;
@@ -34,22 +29,14 @@ use std::future::Future;
 use std::pin::Pin;
 use std::{collections::HashMap, str::FromStr};
 
-use watch_tower_lib::utils::{
-    arithmetic_token, compare_token,
-    constants::{
-        ADDRESS_SPLIT_INDEX, BLOCK_NUMBER_SPLIT_INDEX, CHAIN_SPLIT_INDEX, EVENT_INDEX_SPLIT_INDEX,
-        INTERVAL_SPLIT_INDEX, URL_SPLIT_INDEX,
-    },
-    parse_string_to_i32,
-};
-
-use futures::executor::block_on;
+use watch_tower_lib::utils::{arithmetic_token, compare_token};
 
 use crate::rule::decode_meta_data;
-use crate::rule::get::{get, get_eth_balance, get_latest_block_number, ContractParams, RpcParams};
-use crate::rule::parse_meta_data;
-use crate::rule::store::{assign, eval, SymbolTable, TokenConvert};
-use crate::utils::error::WorkerError;
+use crate::rule::get::{get, get_eth_balance, get_latest_block, get_latest_block_number};
+use crate::rule::store::{assign, check_store_value, eval, SymbolTable};
+use crate::utils::constants::{CONFIG_PATH, PARAM_CONFIG_PATH};
+
+use hex;
 
 /// # Description
 /// This struct represents an evaluation rule.
@@ -96,16 +83,20 @@ pub struct Context<'a> {
 /// * `rule_name` - The rule name.
 /// # Returns
 /// * `(HashMap<(String, String), String>, Vec<Token>)` - The rule values and values.
-pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePairFuture<'a> {
+pub fn parse_pair<'a>(
+    config: &'a Configuration,
+    pair: Pair<'a, Rule>,
+    context: &'a mut Context,
+) -> ParsePairFuture<'a> {
     Box::pin(async move {
         match pair.as_rule() {
             Rule::program => {
                 let inner = pair.into_inner();
 
-                let mut result = Token::Bool(true);
+                let mut result = Token::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(unwrapped_pair, context).await?;
+                    result = parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -114,10 +105,10 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
             Rule::expression_stmt => {
                 let inner = pair.into_inner();
 
-                let mut result = Token::Bool(true);
+                let mut result = Token::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(unwrapped_pair, context).await?;
+                    result = parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -133,7 +124,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                let result = parse_pair(first, context).await?;
+                let result = parse_pair(config, first, context).await?;
 
                 assign(
                     context.symbol_table,
@@ -153,13 +144,13 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                let mut result = parse_pair(first, context).await?;
+                let mut result = parse_pair(config, first, context).await?;
 
                 while let Some(op) = inner.next() {
                     let next = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                    let right = parse_pair(next, context).await?;
+                    let right = parse_pair(config, next, context).await?;
 
                     result = match op.as_str() {
                         LOGIC_OPERATOR_AND => {
@@ -201,14 +192,14 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let left = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
-                    .map(|p| parse_pair(p, context))?;
+                    .map(|p| parse_pair(config, p, context))?;
                 let left = left.await?;
 
                 if let Some(op) = inner.next() {
                     let right = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
-                        .map(|p| parse_pair(p, context))?;
+                        .map(|p| parse_pair(config, p, context))?;
                     let right = right.await?;
 
                     let err_msg = format!("{:?}, {:?}, {}", left, right, op.as_str().to_string());
@@ -222,16 +213,15 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
 
             Rule::term => {
                 let mut inner = pair.into_inner();
-                let mut result = parse_pair(inner.next().unwrap(), context).await?;
+                let mut result = parse_pair(config, inner.next().unwrap(), context).await?;
 
                 while let Some(op) = inner.next() {
                     let next = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                    let right = parse_pair(next, context).await?;
+                    let right = parse_pair(config, next, context).await?;
 
-                    result = arithmetic_token(&result, &right, op.as_str())
-                        .unwrap_or_else(|| Token::Uint(U256::from(0)));
+                    result = arithmetic_token(&result, &right, op.as_str()).unwrap();
                 }
 
                 Ok(result)
@@ -242,13 +232,13 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                let mut result = parse_pair(first, context).await?;
+                let mut result = parse_pair(config, first, context).await?;
 
                 while let Some(op) = inner.next() {
                     let next = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                    let right = parse_pair(next, context).await?;
+                    let right = parse_pair(config, next, context).await?;
 
                     result = arithmetic_token(&result, &right, op.as_str())
                         .unwrap_or_else(|| Token::Uint(U256::from(0)));
@@ -262,7 +252,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
 
                 if inner.peek().is_some() {
                     for unwrapped_pair in inner {
-                        let result = parse_pair(unwrapped_pair, context).await?;
+                        let result = parse_pair(config, unwrapped_pair, context).await?;
                         params_vec.push(Some(result.clone()));
                     }
                 }
@@ -280,7 +270,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                parse_pair(first, context).await
+                parse_pair(config, first, context).await
             }
 
             Rule::boolean_literal => match pair.as_str() {
@@ -308,7 +298,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let mut result = Token::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(unwrapped_pair, context).await?;
+                    result = parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 if let Some(_meta_data) = context.variables.get("meta_data") {
@@ -323,44 +313,91 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
             Rule::blockchain_call => {
                 let inner = pair.into_inner();
 
-                let mut result = Token::Bool(false);
+                let result;
 
                 for unwrapped_pair in inner {
-                    parse_pair(unwrapped_pair, context).await?;
+                    parse_pair(config, unwrapped_pair, context).await?;
                 }
+
+                let param_config = set_param_config(PARAM_CONFIG_PATH);
 
                 let chain_id = match context.variables.get("chain_id").unwrap() {
                     ParseResultType::ChainID(id) => *id as i32,
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
 
-                if let Some(ParseResultType::String(name)) = context.variables.get("name") {
-                    if name == "LatestBlock" {
-                        result = get_latest_block_number(chain_id).await;
-                    } else if name == "EthBalance" {
-                        let address = match context.variables.get("address").unwrap() {
-                            ParseResultType::String(addr) => addr.clone(),
-                            _ => return Err(GeneralError::InvalidTypeConvert),
-                        };
+                let blockchain = match context.variables.get("blockchain").unwrap() {
+                    ParseResultType::String(blockchain) => blockchain.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
 
-                        let target_block_number =
-                            match context.variables.get("function_params").unwrap() {
-                                ParseResultType::ArrayParam(params) => {
-                                    if let Some(Some(token)) = params.first() {
-                                        if token.type_check(&ParamType::Uint(256)) {
-                                            token.clone().into_uint().unwrap()
-                                        } else {
-                                            return Err(GeneralError::InvalidTypeConvert);
+                let param_nessesary = match context.variables.get("param_nessesary") {
+                    Some(ParseResultType::Array(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let function_params = match context.variables.get("function_params") {
+                    Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let mut target_block_number = get_latest_block_number(config, chain_id)
+                    .await
+                    .into_uint()
+                    .unwrap();
+
+                let mut address: Option<String> = None;
+
+                for (param_nessery, function_param) in
+                    param_nessesary.iter().zip(function_params.iter())
+                {
+                    match param_nessery.as_str() {
+                        "BlockNumber" => {
+                            if let Some(token) = function_param {
+                                if token.type_check(&ParamType::Uint(256)) {
+                                    target_block_number = token.clone().into_uint().unwrap();
+                                }
+                            }
+                        }
+                        "Balance" => {
+                            if let Some(token) = function_param {
+                                if let Token::String(balance_name) = token {
+                                    for balance in param_config.balance_config.iter() {
+                                        if (balance.name == *balance_name)
+                                            && (balance.blockchain == *blockchain)
+                                        {
+                                            address = Some(balance.address.clone());
+                                            break;
                                         }
-                                    } else {
-                                        return Err(GeneralError::InvalidTypeConvert);
                                     }
                                 }
-                                _ => return Err(GeneralError::InvalidTypeConvert),
-                            };
-
-                        result = get_eth_balance(chain_id, address, target_block_number).await;
+                            }
+                        }
+                        _ => return Err(GeneralError::InvalidTypeConvert),
                     }
+                }
+
+                match context.variables.get("name") {
+                    Some(ParseResultType::String(name)) => match name.as_str() {
+                        "LatestBlock" => {
+                            result = get_latest_block(config, chain_id, "number".to_string()).await;
+                        }
+                        "LatestTimestamp" => {
+                            result =
+                                get_latest_block(config, chain_id, "timestamp".to_string()).await;
+                        }
+                        "Balance" => {
+                            result = get_eth_balance(
+                                config,
+                                chain_id,
+                                address.unwrap(),
+                                target_block_number,
+                            )
+                            .await;
+                        }
+                        _ => return Err(GeneralError::InvalidTypeConvert),
+                    },
+                    _ => return Err(GeneralError::InvalidTypeConvert),
                 }
 
                 Ok(result)
@@ -370,13 +407,10 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
-                    parse_pair(unwrapped_pair, context).await?;
+                    parse_pair(config, unwrapped_pair, context).await?;
                 }
 
-                let url = match context.variables.get("url").unwrap() {
-                    ParseResultType::String(url) => url.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
-                };
+                let param_config = set_param_config(PARAM_CONFIG_PATH);
 
                 let call_type = match context.variables.get("call_type").unwrap() {
                     ParseResultType::String(call_type) => call_type.clone(),
@@ -388,63 +422,19 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
 
-                if context.variables.get("meta_data").is_some() {
-                    let meta_data = parse_meta_data(context.variables)?;
+                let param_nessesary = match context.variables.get("param_nessesary") {
+                    Some(ParseResultType::Array(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
 
-                    if let ParseResultType::HashMap(meta_data) = meta_data {
-                        if let Some(ParseResultType::JSON(meta_api_query)) =
-                            meta_data.get("api_query")
-                        {
-                            if let Some(ParseResultType::JSON(existing_api_query)) =
-                                context.variables.get("api_query")
-                            {
-                                let mut merged = existing_api_query.clone();
-                                if let Some(obj) = merged.as_object_mut() {
-                                    if let Some(meta_obj) = meta_api_query.as_object() {
-                                        for (key, value) in meta_obj {
-                                            obj.insert(key.clone(), value.clone());
-                                        }
-                                    }
-                                }
-                                context
-                                    .variables
-                                    .insert("api_query".to_string(), ParseResultType::JSON(merged));
-                            } else {
-                                context.variables.insert(
-                                    "api_query".to_string(),
-                                    ParseResultType::JSON(meta_api_query.clone()),
-                                );
-                            }
-                        }
+                let function_params = match context.variables.get("function_params") {
+                    Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
 
-                        if let Some(ParseResultType::JSON(meta_api_body)) =
-                            meta_data.get("api_body")
-                        {
-                            if let Some(ParseResultType::JSON(existing_api_body)) =
-                                context.variables.get("api_body")
-                            {
-                                let mut merged = existing_api_body.clone();
-                                if let Some(obj) = merged.as_object_mut() {
-                                    if let Some(meta_obj) = meta_api_body.as_object() {
-                                        for (key, value) in meta_obj {
-                                            obj.insert(key.clone(), value.clone());
-                                        }
-                                    }
-                                }
-                                context
-                                    .variables
-                                    .insert("api_body".to_string(), ParseResultType::JSON(merged));
-                            } else {
-                                context.variables.insert(
-                                    "api_body".to_string(),
-                                    ParseResultType::JSON(meta_api_body.clone()),
-                                );
-                            }
-                        }
-                    }
-                }
+                let mut url: Option<String> = None;
 
-                let api_body = if let Some(ParseResultType::JSON(api_body)) =
+                let mut api_body = if let Some(ParseResultType::JSON(api_body)) =
                     context.variables.get("api_body")
                 {
                     Some(api_body.clone())
@@ -452,7 +442,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     None
                 };
 
-                let api_query = if let Some(ParseResultType::JSON(api_query)) =
+                let mut api_query = if let Some(ParseResultType::JSON(api_query)) =
                     context.variables.get("api_query")
                 {
                     Some(api_query.clone())
@@ -460,19 +450,68 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     None
                 };
 
+                for (param_nessery, function_param) in
+                    param_nessesary.iter().zip(function_params.iter())
+                {
+                    match param_nessery.as_str() {
+                        "Url" => {
+                            if let Some(token) = function_param {
+                                if let Token::String(url_name) = token {
+                                    for url_config in param_config.url_config.iter() {
+                                        if url_config.name == *url_name {
+                                            url = Some(url_config.url.clone());
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "VaultAddress" => {
+                            if let Some(token) = function_param {
+                                if token.type_check(&ParamType::Array(Box::new(ParamType::String)))
+                                {
+                                    if let Token::Array(tokens) = token {
+                                        let strings: Result<Vec<String>, GeneralError> = tokens
+                                            .iter()
+                                            .map(|t| match t {
+                                                Token::String(s) => Ok(s.clone()),
+                                                _ => Err(GeneralError::InvalidTypeConvert),
+                                            })
+                                            .collect();
+                                        let joined_string = strings?.join("|");
+                                        api_query = Some(json!({
+                                            "active": joined_string
+                                        }));
+                                    }
+                                } else if token.type_check(&ParamType::String) {
+                                    if let Token::String(single_string) = token {
+                                        api_query = Some(json!({
+                                            "active": single_string
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
                 let target_index = match context.variables.get("target_index").unwrap() {
                     ParseResultType::String(idx) => idx.clone(),
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
 
-                let result = get((
-                    url,
-                    call_type,
-                    method_type,
-                    api_body,
-                    api_query,
-                    target_index,
-                ))
+                let result = get(
+                    config,
+                    (
+                        url.unwrap(),
+                        call_type,
+                        method_type,
+                        api_body,
+                        api_query,
+                        target_index,
+                    ),
+                )
                 .await;
 
                 Ok(result)
@@ -482,8 +521,10 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
-                    parse_pair(unwrapped_pair, context).await?;
+                    parse_pair(config, unwrapped_pair, context).await?;
                 }
+
+                let param_config = set_param_config(PARAM_CONFIG_PATH);
 
                 let chain_id = match context.variables.get("chain_id").unwrap() {
                     ParseResultType::ChainID(id) => *id as i32,
@@ -497,44 +538,96 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     ParseResultType::JSON(abi) => abi.clone(),
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
-                let mut params = match context.variables.get("method_params").unwrap() {
-                    ParseResultType::ArrayParam(params) => params.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
-                };
+
                 let target_index = match context.variables.get("target_index").unwrap() {
                     ParseResultType::String(idx) => idx.clone(),
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
 
-                let mut target_block_number =
-                    get_latest_block_number(chain_id).await.into_uint().unwrap();
+                let mut target_block_number = get_latest_block_number(config, chain_id)
+                    .await
+                    .into_uint()
+                    .unwrap();
 
-                if let Some(ParseResultType::HashMap(identifier)) =
-                    context.variables.get("identifier")
+                let param_nessesary = match context.variables.get("param_nessesary") {
+                    Some(ParseResultType::Array(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let function_params = match context.variables.get("function_params") {
+                    Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let mut params = match context.variables.get("method_params").unwrap() {
+                    ParseResultType::ArrayParam(params) => params.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                for (param_nessery, function_param) in
+                    param_nessesary.iter().zip(function_params.iter())
                 {
-                    for (key, value) in identifier.iter() {
-                        if key.contains("BlockNumber") {
-                            if let ParseResultType::Token(token) = value {
+                    match param_nessery.as_str() {
+                        "BlockNumber" => {
+                            if let Some(token) = function_param {
                                 if token.type_check(&ParamType::Uint(256)) {
                                     target_block_number = token.clone().into_uint().unwrap();
                                 }
                             }
-                        } else if key.contains("MethodParams") {
-                            if let ParseResultType::Token(token) = value {
+                        }
+                        "Pool" => {
+                            if let Some(token) = function_param {
+                                if let Token::String(pool_name) = token {
+                                    for pool in param_config.pool_config.iter() {
+                                        if pool.name == *pool_name {
+                                            params.push(Some(Token::Address(
+                                                pool.address.parse().unwrap(),
+                                            )));
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "OID" => {
+                            if let Some(token) = function_param {
+                                if let Token::String(oid_name) = token {
+                                    for oid in param_config.oid_config.iter() {
+                                        if oid.name == *oid_name {
+                                            // Convert to bytes32
+                                            let bytes =
+                                                hex::decode(&oid.address[2..]).map_err(|_| {
+                                                    GeneralError::InvalidTypeConvertError(format!(
+                                                        "Failed to parse bytes32: {}",
+                                                        oid.address
+                                                    ))
+                                                })?;
+                                            params.push(Some(Token::FixedBytes(bytes)));
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            if let Some(token) = function_param {
                                 params.push(Some(token.clone()));
                             }
                         }
                     }
                 }
 
-                let result = get((
-                    chain_id,
-                    address,
-                    abi,
-                    params,
-                    target_index,
-                    target_block_number,
-                ))
+                let result = get(
+                    config,
+                    (
+                        chain_id,
+                        address,
+                        abi,
+                        params,
+                        target_index,
+                        target_block_number,
+                    ),
+                )
                 .await;
 
                 Ok(result)
@@ -544,7 +637,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
-                    parse_pair(unwrapped_pair, context).await?;
+                    parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 let chain_id = match context.variables.get("chain_id").unwrap() {
@@ -568,8 +661,10 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
 
-                let mut target_block_number =
-                    get_latest_block_number(chain_id).await.into_uint().unwrap();
+                let mut target_block_number = get_latest_block_number(config, chain_id)
+                    .await
+                    .into_uint()
+                    .unwrap();
 
                 if let Some(ParseResultType::HashMap(identifier)) =
                     context.variables.get("identifier")
@@ -585,14 +680,17 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     }
                 }
 
-                let result = get((
-                    chain_id,
-                    address,
-                    abi,
-                    event_index,
-                    target_index,
-                    target_block_number,
-                ))
+                let result = get(
+                    config,
+                    (
+                        chain_id,
+                        address,
+                        abi,
+                        event_index,
+                        target_index,
+                        target_block_number,
+                    ),
+                )
                 .await;
 
                 Ok(result)
@@ -629,7 +727,6 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                         let ContractConfig {
                             service: parsed_service,
                             blockchain,
-                            path,
                             ..
                         } = contract_config;
 
@@ -647,66 +744,6 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                         }
                     }
                 } else {
-                    for rpc_config in context.config.rpc_config.clone() {
-                        let RPCConfig {
-                            name,
-                            url,
-                            call_type,
-                            method_type,
-                            api_body,
-                            api_query,
-                        } = rpc_config;
-
-                        let mut value_api_body: Option<Value> = None;
-                        let mut value_api_query: Option<Value> = None;
-
-                        if let Some(api_body) = api_body {
-                            value_api_body =
-                                Some(serde_json::from_str(&api_body).map_err(|e| {
-                                    GeneralError::InvalidTypeConvertError(format!(
-                                        "Failed to parse JSON: {},{}",
-                                        api_body, e
-                                    ))
-                                })?);
-                        }
-
-                        if let Some(api_query) = api_query {
-                            value_api_query = serde_json::from_str(&api_query).map_err(|e| {
-                                GeneralError::InvalidTypeConvertError(format!(
-                                    "Failed to parse JSON: {},{}",
-                                    api_query, e
-                                ))
-                            })?;
-                        }
-
-                        if name == service {
-                            context
-                                .variables
-                                .insert("url".to_string(), ParseResultType::String(url));
-                            context.variables.insert(
-                                "call_type".to_string(),
-                                ParseResultType::String(call_type),
-                            );
-                            context.variables.insert(
-                                "method_type".to_string(),
-                                ParseResultType::String(method_type),
-                            );
-
-                            if let Some(value_api_body) = value_api_body {
-                                context.variables.insert(
-                                    "api_body".to_string(),
-                                    ParseResultType::JSON(value_api_body),
-                                );
-                            }
-
-                            if let Some(value_api_query) = value_api_query {
-                                context.variables.insert(
-                                    "api_query".to_string(),
-                                    ParseResultType::JSON(value_api_query),
-                                );
-                            }
-                        }
-                    }
                 }
 
                 Ok(Token::Bool(true))
@@ -714,6 +751,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
 
             Rule::contract => {
                 let contract_str = pair.as_str();
+                let mut found = false;
 
                 for contract_config in context.config.contract_config.clone() {
                     let ContractConfig {
@@ -736,18 +774,19 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                             && contract_str == contract
                             && *blockchain == parsed_blockchain
                         {
-                            let abi_content = fs::read_to_string(path).map_err(|e| {
+                            // Get the config file's directory
+                            let config_dir = std::path::Path::new(CONFIG_PATH).parent().unwrap();
+                            // Resolve the ABI path relative to the config file
+                            let abi_path = config_dir.join(path);
+
+                            let abi_content = fs::read_to_string(abi_path).map_err(|e| {
                                 GeneralError::InvalidTypeConvertError(format!(
                                     "Failed to read ABI file: {}",
                                     e
                                 ))
                             })?;
-                            let abi: Value = serde_json::from_str(&abi_content).map_err(|e| {
-                                GeneralError::InvalidTypeConvertError(format!(
-                                    "Failed to parse ABI: {}",
-                                    e
-                                ))
-                            })?;
+
+                            let abi = parse_abi_text(&abi_content)?;
 
                             context
                                 .variables
@@ -756,16 +795,26 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                             context
                                 .variables
                                 .insert("address".to_string(), ParseResultType::String(address));
+
+                            found = true;
+                            break;
                         }
                     }
                 }
 
-                Ok(Token::Bool(true))
+                Ok(Token::Bool(found))
             }
 
             Rule::identifier => {
                 let identifier = pair.as_str();
-                let result = eval(context.symbol_table, identifier);
+
+                let check_store_value = check_store_value(context.symbol_table, identifier);
+
+                let result = if check_store_value == Token::Bool(true) {
+                    eval(context.symbol_table, identifier)
+                } else {
+                    Token::String(identifier.to_string())
+                };
 
                 if let Some(ParseResultType::HashMap(existing)) =
                     context.variables.get("identifier")
@@ -801,10 +850,59 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                     let RPCTargetValue {
                         name,
                         meta_data,
+                        call_type,
+                        method_type,
+                        api_body,
+                        api_query,
                         target_index,
+                        param_nessesary,
                     } = rpc_call_target;
 
                     if rpc_call_target_str == name {
+                        let mut value_api_body: Option<Value> = None;
+                        let mut value_api_query: Option<Value> = None;
+
+                        if let Some(api_body) = api_body {
+                            value_api_body =
+                                Some(serde_json::from_str(&api_body).map_err(|e| {
+                                    GeneralError::InvalidTypeConvertError(format!(
+                                        "Failed to parse JSON: {},{}",
+                                        api_body, e
+                                    ))
+                                })?);
+                        }
+
+                        if let Some(api_query) = api_query {
+                            value_api_query = serde_json::from_str(&api_query).map_err(|e| {
+                                GeneralError::InvalidTypeConvertError(format!(
+                                    "Failed to parse JSON: {},{}",
+                                    api_query, e
+                                ))
+                            })?;
+                        }
+
+                        context
+                            .variables
+                            .insert("call_type".to_string(), ParseResultType::String(call_type));
+                        context.variables.insert(
+                            "method_type".to_string(),
+                            ParseResultType::String(method_type),
+                        );
+
+                        if let Some(value_api_body) = value_api_body {
+                            context.variables.insert(
+                                "api_body".to_string(),
+                                ParseResultType::JSON(value_api_body),
+                            );
+                        }
+
+                        if let Some(value_api_query) = value_api_query {
+                            context.variables.insert(
+                                "api_query".to_string(),
+                                ParseResultType::JSON(value_api_query),
+                            );
+                        }
+
                         context.variables.insert(
                             "target_index".to_string(),
                             ParseResultType::String(target_index),
@@ -813,6 +911,11 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                         context
                             .variables
                             .insert("meta_data".to_string(), ParseResultType::String(meta_data));
+
+                        context.variables.insert(
+                            "param_nessesary".to_string(),
+                            ParseResultType::Array(param_nessesary),
+                        );
                     }
                 }
 
@@ -827,6 +930,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                         name,
                         params,
                         target_index,
+                        param_nessesary,
                     } = contract_call_target;
 
                     if contract_call_target_str == name {
@@ -837,6 +941,10 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                         context.variables.insert(
                             "target_index".to_string(),
                             ParseResultType::String(target_index),
+                        );
+                        context.variables.insert(
+                            "param_nessesary".to_string(),
+                            ParseResultType::Array(param_nessesary),
                         );
                     }
                 }
@@ -875,8 +983,8 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 for blockchain_call_target in context.config.blockchain_call_target.clone() {
                     let BlockchainTargetValue {
                         name,
-                        params,
-                        metadata,
+                        param_nessesary,
+                        ..
                     } = blockchain_call_target;
 
                     if blockchain_call_target_str == name {
@@ -884,12 +992,10 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                             .variables
                             .insert("name".to_string(), ParseResultType::String(name));
 
-                        if let Some(metadata) = metadata {
-                            context.variables.insert(
-                                "address".to_string(),
-                                ParseResultType::String(metadata.address),
-                            );
-                        }
+                        context.variables.insert(
+                            "param_nessesary".to_string(),
+                            ParseResultType::Array(param_nessesary),
+                        );
                     }
                 }
 
@@ -902,7 +1008,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let mut result = Token::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(unwrapped_pair, context).await?;
+                    result = parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -914,7 +1020,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let mut result = Token::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(unwrapped_pair, context).await?;
+                    result = parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -926,7 +1032,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let mut result = Token::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(unwrapped_pair, context).await?;
+                    result = parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -938,7 +1044,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
                 let mut result = Token::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(unwrapped_pair, context).await?;
+                    result = parse_pair(config, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -957,7 +1063,7 @@ pub fn parse_pair<'a>(pair: Pair<'a, Rule>, context: &'a mut Context) -> ParsePa
 /// * `abi_text` - The ABI text.
 /// # Returns
 /// * `Result<bool, GeneralError>` - The result.
-pub fn check_function_length(abi_text: &str) -> Result<bool, GeneralError> {
+pub fn _check_function_length(abi_text: &str) -> Result<bool, GeneralError> {
     let abi_value = parse_abi_text(abi_text)?;
 
     let abi = parse_to_abi(abi_value)?;
@@ -975,7 +1081,7 @@ pub fn check_function_length(abi_text: &str) -> Result<bool, GeneralError> {
 /// * `abi_text` - The ABI text.
 /// # Returns
 /// * `Result<bool, GeneralError>` - The result.
-pub fn check_event_length(abi_text: &str) -> Result<bool, GeneralError> {
+pub fn _check_event_length(abi_text: &str) -> Result<bool, GeneralError> {
     let abi_value = parse_abi_text(abi_text)?;
 
     let abi = parse_to_abi(abi_value)?;
@@ -1001,8 +1107,8 @@ pub fn parse_abi_text(abi_text: &str) -> Result<Value, GeneralError> {
 #[derive(Debug, Clone)]
 pub enum ParseResultType {
     String(String),
-    Number(U256),
-    Bool(bool),
+    _Number(U256),
+    _Bool(bool),
     JSON(Value),
     ChainID(ChainID),
     Array(Vec<String>),
@@ -1038,7 +1144,7 @@ pub async fn parse_result(
         variables: &mut HashMap::new(),
     };
     for pair in pairs {
-        result = parse_pair(pair, &mut context).await?;
+        result = parse_pair(config, pair, &mut context).await?;
     }
     Ok(result)
 }
@@ -1046,22 +1152,32 @@ pub async fn parse_result(
 #[cfg(test)]
 mod tests {
 
-    use ethers::{abi::Int, types::U256};
-    use watch_tower_lib::{config::set_config, utils::parse_compare};
-
-    use crate::utils::constants::CONFIG_PATH;
+    use watch_tower_lib::config::set_test_config;
 
     use super::*;
 
     fn setup() -> Configuration {
-        set_config("/Users/munseon-ug/rust/watchtower/worker/config.yaml")
+        set_test_config("/Users/munseon-ug/rust/watchtower/worker/config.yaml")
     }
 
     #[test]
 
     fn test_new_parse_rule() {
         let test_input = "
-        24454853;
+         bifrostBN = Bifrost.LatestBlock();
+
+         currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrostBN);
+         BRPVaultAddress = Bifrost.BRP.VaultAddress.VaultAddress(bifrostBN, currentRound_MethodParams);
+         systemVaultAddress = Bifrost.BRP.Registration.SystemVault(bifrostBN, currentRound_MethodParams);
+
+         vaultBalance = BRP.VaultBalance(Blockchain, BRPVaultAddress);
+         systemvaultBalance = BRP.VaultBalance(Blockchain, systemVaultAddress);
+         btcLiq = vaultBalance + systemvaultBalance;
+
+         totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrostBN);
+         unifiedBTCLiq = totalSupply - 1110100;
+         unifiedBTCLiq - btcLiq > 1000000;
+         
         ";
 
         let pairs = RuleEvaluationParser::parse(Rule::program, test_input).unwrap();
@@ -1076,8 +1192,12 @@ mod tests {
         // ";
 
         let test_input = "
-         bifrost_BlockNumber = Bifrost.LatestBlock();
-         Bifrost.BIFI.LendingPool.BtcUSD_deposit_liquidity(bifrost_BlockNumber);
+            bifrostBN = Bifrost.LatestBlock();
+
+            bifrostChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
+            bifrostChainlinkBTC1 = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
+
+            (bifrostChainlinkBTC + bifrostChainlinkBTC1) / 2;
         ";
 
         // target 들 매개변수로 변경
@@ -1130,11 +1250,8 @@ mod tests {
     async fn test_parse_result1() {
         let test_input = "
 
-         stBFC/BFC_MethodParams = 0x7FD303FCA8c485955700CA7B5f71068878e8EDBa;
-         reserve0 = Bifrost.Everdex.SmartRouter.Liquidity(stBFC/BFC_MethodParams);
-         reserve1 = Bifrost.Everdex.SmartRouter.stBFC/BFC_BFC_Liquidity();
-
-         reserve0 * 100 / reserve1 > 95;
+         bifrost_BlockNumber = Bifrost.LatestBlock();
+         reserve0 = Bifrost.Everdex.SmartRouter.Liquidity(bifrost_BlockNumber, stBFC/BFC);
         ";
 
         let config = setup();

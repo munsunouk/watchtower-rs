@@ -1,0 +1,13 @@
+name: Bifrost OracleManager USDT Decision Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  round = Bifrost.OracleManager.Round.Round(bifrostBN, USDT);
+  lastTimestamp = Bifrost.OracleManager.History.Timestamp(bifrostBN, USDT, round);
+  decisionInterval = Bifrost.OracleManager.TimeFilter.Decision(bifrostBN, USDT);
+
+  nextUpdateAt = lastTimestamp + decisionInterval;
+
+  nextUpdateAt + 300 < currentTimestamp;

@@ -1,0 +1,10 @@
+name: Kaia Chainlink XRP Balance Check
+time_interval: 30
+script: |
+  kaiaBN = Kaia.LatestBlock();
+
+  BalanceXRP = Kaia.Balance(kaiaBN, XRP);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceXRP;

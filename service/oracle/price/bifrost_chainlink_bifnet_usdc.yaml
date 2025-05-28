@@ -1,0 +1,10 @@
+name: Bifrost Chainlink-Bifnet USDC Price Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  bifrostChainlinkUSDC = Bifrost.ChainlinkOracle.USDC.LatestPrice(bifrostBN);
+  bifrostBifnetUSDC = Bifrost.BifnetOracle.USDC.LatestPrice(bifrostBN);
+
+  diff = (bifrostChainlinkUSDC * 100) / bifrostBifnetUSDC;
+  diff < 105 && diff > 95;

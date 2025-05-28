@@ -1,0 +1,10 @@
+name: Bifrost Chainlink EURO Balance Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalanceEURO = Bifrost.Balance(bifrostBN, EURO);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceEURO;

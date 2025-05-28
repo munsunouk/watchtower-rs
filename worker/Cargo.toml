@@ -29,6 +29,7 @@ strum = { workspace = true }
 postgres = { workspace = true }
 pest = { workspace = true }
 pest_derive = { workspace = true }
+hex = { workspace = true }
 
 [[bin]]
 name = "watch_tower_worker"

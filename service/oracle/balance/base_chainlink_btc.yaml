@@ -1,0 +1,10 @@
+name: Base Chainlink BTC Balance Check
+time_interval: 30
+script: |
+  baseBN = Base.LatestBlock();
+
+  BalanceBTC = Base.Balance(baseBN, BTC);
+
+  CompareBalance = 10000000000000000;
+
+  CompareBalance > BalanceBTC;

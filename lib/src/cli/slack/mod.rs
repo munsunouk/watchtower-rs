@@ -31,8 +31,16 @@ impl SlackClient {
         Ok(())
     }
 
-    pub async fn send_alert(&self, title: &str, message: &str) -> Result<(), ClientError> {
-        let alert_text = format!("*{}*\n{}", title, message);
+    pub async fn send_alert(
+        &self,
+        title: &str,
+        message: &str,
+        hashtag: Option<&str>,
+    ) -> Result<(), ClientError> {
+        let alert_text = match hashtag {
+            Some(tag) => format!("*{}*\n{} {}", title, tag, message),
+            None => format!("*{}*\n{}", title, message),
+        };
         let request = PostMessageRequest {
             channel: &self.channel,
             text: &alert_text,

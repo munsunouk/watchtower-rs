@@ -2,30 +2,15 @@ use ethers::{
     abi::{ParamType, Token},
     types::{U256, U64},
 };
-use reqwest::Method;
-use serde_json::Value;
-use sqlx::{postgres::PgRow, Row};
+use serde_json::{json, Value};
 use watch_tower_lib::{
-    cli::rpc::RpcClient,
-    rule::rpc_call::RpcCallRule,
-    utils::{
-        constants::{
-            DB_API_BODY_TYPE_COLUMN, DB_CALL_TIME_INTERVAL_COLUMN, DB_CALL_TYPE_COLUMN,
-            DB_ID_COLUMN, DB_METHOD_TYPE_COLUMN, DB_NAME_COLUMN, DB_URL_COLUMN, DB_VALUES_COLUMN,
-        },
-        parse_i32_to_usize, parse_json_to_value, parse_string_to_method,
-        parse_string_to_rpc_call_type,
-        types::RuleID,
-        RpcCallType,
-    },
+    cli::rpc::RpcClient, rule::rpc_call::RpcCallRule, utils::parse_json_to_value,
 };
 
 use crate::{
     rule::{convert_value_to_param_type, convert_value_to_token},
     utils::error::WorkerError,
 };
-
-use super::parse_string_to_values;
 
 /// # Description
 /// This struct represents an RPC call.
@@ -53,11 +38,8 @@ impl RpcCall {
     }
 
     pub async fn fetch_api_call_with_query(&self) -> Result<(Token, ParamType), WorkerError> {
-        if self.rule.api_query.is_none() {
-            return Err(WorkerError::InvalidEmptyToken);
-        }
-
-        let query = self.rule.api_query.as_ref().unwrap();
+        let empty_json = json!({});
+        let query = self.rule.api_query.as_ref().unwrap_or_else(|| &empty_json);
 
         let response = self
             .client
@@ -87,11 +69,8 @@ impl RpcCall {
     ///
     /// A result containing the status as `U64`.
     pub async fn fetch_api_call_with_body(&self) -> Result<(Token, ParamType), WorkerError> {
-        if self.rule.api_body.is_none() {
-            return Err(WorkerError::InvalidEmptyToken);
-        }
-
-        let api_body = self.rule.api_body.as_ref().unwrap();
+        let empty_json = json!({});
+        let api_body = self.rule.api_body.as_ref().unwrap_or_else(|| &empty_json);
 
         let response = self
             .client
@@ -126,53 +105,53 @@ impl RpcCall {
     }
 }
 
-#[cfg(test)]
-mod test {
+// #[cfg(test)]
+// mod test {
 
-    use std::sync::Arc;
+//     use std::sync::Arc;
 
-    use ethers::abi::ParamType;
-    use reqwest::{Client, Method};
-    use serde_json::json;
-    use watch_tower_lib::{cli::db::data::RpcCallRuleData, utils::constants::RPC_CALL_RULE_TYPE};
+//     use ethers::abi::ParamType;
+//     use reqwest::{Client, Method};
+//     use serde_json::json;
+//     use watch_tower_lib::{cli::db::data::RpcCallRuleData, utils::constants::RPC_CALL_RULE_TYPE};
 
-    use crate::rule::{convert_value_to_param_type, decodes_token};
+//     use crate::rule::{convert_value_to_param_type, decodes_token};
 
-    use super::*;
+//     use super::*;
 
-    // #[tokio::test]
-    // async fn test_fetch_api_call_with_query() {
-    //     let client = Arc::new(Client::new());
-    //     let method_type = Method::GET;
-    //     let url = "https://blockchain.info/balance".to_string();
-    //     let query = json!({
-    //         "active": "bc1p2cmsnvtvxxvvyxm055vc45827zdyvawsyps6ctqta7lapuh2hepqsp5qas|bc1q6ylrskh4p6u983kx8f0mp0ztwer850u0xzeszj"
-    //     });
+//     #[tokio::test]
+//     async fn test_fetch_api_call_with_query() {
+//         let client = Arc::new(Client::new());
+//         let method_type = Method::GET;
+//         let url = "https://blockchain.info/balance".to_string();
+//         let query = json!({
+//             "active": "bc1p2cmsnvtvxxvvyxm055vc45827zdyvawsyps6ctqta7lapuh2hepqsp5qas|bc1q6ylrskh4p6u983kx8f0mp0ztwer850u0xzeszj"
+//         });
 
-    //     let res = client
-    //         .request(method_type, url)
-    //         .query(&query)
-    //         .send()
-    //         .await
-    //         .unwrap();
+//         let res = client
+//             .request(method_type, url)
+//             .query(&query)
+//             .send()
+//             .await
+//             .unwrap();
 
-    //     let status: U64 = res.status().as_u16().into();
+//         let status: U64 = res.status().as_u16().into();
 
-    //     let status_token = Token::Uint(U256::from(status.as_u64()));
+//         let status_token = Token::Uint(U256::from(status.as_u64()));
 
-    //     let body = res.json::<Value>().await.unwrap();
+//         let body = res.json::<Value>().await.unwrap();
 
-    //     println!("body: {:?}", body);
+//         println!("body: {:?}", body);
 
-    //     let body_token = convert_value_to_token(&body).unwrap();
-    //     let body_param_type = convert_value_to_param_type(&body).unwrap();
+//         let body_token = convert_value_to_token(&body).unwrap();
+//         let body_param_type = convert_value_to_param_type(&body).unwrap();
 
-    //     let param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
-    //     let tokens = Token::Tuple(vec![status_token, body_token]);
+//         let param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
+//         let tokens = Token::Tuple(vec![status_token, body_token]);
 
-    //     let result =
-    //         decodes_token(&tokens, &param_type, &vec![vec![1, 0, 0], vec![1, 1, 0]]).unwrap();
+//         let result =
+//             decodes_token(&tokens, &param_type, &vec![vec![1, 0, 0], vec![1, 1, 0]]).unwrap();
 
-    //     println!("result: {:?}", result);
-    // }
-}
+//         println!("result: {:?}", result);
+//     }
+// }

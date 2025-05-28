@@ -1,0 +1,10 @@
+name: Bifrost Chainlink-Bifnet DAI Price Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  bifrostChainlinkDAI = Bifrost.ChainlinkOracle.DAI.LatestPrice(bifrostBN);
+  bifrostBifnetDAI = Bifrost.BifnetOracle.DAI.LatestPrice(bifrostBN);
+
+  diff = (bifrostChainlinkDAI * 100) / bifrostBifnetDAI;
+  diff < 105 && diff > 95;

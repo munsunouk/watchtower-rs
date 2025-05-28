@@ -1,0 +1,7 @@
+name: BRP Height Check
+time_interval: 30
+script: |
+  mempool_height = BRP.ApiHeight(MemPool);
+  atn_height = BRP.BTCHeight(ATN);
+  height_diff = mempool_height - atn_height;
+  height_diff > 10;

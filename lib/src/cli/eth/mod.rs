@@ -13,8 +13,8 @@ use ethers::{
     },
 };
 use serde::{de::DeserializeOwned, Serialize};
-use std::{fmt::Debug, sync::Arc};
-use tokio::time::{sleep, Duration};
+use std::{fmt::Debug, sync::Arc, time::Duration};
+use tokio::time::{sleep, timeout};
 
 #[derive(Clone)]
 pub struct EthClient<T> {
@@ -56,26 +56,56 @@ impl<T: JsonRpcClient> EthClient<T> {
         P: Debug + Serialize + Send + Sync + Copy,
         R: Serialize + DeserializeOwned + Debug + Send,
     {
-        let mut error_msg = String::default();
+        const MAX_RETRIES: u32 = 3;
+        const TIMEOUT_DURATION: Duration = Duration::from_secs(300);
+        let mut retry_count = 0;
+        let mut last_error = None;
 
         for provider in self.providers.iter() {
-            match provider.request(method, params).await {
-                Ok(result) => return Ok(result),
-                Err(error) => {
-                    error_msg = format!(
-                        "[{}] ❗️ [method: {}] [Error: {}]",
-                        self.get_chain_name(),
-                        method,
-                        error.to_string()
-                    );
+            while retry_count < MAX_RETRIES {
+                match timeout(TIMEOUT_DURATION, provider.request(method, params)).await {
+                    Ok(Ok(result)) => return Ok(result),
+                    Ok(Err(error)) => {
+                        last_error = Some(error);
+                        retry_count += 1;
+                        if retry_count < MAX_RETRIES {
+                            // Exponential backoff
+                            let backoff = Duration::from_millis(
+                                DEFAULT_CALL_RETRY_INTERVAL_MS * (1 << (retry_count - 1)),
+                            );
+                            sleep(backoff).await;
+                        }
+                    }
+                    Err(_) => {
+                        last_error = Some(ethers::providers::ProviderError::CustomError(
+                            "Request timed out".to_string(),
+                        ));
+                        retry_count += 1;
+                        if retry_count < MAX_RETRIES {
+                            sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+                        }
+                    }
                 }
             }
-            sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+            retry_count = 0; // Reset retry count for next provider
         }
 
-        let client_error = ClientError::InternalProviderError(error_msg);
+        let error_msg = match last_error {
+            Some(error) => format!(
+                "[{}] ❗️ [method: {}] [Error: {}] [Retries: {}]",
+                self.get_chain_name(),
+                method,
+                error.to_string(),
+                MAX_RETRIES
+            ),
+            None => format!(
+                "[{}] ❗️ [method: {}] [Error: No providers available]",
+                self.get_chain_name(),
+                method
+            ),
+        };
 
-        Err(client_error)
+        Err(ClientError::InternalProviderError(error_msg))
     }
 
     /// Make a contract call to the chain provider via the internal connection, and return the
@@ -131,6 +161,11 @@ impl<T: JsonRpcClient> EthClient<T> {
     /// Retrieves the latest mined block number of the connected chain.
     pub async fn get_latest_block_number(&self) -> Result<U64, ClientError> {
         self.rpc_call("eth_blockNumber", ()).await
+    }
+
+    pub async fn get_latest_block(&self) -> Result<Block<H256>, ClientError> {
+        self.rpc_call("eth_getBlockByNumber", ("latest", false))
+            .await
     }
 
     /// Retrieves the block information of the given block hash.

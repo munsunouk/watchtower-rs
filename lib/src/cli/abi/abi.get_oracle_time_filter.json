@@ -1,0 +1,21 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "Oracle_ID",
+        "name": "oid",
+        "type": "bytes32"
+      }
+    ],
+    "name": "get_oracle_time_filter",
+    "outputs": [
+      {
+        "internalType": "uint128",
+        "name": "",
+        "type": "uint128"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

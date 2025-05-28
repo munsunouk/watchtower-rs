@@ -1,25 +1,5 @@
 use ethers::{abi::Token, types::U256};
 use std::collections::HashMap;
-
-pub trait TokenConvert {
-    fn to_token(self) -> Token;
-    fn from_token(token: Token) -> Self;
-}
-
-impl TokenConvert for U256 {
-    fn to_token(self) -> Token {
-        Token::Int(self)
-    }
-
-    fn from_token(token: Token) -> Self {
-        if let Token::Int(v) = token {
-            v
-        } else {
-            panic!("Expected Token::Int, got {:?}", token);
-        }
-    }
-}
-
 pub struct SymbolTable {
     pub store: HashMap<String, Token>,
 }
@@ -41,15 +21,19 @@ impl SymbolTable {
             .cloned()
             .unwrap_or_else(|| panic!("Invalid key: {}", key))
     }
+
+    pub fn check_store_value(&self, key: &str) -> Token {
+        Token::Bool(self.store.contains_key(key))
+    }
 }
 
 pub fn assign(store: &mut SymbolTable, key: String, value: Token) {
     store.assign(key, value);
 }
 
-// pub fn assign<T: TokenConvert>(store: &mut SymbolTable, key: String, value: T) {
-//     store.assign(key, value);
-// }
+pub fn check_store_value(store: &SymbolTable, key: &str) -> Token {
+    store.check_store_value(key)
+}
 
 pub fn eval(store: &SymbolTable, key: &str) -> Token {
     store.eval(key)

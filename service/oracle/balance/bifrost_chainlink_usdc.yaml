@@ -1,0 +1,10 @@
+name: Bifrost Chainlink USDC Balance Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalanceUSDC = Bifrost.Balance(bifrostBN, USDC);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceUSDC;

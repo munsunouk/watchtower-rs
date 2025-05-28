@@ -1,0 +1,13 @@
+name: Bifrost OracleManager ETH Decision Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  round = Bifrost.OracleManager.Round.Round(bifrostBN, ETH);
+  lastTimestamp = Bifrost.OracleManager.History.Timestamp(bifrostBN, ETH, round);
+  decisionInterval = Bifrost.OracleManager.TimeFilter.Decision(bifrostBN, ETH);
+
+  nextUpdateAt = lastTimestamp + decisionInterval;
+
+  nextUpdateAt + 300 < currentTimestamp;

@@ -1,0 +1,13 @@
+name: Bifrost OracleManager BNB Decision Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  round = Bifrost.OracleManager.Round.Round(bifrostBN, BNB);
+  lastTimestamp = Bifrost.OracleManager.History.Timestamp(bifrostBN, BNB, round);
+  decisionInterval = Bifrost.OracleManager.TimeFilter.Decision(bifrostBN, BNB);
+
+  nextUpdateAt = lastTimestamp + decisionInterval;
+
+  nextUpdateAt + 300 < currentTimestamp;

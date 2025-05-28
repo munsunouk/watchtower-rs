@@ -1,26 +1,15 @@
 use ethers::{
-    abi::{Abi, Event, ParamType},
+    abi::{Event, ParamType},
     prelude::*,
-    types::U64,
 };
-
-use sqlx::{postgres::PgRow, Row};
 
 use watch_tower_lib::{
     cli::eth::EthClient,
     rule::contract_event::ContractEventRule,
-    utils::{
-        constants::{
-            DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-            DB_EVENT_INDEX_COLUMN, DB_ID_COLUMN, DB_NAME_COLUMN, DB_VALUES_COLUMN, DEFAULT_INDEX,
-        },
-        error::IndexType,
-        parse_i32_to_usize, parse_to_abi, parse_to_address,
-        types::{ChainID, RuleID},
-    },
+    utils::{constants::DEFAULT_INDEX, error::IndexType},
 };
 
-use super::{create_contracts, parse_string_to_values};
+use super::create_contracts;
 
 use crate::utils::error::WorkerError;
 

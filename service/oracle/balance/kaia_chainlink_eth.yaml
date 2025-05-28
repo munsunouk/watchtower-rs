@@ -1,0 +1,10 @@
+name: Kaia Chainlink ETH Balance Check
+time_interval: 30
+script: |
+  kaiaBN = Kaia.LatestBlock();
+
+  BalanceETH = Kaia.Balance(kaiaBN, ETH);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceETH;

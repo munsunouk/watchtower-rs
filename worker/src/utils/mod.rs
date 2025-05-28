@@ -1,4 +1,3 @@
-#[macro_use]
 use crate::*;
 
 pub mod constants;
@@ -6,61 +5,29 @@ pub mod error;
 pub mod log;
 pub mod msg;
 pub mod setting;
-pub mod traits;
-pub mod types;
+
 use constants::CONFIG_PATH;
 use ethers::{
     abi::Token,
     providers::Http,
-    types::{Address, BlockId, BlockNumber, Filter, Log, U256, U64},
+    types::{BlockId, BlockNumber, Filter, Log, U64},
 };
-use serde_json::{json, Value};
-use std::convert::TryFrom;
+
 use std::sync::atomic::Ordering::SeqCst;
 use tokio::runtime::Runtime;
 use watch_tower_lib::{
-    config::set_config,
-    utils::{error::ClientError, parse_token_to_i64},
+    cli::slack::SlackClient,
+    config::{set_config, set_rule},
+    utils::error::ClientError,
 };
 
 use crate::{
     parse::parse_result,
-    rule::{
-        get::{get, get_latest_block_number},
-        store::{assign, eval, SymbolTable, TokenConvert},
-        ContractCall, ContractEvent,
-    },
+    rule::{ContractCall, ContractEvent},
 };
 
-use self::{
-    constants::{ADD_MEMORY_VALUE_ORDER, DEFAULT_MEMORY_VALUE_ORDER},
-    error::WorkerError,
-};
-
-// impl TryFrom<Token> for i64 {
-//     type Error = WorkerError;
-
-//     fn try_from(token: Token) -> Result<Self, Self::Error> {
-//         match token {
-//             Token::Int(int_val) => int_val.try_into().map_err(|e| {
-//                 WorkerError::InvalidTypeConvertError(format!(
-//                     "Failed to convert Token::Int ({}) to i64: {}",
-//                     int_val, e
-//                 ))
-//             }),
-//             Token::Uint(uint_val) => uint_val.try_into().map_err(|e| {
-//                 WorkerError::InvalidTypeConvertError(format!(
-//                     "Failed to convert Token::Uint ({}) to i64: {}",
-//                     uint_val, e
-//                 ))
-//             }),
-//             _ => Err(WorkerError::InvalidTypeConvertError(format!(
-//                 "Token {:?} cannot be converted to i64",
-//                 token
-//             ))),
-//         }
-//     }
-// }
+use constants::{ADD_MEMORY_VALUE_ORDER, DEFAULT_MEMORY_VALUE_ORDER};
+use error::WorkerError;
 
 pub async fn get_block_token(
     contract_call: &ContractCall<Http>,
@@ -121,10 +88,14 @@ fn build_runtime() -> Result<Runtime, WorkerError> {
 }
 
 /// Runs the application with the runtime.
-pub fn run_with_runtime() -> Result<(), WorkerError> {
+pub fn run_with_runtime(rule_path: &str) -> Result<(), WorkerError> {
     let runtime = build_runtime()?;
 
-    let result = runtime.block_on(async { get_result().await });
+    let result = runtime.block_on(async {
+        // let runner = Runner::new(rule_path).await?;
+        // runner.run().await
+        get_result(rule_path).await
+    });
 
     drop(runtime);
 
@@ -138,33 +109,26 @@ pub fn run_with_runtime() -> Result<(), WorkerError> {
     }
 }
 
-async fn get_result() -> Result<(), WorkerError> {
+async fn get_result(rule_path: &str) -> Result<(), WorkerError> {
     let config = set_config(CONFIG_PATH);
+    let rule = set_rule(rule_path);
 
-    // let input = "
-    //     bifrostBN = Bifrost.LatestBlock();
+    let result = parse_result(&config, &rule.script).await.unwrap();
 
-    //     ChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
-    //     BifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN - 1);
-    //     BifaggBTC = Bifrost.Bifagg.BTC.LatestPrice(bifrostBN -2);
+    let btc_height_msg = "the Difference in the Block Height of BTC is more than 10";
 
-    //     (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifnetBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifaggBTC;
-    //     ";
+    if Token::Bool(false) == result {
+        let slack_msg = format!("```{}```", btc_height_msg.to_string());
+        let hashtag = Some("<!here>");
 
-    let input = "
-        bifrostBN = Bifrost.LatestBlock(); 
-        eth_address = 0x51c9abb01e2ef6495daafc56778b499e8d3992ff;
-
-        Bifrost.EthBalance(eth_address, bifrostBN);
-        ";
-
-    // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3;
-    // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC;
-    // (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > ChainlinkBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifnetBTC || (ChainlinkBTC + BifnetBTC + BifaggBTC) / 3 > BifaggBTC;
-
-    let result = parse_result(&config, input).await.unwrap();
+        let slack_client =
+            SlackClient::new(&config.slack_config.token, &config.slack_config.channel);
+        slack_client
+            .send_alert("Scheduled BTC Height Notification", &slack_msg, hashtag)
+            .await
+            .unwrap();
+    }
 
     println!("result: {:?}", result);
-
     Ok(())
 }

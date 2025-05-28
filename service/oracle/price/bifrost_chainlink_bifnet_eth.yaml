@@ -1,0 +1,10 @@
+name: Bifrost Chainlink-Bifnet ETH Price Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  bifrostChainlinkETH = Bifrost.ChainlinkOracle.ETH.LatestPrice(bifrostBN);
+  bifrostBifnetETH = Bifrost.BifnetOracle.ETH.LatestPrice(bifrostBN);
+
+  diff = (bifrostChainlinkETH * 100) / bifrostBifnetETH;
+  diff < 105 && diff > 95;

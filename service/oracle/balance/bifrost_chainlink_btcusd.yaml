@@ -1,0 +1,10 @@
+name: Bifrost Chainlink BTCUSD Balance Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalanceBTCUSD = Bifrost.Balance(bifrostBN, BtcUSD);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceBTCUSD;

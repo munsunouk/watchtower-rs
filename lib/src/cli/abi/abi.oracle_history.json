@@ -1,0 +1,53 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "Oracle_ID",
+        "name": "oid",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "round",
+        "type": "uint256"
+      }
+    ],
+    "name": "oracle_history",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes32",
+            "name": "data",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "block_number",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "timestamp",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "authority_round",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "majority",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct Oracle_Manager_Source",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

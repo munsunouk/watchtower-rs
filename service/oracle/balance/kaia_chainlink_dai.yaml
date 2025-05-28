@@ -1,0 +1,10 @@
+name: Kaia Chainlink DAI Balance Check
+time_interval: 30
+script: |
+  kaiaBN = Kaia.LatestBlock();
+
+  BalanceDAI = Kaia.Balance(kaiaBN, DAI);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceDAI;

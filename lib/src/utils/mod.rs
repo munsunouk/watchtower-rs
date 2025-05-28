@@ -342,7 +342,13 @@ pub fn arithmetic_token(left: &Token, right: &Token, operator: &str) -> Option<T
 
             parse_arithmetic(value, expected_value, operator)
         }
-        _ => None,
+        _ => {
+            println!(
+                "left, right, operator: {:?}, {:?}, {:?}",
+                left, right, operator
+            );
+            None
+        }
     }
 }
 

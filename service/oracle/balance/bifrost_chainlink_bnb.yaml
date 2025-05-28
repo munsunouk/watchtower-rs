@@ -1,0 +1,10 @@
+name: Bifrost Chainlink BNB Balance Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalanceBNB = Bifrost.Balance(bifrostBN, BNB);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceBNB;

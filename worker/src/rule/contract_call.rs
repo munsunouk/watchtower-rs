@@ -1,24 +1,15 @@
 use ethers::{
-    abi::{Abi, Function, ParamType, Token},
+    abi::{Function, ParamType, Token},
     prelude::*,
 };
 
-use std::convert::TryFrom;
-
-use super::{create_contracts, encode_token, parse_string_to_values};
-use sqlx::{postgres::PgRow, Row};
+use super::{create_contracts, encode_token};
 use watch_tower_lib::{
     cli::eth::EthClient,
     rule::contract_call::ContractCallRule,
     utils::{
-        constants::{
-            DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-            DB_CHECK_BLOCK_INTERVAL_COLUMN, DB_ID_COLUMN, DB_METHOD_PARAMS_COLUMN, DB_NAME_COLUMN,
-            DB_TARGET_BLOCK_NUMBER_COLUMN, DB_VALUES_COLUMN, DEFAULT_INDEX,
-        },
+        constants::DEFAULT_INDEX,
         error::{ClientError, IndexType},
-        parse_i32_to_usize, parse_to_abi, parse_to_address,
-        types::{ChainID, RuleID},
     },
 };
 
@@ -185,14 +176,12 @@ impl<T: JsonRpcClient> ContractCall<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use super::*;
-    use std::str::FromStr;
     use tracing_subscriber;
 
     use watch_tower_lib::{
-        cli::{db::postgres::PostgresClient, eth::ProviderMetadata},
+        cli::db::postgres::PostgresClient,
         utils::{error::DatabaseError, DbRuleType},
     };
 
@@ -232,41 +221,5 @@ mod tests {
         println!("{:?}", output_param_type);
 
         Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_contract_call() {
-        let rpc = "<YOUR_RPC_URL>";
-
-        let client = EthClient::<Http>::new(
-            ProviderMetadata::new(
-                "bifrost".to_string(),
-                vec![rpc.to_string()],
-                3068 as ChainID,
-            ),
-            vec![Arc::new(Provider::try_from(rpc).unwrap())],
-        );
-
-        let abi_str = r#"
-[{"name": "latestRoundData", "type": "function", "inputs": [], "outputs": [{"name": "roundId", "type": "uint80", "internalType": "uint80"}, {"name": "answer", "type": "int256", "internalType": "int256"}, {"name": "startedAt", "type": "uint256", "internalType": "uint256"}, {"name": "updatedAt", "type": "uint256", "internalType": "uint256"}, {"name": "answeredInRound", "type": "uint80", "internalType": "uint80"}], "stateMutability": "view"}]"#;
-
-        let abi = parse_to_abi(serde_json::from_str(abi_str).unwrap()).unwrap();
-
-        let address = Address::from_str("0x77348eAee88F7bce55D0ff3cd74f69E91c2A7165").unwrap();
-
-        let contracts: Vec<Contract<Provider<Http>>> =
-            create_contracts(&address, &abi, client.get_providers());
-
-        let method_call = client
-            .contracts_call(
-                contracts,
-                "latestRoundData",
-                Token::Tuple(vec![]),
-                BlockId::Number(BlockNumber::Number(U64::from(21149110))),
-            )
-            .await
-            .unwrap();
-
-        println!("{:?}", method_call);
     }
 }

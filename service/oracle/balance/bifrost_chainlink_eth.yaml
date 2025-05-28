@@ -1,0 +1,10 @@
+name: Bifrost Chainlink ETH Balance Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalanceETH = Bifrost.Balance(bifrostBN, ETH);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceETH;

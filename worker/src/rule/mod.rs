@@ -12,53 +12,29 @@ pub use contract_call::ContractCall;
 pub use contract_event::ContractEvent;
 pub use rpc_call::RpcCall;
 
-use cron::Schedule;
-use serde_json::{json, Value};
+use serde_json::Value;
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use ethers::{
-    abi::{Abi, Int, ParamType, Token, Uint},
+    abi::{Abi, Int, ParamType, Token},
     prelude::*,
     utils::hex,
 };
 
 use watch_tower_lib::{
-    cli::db::postgres::PostgresClient,
     rule::TargetIndex,
     utils::{
         constants::DEFAULT_INDEX,
-        convert_hex_param,
-        convert_hex_token,
+        convert_hex_param, convert_hex_token,
         error::{GeneralError, IndexType},
-        DbRuleType,
-        // evaluation::EvaluationRule,
     },
 };
 
 use crate::{
     parse::evaluation::ParseResultType,
-    utils::{
-        constants::{DEFAULT_PARAM_VALUE, FILTER_INDEX_SPLIT_CHAR},
-        error::WorkerError,
-    },
+    utils::{constants::FILTER_INDEX_SPLIT_CHAR, error::WorkerError},
 };
-
-/// # Description
-/// This function sets a cron schedule based on the check interval.
-/// # Arguments
-///
-/// * `check_interval` - The interval in seconds.
-///
-/// # Returns
-///
-/// A `Schedule` instance.
-pub fn set_schedule(check_interval: usize) -> Result<Schedule, WorkerError> {
-    let format_schedule = format!("*/{} * * * * *", check_interval);
-
-    Schedule::from_str(&format_schedule)
-        .map_err(|_| WorkerError::InvalidTypeConvertError(format_schedule))
-}
 
 /// # Description
 /// This function creates a new Ethereum contract instance.
@@ -118,11 +94,11 @@ pub fn encode_token(
         ParamType::Int(_) => Ok(unwrapped_params[0].clone()),
         ParamType::Bytes => Ok(unwrapped_params[0].clone()),
         ParamType::FixedBytes(_) => Ok(unwrapped_params[0].clone()),
-        ParamType::Array(inner_type) => Ok(Token::Array(unwrapped_params)),
-        ParamType::FixedArray(inner_type, size) => Ok(Token::FixedArray(
+        ParamType::Array(_) => Ok(Token::Array(unwrapped_params)),
+        ParamType::FixedArray(_, size) => Ok(Token::FixedArray(
             unwrapped_params.into_iter().take(*size).collect(),
         )),
-        ParamType::Tuple(inner_types) => Ok(Token::Tuple(unwrapped_params)),
+        ParamType::Tuple(_) => Ok(Token::Tuple(unwrapped_params)),
     }
 }
 
@@ -134,7 +110,7 @@ pub fn encode_token(
 ///
 /// # Returns
 ///
-pub fn parse_token_to_string(token: &Token) -> Result<String, WorkerError> {
+pub fn _parse_token_to_string(token: &Token) -> Result<String, WorkerError> {
     match token {
         Token::Uint(value) => Ok(value.to_string()),
         Token::Int(value) => Ok(value.to_string()),
@@ -170,6 +146,12 @@ fn convert_value_to_param_type(value: &Value) -> Result<ParamType, WorkerError> 
             Ok(ParamType::Tuple(inner_types?))
         }
         Value::Object(obj) => {
+            // Handle JSON-RPC response by extracting the result field
+            if obj.contains_key("result") {
+                if let Some(result) = obj.get("result") {
+                    return convert_value_to_param_type(result);
+                }
+            }
             let inner_types: Result<Vec<ParamType>, WorkerError> = obj
                 .iter()
                 .map(|(_, v)| convert_value_to_param_type(v))
@@ -203,6 +185,12 @@ fn convert_value_to_token(value: &Value) -> Result<Token, WorkerError> {
             Ok(Token::Array(tokens?))
         }
         Value::Object(obj) => {
+            // Handle JSON-RPC response by extracting the result field
+            if obj.contains_key("result") {
+                if let Some(result) = obj.get("result") {
+                    return convert_value_to_token(result);
+                }
+            }
             // Handle objects as needed, for example, as a tuple or a struct
             let tokens: Result<Vec<Token>, WorkerError> =
                 obj.values().map(convert_value_to_token).collect();
@@ -263,6 +251,10 @@ pub fn decode_token(
                     .ok_or(WorkerError::InvalidIndex(IndexType::USize(*index)))?;
 
                 return decode_token(inner_token, inner_type, rest);
+            } else {
+                println!("inner_types : {:?}", inner_types);
+                println!("token : {:?}", token);
+                return Err(WorkerError::InvalidTypeConvert);
             }
         }
         ParamType::Array(inner_type) => {
@@ -453,16 +445,13 @@ pub fn parse_string_to_values(values: Vec<String>) -> Result<Vec<Vec<usize>>, Wo
         .collect()
 }
 
-/// # Description
-/// This function ensures a token wrapper.
-/// # Arguments
-///
-/// * `token` - The token to ensure.
-///
-/// # Returns
-///
-/// A `Token` instance.
 fn ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
+    let (token, param_type) = initial_ensure_token_wrapper(token, param_type);
+    let (token, param_type) = nested_ensure_token_wrapper(token, param_type);
+    (token, param_type)
+}
+
+fn initial_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
     if let Token::Tuple(_) = token {
         (token, param_type)
     } else if let ParamType::Tuple(_) = param_type {
@@ -474,51 +463,41 @@ fn ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamTyp
         )
     }
 }
-
-pub fn parse_meta_data(
-    variables: &mut HashMap<String, ParseResultType>,
-) -> Result<ParseResultType, GeneralError> {
-    let meta_data = variables.get("meta_data").unwrap();
-    match meta_data {
-        ParseResultType::String(meta_data) if meta_data == "VaultAddress" => {
-            if let Some(ParseResultType::HashMap(identifier)) = variables.get("identifier") {
-                for (key, value) in identifier.iter() {
-                    if key.contains(meta_data) {
-                        if let ParseResultType::Token(token) = value {
-                            if token.type_check(&ParamType::Array(Box::new(ParamType::String))) {
-                                if let Token::Array(tokens) = token {
-                                    let strings: Result<Vec<String>, GeneralError> = tokens
-                                        .iter()
-                                        .map(|t| match t {
-                                            Token::String(s) => Ok(s.clone()),
-                                            _ => Err(GeneralError::InvalidTypeConvert),
-                                        })
-                                        .collect();
-                                    let joined_string = strings?.join("|");
-                                    return Ok(ParseResultType::HashMap(HashMap::from([(
-                                        "api_query".to_string(),
-                                        ParseResultType::JSON(json!({
-                                            "active": joined_string
-                                        })),
-                                    )])));
-                                }
-                            } else if token.type_check(&ParamType::String) {
-                                if let Token::String(s) = token {
-                                    return Ok(ParseResultType::HashMap(HashMap::from([(
-                                        "api_query".to_string(),
-                                        ParseResultType::JSON(json!({
-                                            "active": s
-                                        })),
-                                    )])));
-                                }
-                            }
-                        }
-                    }
+/// # Description
+/// This function ensures a token wrapper.
+/// # Arguments
+///
+/// * `token` - The token to ensure.
+///
+/// # Returns
+///
+/// A `Token` instance.
+fn nested_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
+    match (token.clone(), param_type.clone()) {
+        // If both are tuples, recursively check their inner types
+        (Token::Tuple(tokens), ParamType::Tuple(param_types)) => {
+            // If param_type has more nesting, but token is not, wrap the entire token
+            if param_types
+                .iter()
+                .any(|pt| matches!(pt, ParamType::Tuple(_)))
+                && !tokens.iter().any(|t| matches!(t, Token::Tuple(_)))
+            {
+                (Token::Tuple(vec![token]), param_type)
+            } else {
+                let mut wrapped_tokens = Vec::new();
+                for (token, param_type) in tokens.into_iter().zip(param_types.into_iter()) {
+                    let (wrapped_token, _) = nested_ensure_token_wrapper(token, param_type);
+                    wrapped_tokens.push(wrapped_token);
                 }
+                (Token::Tuple(wrapped_tokens), param_type)
             }
-            Err(GeneralError::InvalidTypeConvert)
         }
-        _ => Ok(ParseResultType::Bool(false)),
+
+        // If param_type is tuple but token is not, wrap token
+        (token, ParamType::Tuple(param_types)) => {
+            (Token::Tuple(vec![token]), ParamType::Tuple(param_types))
+        }
+        _ => (token, param_type),
     }
 }
 

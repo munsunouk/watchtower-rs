@@ -1,0 +1,10 @@
+name: Kaia Chainlink USDC Balance Check
+time_interval: 30
+script: |
+  kaiaBN = Kaia.LatestBlock();
+
+  BalanceUSDC = Kaia.Balance(kaiaBN, USDC);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceUSDC;

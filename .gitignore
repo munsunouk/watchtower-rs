@@ -25,3 +25,7 @@ logs/
 # Config files that might contain secrets
 **/config.yaml
 **/config.*.yaml 
+
+# Param files that might contain secrets
+**/param.yaml
+**/param.*.yaml 

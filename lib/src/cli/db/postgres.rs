@@ -1312,27 +1312,27 @@ impl PgListenClient {
         Ok(notification.payload().to_string())
     }
 
-    pub async fn listen_and_notify_slack(
-        &mut self,
-        slack_client: &crate::cli::slack::SlackClient,
-    ) -> Result<(), DatabaseError> {
-        // Start listening for RPC updates
-        self.listen_for_rpc_updates().await?;
+    // pub async fn listen_and_notify_slack(
+    //     &mut self,
+    //     slack_client: &crate::cli::slack::SlackClient,
+    // ) -> Result<(), DatabaseError> {
+    //     // Start listening for RPC updates
+    //     self.listen_for_rpc_updates().await?;
 
-        println!("Started listening for database events...");
+    //     println!("Started listening for database events...");
 
-        // Continuously listen for notifications
-        while let Ok(notification) = self.get_next_notification().await {
-            let title = "Database Event Notification";
-            let message = format!("Received update: {}", notification);
+    //     // Continuously listen for notifications
+    //     while let Ok(notification) = self.get_next_notification().await {
+    //         let title = "Database Event Notification";
+    //         let message = format!("Received update: {}", notification);
 
-            if let Err(e) = slack_client.send_alert(title, &message).await {
-                eprintln!("Failed to send Slack notification: {}", e);
-            }
-        }
+    //         if let Err(e) = slack_client.send_alert(title, &message).await {
+    //             eprintln!("Failed to send Slack notification: {}", e);
+    //         }
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }
 
 #[cfg(test)]

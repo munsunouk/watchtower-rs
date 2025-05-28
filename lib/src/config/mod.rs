@@ -1,13 +1,49 @@
-use ethers::{
-    abi::{Param, ParamType, Token},
-    types::U256,
-    utils::hex,
-};
+use ethers::{abi::Token, types::U256, utils::hex};
 use serde::Deserialize;
-use std::{borrow::Cow, clone, collections::HashMap};
+use std::borrow::Cow;
 use validator::Validate;
 
 use crate::utils::{error::GeneralError, types::ChainID};
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct ParamConfig {
+    pub pool_config: Vec<PoolConfig>,
+    pub service_config: Vec<ServiceConfig>,
+    pub oid_config: Vec<OidConfig>,
+    pub balance_config: Vec<BalanceConfig>,
+    pub url_config: Vec<UrlConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct PoolConfig {
+    pub name: String,
+    pub address: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct ServiceConfig {
+    pub name: String,
+    pub target_index: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct OidConfig {
+    pub name: String,
+    pub address: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct BalanceConfig {
+    pub name: String,
+    pub blockchain: String,
+    pub address: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UrlConfig {
+    pub name: String,
+    pub url: String,
+}
 
 /// # Description
 /// This struct represents the configuration for the application.
@@ -18,6 +54,8 @@ use crate::utils::{error::GeneralError, types::ChainID};
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct Configuration {
+    #[validate]
+    pub slack_config: SlackConfig,
     #[validate]
     pub rpc_config: Vec<RPCConfig>,
     #[validate]
@@ -38,6 +76,20 @@ pub struct Configuration {
     pub contract_event_target: Vec<ContractEventTargetValue>,
 }
 
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct Rule {
+    pub name: String,
+    pub time_interval: u64,
+    pub script: String,
+    pub when: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct SlackConfig {
+    pub token: String,
+    pub channel: String,
+}
+
 /// # Description
 /// This struct represents the configuration for a URL.
 /// # Arguments
@@ -45,12 +97,7 @@ pub struct Configuration {
 /// * `url` - The URL.
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct RPCConfig {
-    pub name: String,
-    pub url: String,
-    pub call_type: String,
-    pub method_type: String,
-    pub api_body: Option<String>,
-    pub api_query: Option<String>,
+    pub service: String,
 }
 
 /// This struct represents the configuration for an EVM provider.
@@ -118,6 +165,7 @@ pub struct ContractCallTargetValue {
     pub name: String,
     #[serde(deserialize_with = "deserialize_params")]
     pub params: Vec<Option<Token>>,
+    pub param_nessesary: Vec<String>,
     pub target_index: String,
 }
 
@@ -178,27 +226,6 @@ impl std::fmt::Display for ParamValue {
             ParamValue::Uint(uint) => write!(f, "{}", uint),
             ParamValue::Int(int) => write!(f, "{}", int),
         }
-    }
-}
-
-fn get_param_type(value: &ParamValue) -> ParamType {
-    match value {
-        ParamValue::String(_) => ParamType::String,
-        ParamValue::Number(_) => ParamType::Uint(256),
-        ParamValue::Boolean(_) => ParamType::Bool,
-        ParamValue::Address(_) => ParamType::Address,
-        ParamValue::Bytes(_) => ParamType::Bytes,
-        ParamValue::FixedBytes(_) => ParamType::FixedBytes(32),
-        ParamValue::Uint(_) => ParamType::Uint(256),
-        ParamValue::Int(_) => ParamType::Int(256),
-        ParamValue::Array(arr) => {
-            if arr.is_empty() {
-                ParamType::Array(Box::new(ParamType::String))
-            } else {
-                ParamType::Array(Box::new(get_param_type(&arr[0])))
-            }
-        }
-        ParamValue::Tuple(tuple) => ParamType::Tuple(tuple.iter().map(get_param_type).collect()),
     }
 }
 
@@ -325,7 +352,12 @@ where
 pub struct RPCTargetValue {
     pub name: String,
     pub meta_data: String,
+    pub call_type: String,
+    pub method_type: String,
     pub target_index: String,
+    pub param_nessesary: Vec<String>,
+    pub api_body: Option<String>,
+    pub api_query: Option<String>,
 }
 
 /// # Description
@@ -347,18 +379,8 @@ pub struct Metadata {
 pub struct BlockchainTargetValue {
     pub name: String,
     pub params: Vec<String>,
-    pub metadata: Option<Metadata>,
-}
-
-/// # Description
-/// This struct represents the configuration for Slack.
-/// # Arguments
-/// * `token` - The Slack token.
-/// * `channel` - The Slack channel.
-pub struct SlackConfig {
-    pub token: String,
-
-    pub channel: String,
+    // pub metadata: Option<Metadata>,
+    pub param_nessesary: Vec<String>,
 }
 
 /// # Description
@@ -371,6 +393,39 @@ pub struct SlackConfig {
 ///
 /// A `Result` containing the `Configuration` instance.
 pub fn set_config(spec: &str) -> Configuration {
+    // Get the project root directory (where Cargo.toml is located)
+    let project_root = std::env::current_dir().unwrap();
+
+    // Resolve the config path relative to the project root
+    let config_path = project_root.join(spec);
+
+    let user_config_file = std::fs::File::open(config_path).unwrap_or_else(|_| {
+        panic!(
+            "{}, {}",
+            GeneralError::InvalidConfigFilePath.to_string(),
+            spec
+        )
+    });
+
+    let user_config: Configuration = serde_yaml::from_reader(user_config_file).unwrap();
+    user_config
+}
+
+pub fn set_rule(spec: &str) -> Rule {
+    let user_config_file = std::fs::File::open(spec).unwrap_or_else(|_| {
+        panic!(
+            "{}, {}",
+            GeneralError::InvalidConfigFilePath.to_string(),
+            spec
+        )
+    });
+    let user_config: Rule = serde_yaml::from_reader(user_config_file).unwrap();
+    user_config
+}
+
+pub fn set_test_config(spec: &str) -> Configuration {
+    println!("spec");
+
     let user_config_file = std::fs::File::open(spec).unwrap_or_else(|_| {
         panic!(
             "{}, {}",
@@ -382,5 +437,23 @@ pub fn set_config(spec: &str) -> Configuration {
     //     .unwrap_or_else(|_| panic!("{}", GeneralError::InvalidConfigFileStructure.to_string()));
 
     let user_config: Configuration = serde_yaml::from_reader(user_config_file).unwrap();
+    user_config
+}
+
+pub fn set_param_config(spec: &str) -> ParamConfig {
+    // Get the project root directory (where Cargo.toml is located)
+    let project_root = std::env::current_dir().unwrap();
+
+    // Resolve the param config path relative to the project root
+    let param_config_path = project_root.join(spec);
+
+    let user_config_file = std::fs::File::open(param_config_path).unwrap_or_else(|_| {
+        panic!(
+            "{}, {}",
+            GeneralError::InvalidConfigFilePath.to_string(),
+            spec
+        )
+    });
+    let user_config: ParamConfig = serde_yaml::from_reader(user_config_file).unwrap();
     user_config
 }

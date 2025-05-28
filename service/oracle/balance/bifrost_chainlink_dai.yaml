@@ -1,0 +1,10 @@
+name: Bifrost Chainlink DAI Balance Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalanceDAI = Bifrost.Balance(bifrostBN, DAI);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceDAI;

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use ethers::{
-    abi::{decode, Param, Token},
+    abi::{decode, Token},
     providers::Http,
     types::{BlockId, BlockNumber, H256, U256},
 };
@@ -9,20 +9,19 @@ use serde_json::Value;
 use tokio_stream::StreamExt;
 use watch_tower_lib::{
     cli::{eth::EthClient, rpc::RpcClient},
-    config::{set_config, EVMProvider},
+    config::{Configuration, EVMProvider},
     rule::{
         contract_call::ContractCallRule, contract_event::ContractEventRule, rpc_call::RpcCallRule,
     },
     utils::{
-        parse_i32_to_usize, parse_string_to_address, parse_token_to_i64, parse_u256_to_u64,
-        types::ChainID, DbRuleType, RpcCallType,
+        parse_i32_to_usize, parse_string_to_address, parse_u256_to_u64, types::ChainID, DbRuleType,
+        RpcCallType,
     },
 };
 
 use crate::{
     rule::decodes_token,
     utils::{
-        constants::CONFIG_PATH,
         error::WorkerError,
         get_block_token, get_event_logs,
         setting::{
@@ -108,7 +107,6 @@ impl From<(i32, String, Value, i32, String, U256)> for GetRequest {
 pub struct GetContext {
     pub eth_clients: HashMap<ChainID, EthClient<Http>>,
     pub rpc_client: RpcClient,
-    pub evm_providers: Vec<EVMProvider>,
 }
 
 impl GetContext {
@@ -119,7 +117,6 @@ impl GetContext {
         Ok(Self {
             eth_clients,
             rpc_client,
-            evm_providers,
         })
     }
 
@@ -178,20 +175,18 @@ impl GetContext {
             api_query,
             target_index,
         )
-        .map_err(|err| WorkerError::InvalidMessage)?;
+        .map_err(|_err| WorkerError::InvalidMessage)?;
 
         let rpc_call = build_rpc_call(self.rpc_client.clone(), rule.clone());
 
-        let (token, param_type) = if rpc_call.rule.call_type == RpcCallType::Body {
+        let (raw_token, param_type) = if rpc_call.rule.call_type == RpcCallType::Body {
             rpc_call.fetch_api_call_with_body().await?
         } else {
             rpc_call.fetch_api_call_with_query().await?
         };
 
-        let token = decodes_token(&token, &param_type, &rule.target_index)
-            .map_err(|err| WorkerError::InvalidMessage)?;
+        let token = decodes_token(&raw_token, &param_type, &rule.target_index).unwrap();
 
-        println!("token: {:?}", token);
         Ok(token)
     }
 
@@ -291,8 +286,7 @@ impl GetContext {
 
         let mut stream = tokio_stream::iter(logs);
 
-        // let mut vec_token = Vec::new();
-        let mut token = Token::Bool(false);
+        let mut vec_token = Vec::new();
 
         while let Some(log) = stream.next().await {
             match contract_event.is_target_event(
@@ -307,7 +301,7 @@ impl GetContext {
 
                     let raw_token = match decode(&[input_param_type.clone()], &log.data) {
                         Ok(tokens) => Token::Tuple(tokens),
-                        Err(e) => {
+                        Err(_e) => {
                             WorkerError::InvalidMessage.log();
                             continue;
                         }
@@ -318,43 +312,59 @@ impl GetContext {
                         &parsing_input_param_type,
                         &contract_event.rule.target_index,
                     )
-                    .map_err(|err| WorkerError::InvalidMessage)?;
+                    .map_err(|_err| WorkerError::InvalidMessage)?;
 
-                    // vec_token.push(decoded_token);
-                    token = decoded_token;
+                    vec_token.push(decoded_token);
+                    // token = decoded_token;
                 }
-                Err(e) => {
+                Err(_e) => {
                     WorkerError::InvalidMessage.log();
                     return Err(WorkerError::InvalidMessage);
                 }
             }
         }
 
-        // println!(
-        //     "block_number: {:?}, token: {:?}",
-        //     target_block_number, vec_token
-        // );
-
         println!(
             "block_number: {:?}, token: {:?}",
-            target_block_number, token
+            target_block_number, vec_token
         );
 
-        // Ok(Token::Array(vec_token))
-        Ok(token)
+        // println!(
+        //     "block_number: {:?}, token: {:?}",
+        //     target_block_number, token
+        // );
+
+        Ok(Token::Array(vec_token))
+        // Ok(token)
     }
 
     pub async fn get_latest_block_number(&self, chain_id: i32) -> Result<Token, WorkerError> {
         let chain_id =
-            parse_i32_to_usize(chain_id).map_err(|e| WorkerError::InvalidMessage)? as ChainID;
+            parse_i32_to_usize(chain_id).map_err(|_e| WorkerError::InvalidMessage)? as ChainID;
 
         let client = self.eth_clients.get(&chain_id).unwrap();
-        let block_number = client
-            .get_latest_block_number()
-            .await
-            .map_err(|err| WorkerError::InvalidMessage)?;
+        let block_number = client.get_latest_block_number().await.unwrap();
 
         Ok(Token::Uint(U256::from(block_number.as_u64())))
+    }
+
+    pub async fn get_latest_block(
+        &self,
+        chain_id: i32,
+        target: String,
+    ) -> Result<Token, WorkerError> {
+        let chain_id =
+            parse_i32_to_usize(chain_id).map_err(|_e| WorkerError::InvalidMessage)? as ChainID;
+
+        let client = self.eth_clients.get(&chain_id).unwrap();
+        let block = client.get_latest_block().await.unwrap();
+
+        match target.as_str() {
+            "timestamp" => Ok(Token::Uint(U256::from(block.timestamp))),
+            "number" => Ok(Token::Uint(U256::from(block.number.unwrap().as_u64()))),
+            "hash" => Ok(Token::String(block.hash.unwrap().to_string())),
+            _ => Err(WorkerError::InvalidMessage),
+        }
     }
 
     pub async fn get_eth_balance(
@@ -364,80 +374,50 @@ impl GetContext {
         block_number: U256,
     ) -> Result<Token, WorkerError> {
         let chain_id =
-            parse_i32_to_usize(chain_id).map_err(|e| WorkerError::InvalidMessage)? as ChainID;
+            parse_i32_to_usize(chain_id).map_err(|_e| WorkerError::InvalidMessage)? as ChainID;
 
         let block_number = BlockId::Number(BlockNumber::Number(parse_u256_to_u64(block_number)));
 
-        let address = parse_string_to_address(address).map_err(|e| WorkerError::InvalidMessage)?;
+        let address = parse_string_to_address(address).map_err(|_e| WorkerError::InvalidMessage)?;
 
         let client = self.eth_clients.get(&chain_id).unwrap();
         let balance = client
             .get_balance(address, block_number)
             .await
-            .map_err(|err| WorkerError::InvalidMessage)?;
+            .map_err(|_err| WorkerError::InvalidMessage)?;
 
         Ok(Token::Uint(balance))
     }
 }
 
-pub trait TokenConvertible: Sized {
-    fn from_token(token: Token) -> Self;
-}
-
-impl TokenConvertible for U256 {
-    fn from_token(token: Token) -> Self {
-        match token {
-            Token::Uint(v) => v,
-            Token::Int(v) => v,
-            _ => panic!("Cannot convert token to U256"),
-        }
-    }
-}
-
-impl TokenConvertible for bool {
-    fn from_token(token: Token) -> Self {
-        match token {
-            Token::Bool(v) => v,
-            _ => panic!("Cannot convert token to bool"),
-        }
-    }
-}
-
-impl TokenConvertible for String {
-    fn from_token(token: Token) -> Self {
-        match token {
-            Token::String(v) => v,
-            _ => panic!("Cannot convert token to String"),
-        }
-    }
-}
-
-impl TokenConvertible for Vec<Token> {
-    fn from_token(token: Token) -> Self {
-        match token {
-            Token::Array(v) => v,
-            _ => panic!("Cannot convert token to Vec<Token>"),
-        }
-    }
-}
-
-pub async fn get<P>(params: P) -> Token
+pub async fn get<P>(config: &Configuration, params: P) -> Token
 where
     P: Into<GetRequest>,
 {
-    let config = set_config(CONFIG_PATH);
     let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
     get_context.raw_get(params).await
 }
 
-pub async fn get_latest_block_number(chain_id: i32) -> Token {
-    let config = set_config(CONFIG_PATH);
+pub async fn get_latest_block_number(config: &Configuration, chain_id: i32) -> Token {
     let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
+
     get_context.get_latest_block_number(chain_id).await.unwrap()
 }
 
-pub async fn get_eth_balance(chain_id: i32, address: String, block_number: U256) -> Token {
-    let config = set_config(CONFIG_PATH);
+pub async fn get_latest_block(config: &Configuration, chain_id: i32, target: String) -> Token {
+    let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
+    get_context
+        .get_latest_block(chain_id, target)
+        .await
+        .unwrap()
+}
+
+pub async fn get_eth_balance(
+    config: &Configuration,
+    chain_id: i32,
+    address: String,
+    block_number: U256,
+) -> Token {
     let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
     get_context
         .get_eth_balance(chain_id, address, block_number)

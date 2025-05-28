@@ -1,0 +1,10 @@
+name: Bifrost Aggregator Balance Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalanceAGG = Bifrost.Balance(bifrostBN, Aggregator);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalanceAGG;

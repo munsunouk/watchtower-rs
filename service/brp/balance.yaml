@@ -1,0 +1,16 @@
+name: BRP Balance Check
+time_interval: 30
+script: |
+  bifrost_BlockNumber = Bifrost.LatestBlock();
+
+  currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrost_BlockNumber);
+  BRPVaultAddress = Bifrost.BRP.VaultAddress.VaultAddress(bifrost_BlockNumber, currentRound_MethodParams);
+  systemVaultAddress = Bifrost.BRP.Registration.SystemVault(bifrost_BlockNumber, currentRound_MethodParams);
+
+  vaultBalance = BRP.VaultBalance(Blockchain, BRPVaultAddress);
+  systemvaultBalance = BRP.VaultBalance(Blockchain, systemVaultAddress);
+  btcLiq = vaultBalance + systemvaultBalance;
+
+  totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
+  unifiedBTCLiq = totalSupply - 1110100;
+  unifiedBTCLiq - btcLiq > 1000000;

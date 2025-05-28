@@ -1,0 +1,13 @@
+name: Bifrost OracleManager POL Decision Check
+time_interval: 30
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  round = Bifrost.OracleManager.Round.Round(bifrostBN, POL);
+  lastTimestamp = Bifrost.OracleManager.History.Timestamp(bifrostBN, POL, round);
+  decisionInterval = Bifrost.OracleManager.TimeFilter.Decision(bifrostBN, POL);
+
+  nextUpdateAt = lastTimestamp + decisionInterval;
+
+  nextUpdateAt + 300 < currentTimestamp;
