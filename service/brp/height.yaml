@@ -6,4 +6,4 @@ script: |
   atn_height = BRP.BTCHeight(ATN);
 
   height_diff = when mempool_height > atn_height then mempool_height - atn_height else atn_height - mempool_height;
-  when height_diff < number_diff then Slack.Send(CORE, 'the Difference in the Block Height of BTC is more than ' + number_diff) else false;
+  when height_diff > number_diff then Slack.Send(CORE, 'the Difference in the Block Height of BTC is more than ' + number_diff) else false;

@@ -1,5 +1,5 @@
 name: BRP Balance Check
-time_interval: 30
+time_interval: 300
 script: |
   bifrost_BlockNumber = Bifrost.LatestBlock();
 

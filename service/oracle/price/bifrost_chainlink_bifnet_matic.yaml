@@ -1,5 +1,5 @@
 name: Bifrost Chainlink-Bifnet MATIC Price Check
-time_interval: 30
+time_interval: 300
 script: |
   bifrostBN = Bifrost.LatestBlock();
 

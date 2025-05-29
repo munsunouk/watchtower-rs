@@ -1,5 +1,5 @@
 name: Base Chainlink BTC Balance Check
-time_interval: 30
+time_interval: 300
 script: |
   baseBN = Base.LatestBlock();
 

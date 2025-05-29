@@ -4,7 +4,7 @@ use ethers::types::U256;
 use serde_json::{json, Value};
 use sqlx::{postgres::PgRow, Row};
 
-use watch_tower_lib::cli::slack::SlackClient;
+use watch_tower_lib::cli::slack::SlackNotifier;
 use watch_tower_lib::config::{
     set_param_config, BlockchainTargetValue, Configuration, ContractCallTargetValue,
     ContractConfig, ContractEventTargetValue, EVMProvider, NotificationCallTargetValue,
@@ -401,7 +401,7 @@ pub fn parse_pair<'a>(
                                             && (notification == "Slack")
                                         {
                                             slack_client =
-                                                Some(SlackClient::new(&key, &channel.id));
+                                                Some(SlackNotifier::new(&key, &channel.id));
                                         }
                                     }
                                 }

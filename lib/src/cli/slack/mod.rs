@@ -1,13 +1,15 @@
 use crate::utils::error::ClientError;
-use slack::api::chat::PostMessageRequest;
+use rustls::crypto::ring::default_provider;
+use slack_morphism::prelude::*;
+use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct SlackClient {
+pub struct SlackNotifier {
     token: String,
     channel: String,
 }
 
-impl SlackClient {
+impl SlackNotifier {
     pub fn new(token: &str, channel: &str) -> Self {
         Self {
             token: token.to_string(),
@@ -16,16 +18,23 @@ impl SlackClient {
     }
 
     pub async fn send_message(&self, text: &str) -> Result<(), ClientError> {
-        let request = PostMessageRequest {
-            channel: &self.channel,
-            text,
-            ..Default::default()
-        };
+        default_provider()
+            .install_default()
+            .expect("Failed to install rustls crypto provider");
 
-        let client = slack::api::requests::default_client()
-            .map_err(|e| ClientError::InternalProviderError(e.to_string()))?;
+        let client = slack_morphism::SlackClient::new(SlackClientHyperConnector::new().unwrap());
+        let token_value: SlackApiTokenValue = self.token.clone().into();
+        let token = SlackApiToken::new(token_value);
+        let session = client.open_session(&token);
 
-        slack::api::chat::post_message(&client, &self.token, &request)
+        let message = SlackMessageContent::new().with_text(text.to_string());
+
+        let request =
+            SlackApiChatPostMessageRequest::new(SlackChannelId(self.channel.clone()), message);
+
+        session
+            .chat_post_message(&request)
+            .await
             .map_err(|e| ClientError::InternalProviderError(e.to_string()))?;
 
         Ok(())
@@ -37,49 +46,30 @@ impl SlackClient {
         message: &str,
         hashtag: Option<&str>,
     ) -> Result<(), ClientError> {
+        default_provider()
+            .install_default()
+            .expect("Failed to install rustls crypto provider");
+
         let alert_text = match hashtag {
             Some(tag) => format!("*{}*\n{} {}", title, tag, message),
             None => format!("*{}*\n{}", title, message),
         };
-        let request = PostMessageRequest {
-            channel: &self.channel,
-            text: &alert_text,
-            ..Default::default()
-        };
 
-        let client = slack::api::requests::default_client()
-            .map_err(|e| ClientError::InternalProviderError(e.to_string()))?;
+        let client = slack_morphism::SlackClient::new(SlackClientHyperConnector::new().unwrap());
+        let token_value: SlackApiTokenValue = self.token.clone().into();
+        let token = SlackApiToken::new(token_value);
+        let session = client.open_session(&token);
 
-        slack::api::chat::post_message(&client, &self.token, &request)
+        let message = SlackMessageContent::new().with_text(alert_text);
+
+        let request =
+            SlackApiChatPostMessageRequest::new(SlackChannelId(self.channel.clone()), message);
+
+        session
+            .chat_post_message(&request)
+            .await
             .map_err(|e| ClientError::InternalProviderError(e.to_string()))?;
 
         Ok(())
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use crate::cli::slack::send_message;
-//     use crate::config::Config;
-//     use crate::utils::error::GeneralError;
-//     use std::env;
-
-//     #[tokio::test]
-//     async fn test_send_message() -> Result<(), GeneralError> {
-//         let config = Config::default();
-//         let result = send_message(&config, "test message").await;
-//         assert!(result.is_ok());
-//         Ok(())
-//     }
-
-//     #[test]
-//     fn test_parse_rules_new_format() {
-//         let input = r#"get(type=contractcall, name=test2, chain=3068, address=0x0000000000000000000000000000000000000100, abi=[{"type":"function","name":"current_round","stateMutability":"view","inputs":[],"outputs":[{"internalType":"uint32","name":"","type":"uint32"}]}], params={pool:0x8cfcBc421334263ed3A2f62B49Ee7A471Ade7aBb}, value={status:0}, check_block=3, target_block=0)"#;
-//         let result = parse_rules(input).unwrap();
-//         assert_eq!(result.len(), 1);
-//         let rule = result[0].as_ref().unwrap();
-//         assert_eq!(rule.get("type").unwrap(), &Token::String("contractcall".to_string()));
-//         assert_eq!(rule.get("name").unwrap(), &Token::String("test2".to_string()));
-//         assert_eq!(rule.get("chain").unwrap(), &Token::Uint(U256::from(3068)));
-//     }
-// }

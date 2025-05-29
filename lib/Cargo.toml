@@ -22,9 +22,11 @@ pest_derive = { workspace = true }
 reqwest = { workspace = true }
 serde_yaml = { workspace = true }
 validator = { workspace = true }
-slack = { workspace = true }
 futures = { workspace = true }
 postgres = { workspace = true }
 postgres-types = { workspace = true }
+slack-morphism = { workspace = true }
+rustls = { workspace = true }
+
 [lib]
 name = "watch_tower_lib"

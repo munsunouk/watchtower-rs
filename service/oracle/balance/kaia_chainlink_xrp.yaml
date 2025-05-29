@@ -1,5 +1,5 @@
 name: Kaia Chainlink XRP Balance Check
-time_interval: 30
+time_interval: 300
 script: |
   kaiaBN = Kaia.LatestBlock();
 

@@ -16,7 +16,7 @@ use ethers::{
 use std::sync::atomic::Ordering::SeqCst;
 use tokio::runtime::Runtime;
 use watch_tower_lib::{
-    cli::slack::SlackClient,
+    cli::slack::SlackNotifier,
     config::{set_config, set_rule},
     utils::error::ClientError,
 };
