@@ -92,9 +92,9 @@ pub fn run_with_runtime(rule_path: &str) -> Result<(), WorkerError> {
     let runtime = build_runtime()?;
 
     let result = runtime.block_on(async {
-        // let runner = Runner::new(rule_path).await?;
-        // runner.run().await
-        get_result(rule_path).await
+        let runner = Runner::new(rule_path).await?;
+        runner.run().await
+        // get_result(rule_path).await
     });
 
     drop(runtime);
@@ -109,26 +109,26 @@ pub fn run_with_runtime(rule_path: &str) -> Result<(), WorkerError> {
     }
 }
 
-async fn get_result(rule_path: &str) -> Result<(), WorkerError> {
-    let config = set_config(CONFIG_PATH);
-    let rule = set_rule(rule_path);
+// async fn get_result(rule_path: &str) -> Result<(), WorkerError> {
+//     let config = set_config(CONFIG_PATH);
+//     let rule = set_rule(rule_path);
 
-    let result = parse_result(&config, &rule.script).await.unwrap();
+//     let result = parse_result(&config, &rule.script).await.unwrap();
 
-    let btc_height_msg = "the Difference in the Block Height of BTC is more than 10";
+//     let btc_height_msg = "the Difference in the Block Height of BTC is more than 10";
 
-    if Token::Bool(false) == result {
-        let slack_msg = format!("```{}```", btc_height_msg.to_string());
-        let hashtag = Some("<!here>");
+//     if Token::Bool(false) == result {
+//         let slack_msg = format!("```{}```", btc_height_msg.to_string());
+//         let hashtag = Some("<!here>");
 
-        let slack_client =
-            SlackClient::new(&config.slack_config.token, &config.slack_config.channel);
-        slack_client
-            .send_alert("Scheduled BTC Height Notification", &slack_msg, hashtag)
-            .await
-            .unwrap();
-    }
+//         let slack_client =
+//             SlackClient::new(&config.slack_config.token, &config.slack_config.channel);
+//         slack_client
+//             .send_alert("Scheduled BTC Height Notification", &slack_msg, hashtag)
+//             .await
+//             .unwrap();
+//     }
 
-    println!("result: {:?}", result);
-    Ok(())
-}
+//     println!("result: {:?}", result);
+//     Ok(())
+// }

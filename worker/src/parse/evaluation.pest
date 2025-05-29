@@ -6,43 +6,93 @@ comparison_operator     =  { ">=" | "<=" | "==" | "!=" | ">" | "<" }
 boolean_literal         =  { "true" | "false" }
 
 // Operators
-expression = { operation ~ (logical_operator ~ operation)* }
-operation  = { term ~ (comparison_operator ~ term)? }
-term       = { factor ~ (arithmetic_operator ~ factor)* }
-factor     = { primary ~ (multiplicative_operator ~ primary)* }
-primary    = { boolean_literal | call_stmt | hex_address | number | identifier | "(" ~ expression ~ ")" }
+Expr      = { Condition ~ (logical_operator ~ Condition)* }
+Condition = { When | Operation }
+When      = { "when" ~ Operation ~ "then" ~ Operation ~ "else" ~ Operation }
+Operation = { Term ~ (comparison_operator ~ Term)? }
+Term      = { Factor ~ (arithmetic_operator ~ Factor)* }
+Factor    = { Primary ~ (multiplicative_operator ~ Primary)* }
+Primary   = { boolean_literal | CallStmt | Address | Number | Identifier | StringLiteral | "(" ~ Expr ~ ")" }
 
 // specific identifiers
-blockchain             = { "Ethereum" | "BifrostTestnet" | "Bifrost" | "Base" | "Kaia" }
-service                = { "ChainlinkOracle" | "BifnetOracle" | "Bifagg" | "Everdex" | "BRP" | "CCCP" | "BIFI" | "OracleManager" | "Internal" }
-contract               = { "WBTC" | "BTC" | "BTCB" | "USDC" | "USDT" | "ETH" | "BTCBTCUSD" | "JPYBTCUSD" | "BTCBTCUSD" | "BNB" | "POL" | "DAI" | "BFC" | "BIFI" | "XRP" | "JPY" | "JPYEURO" | "EURO" | "LP_BTCUSDUSDC" | "WSTBFC" | "BTCUSD" | "SmartRouter" | "Poolinfo" | "Swap" | "TotalSupply" | "VaultAddress" | "CurrentRound" | "Socket" | "LendingPool" | "Registration" | "LessMajority" | "Feeder" | "Round" | "History" | "TimeFilter" | "Info" | "FeedTime" }
-contract_call_target   = { "LatestPrice" | "Liquidity" | "SystemVault" | "Relayer" | "CurrentRound" | "Round" | "Timestamp" | "Decision" | "LastTimestamp" | "FeedTime" | "VaultAddress" | "TotalSupply" }
-contract_event_target  = { "BridgeAmount" | "OID" }
-blockchain_call_target = { "LatestBlock" | "LatestTimestamp" | "Balance" }
-rpc_call_target        = { "VaultBalance" | "ApiHeight" | "BTCHeight" }
+Notification             = { "Slack" }
+Chain                    = { "Ethereum" | "BifrostTestnet" | "Bifrost" | "Base" | "Kaia" | "BNB_PUB" | "BNB" }
+Service                  = { "ChainlinkOracle" | "BifnetOracle" | "Bifagg" | "Everdex" | "BRP" | "CCCP" | "BIFI" | "OracleManager" | "Internal" }
+Contract                 = {
+    "WBTC"
+  | "BTC"
+  | "BTCB"
+  | "USDC"
+  | "USDT"
+  | "ETH"
+  | "JPYBTCUSD"
+  | "BTCBTCUSD"
+  | "BNB"
+  | "POL"
+  | "DAI"
+  | "BFC"
+  | "BIFI"
+  | "XRP"
+  | "JPY"
+  | "JPYEURO"
+  | "EURO"
+  | "LP_BTCUSDUSDC"
+  | "WSTBFC"
+  | "BTCUSD"
+  | "SmartRouter"
+  | "Poolinfo"
+  | "Swap"
+  | "TotalSupply"
+  | "VaultAddress"
+  | "CurrentRound"
+  | "Socket"
+  | "LendingPool"
+  | "Registration"
+  | "LessMajority"
+  | "Feeder"
+  | "Round"
+  | "History"
+  | "TimeFilter"
+  | "Info"
+  | "FeedTime"
+}
+ContractMethodName       = {
+    "LatestPrice"
+  | "Liquidity"
+  | "SystemVault"
+  | "Relayer"
+  | "CurrentRound"
+  | "Round"
+  | "Timestamp"
+  | "Decision"
+  | "LastTimestamp"
+  | "FeedTime"
+  | "VaultAddress"
+  | "TotalSupply"
+}
+EventName                = { "BridgeAmount" | "OID" }
+ChainFunctionName        = { "LatestBlock" | "LatestTimestamp" | "Balance" }
+RpcFunctionName          = { "VaultBalance" | "ApiHeight" | "BTCHeight" }
+NotificationFunctionName = { "Send" }
 
-params = { "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+Params = { "(" ~ (Expr ~ ("," ~ Expr)*)? ~ ")" }
 
-// property
-rpc_call_property        = { rpc_call_target ~ params }
-contract_call_property   = { contract_call_target ~ params }
-contract_event_property  = { contract_event_target ~ params }
-blockchain_call_property = { blockchain_call_target ~ params }
+Identifier    = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/")* }
+Number        = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+Address       = @{ "0x" ~ ASCII_HEX_DIGIT+ }
+StringLiteral = @{ "'" ~ (ASCII_ALPHANUMERIC | " " | "_" | "-" | "/" | ".")+ ~ "'" }
 
-identifier  = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/")* }
-number      = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
-hex_address = @{ "0x" ~ ASCII_HEX_DIGIT+ }
-
-// call
-rpc_call        = { service ~ "." ~ rpc_call_property }
-contract_call   = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ contract_call_property }
-contract_event  = { blockchain ~ "." ~ service ~ "." ~ contract ~ "." ~ contract_event_property }
-blockchain_call = { blockchain ~ "." ~ blockchain_call_property }
+// expression
+RpcFunctionCallExpr    = { Service ~ "." ~ RpcFunctionName ~ Params }
+ContractMethodCallExpr = { Chain ~ "." ~ Service ~ "." ~ Contract ~ "." ~ ContractMethodName ~ Params }
+EventCallExpr          = { Chain ~ "." ~ Service ~ "." ~ Contract ~ "." ~ EventName ~ Params }
+ChainFunctionCallExpr  = { Chain ~ "." ~ ChainFunctionName ~ Params }
+NotificationCallExpr   = { Notification ~ "." ~ NotificationFunctionName ~ Params }
 
 // Statements
-call_stmt       = { rpc_call | contract_call | contract_event | blockchain_call }
-assignment_stmt = { WHITESPACE? ~ identifier ~ "=" ~ expression ~ ";" ~ WHITESPACE? }
-expression_stmt = { WHITESPACE? ~ expression ~ ";" ~ WHITESPACE? }
+CallStmt       = { RpcFunctionCallExpr | ContractMethodCallExpr | EventCallExpr | ChainFunctionCallExpr | NotificationCallExpr }
+AssignmentStmt = { WHITESPACE? ~ Identifier ~ "=" ~ Expr ~ ";" ~ WHITESPACE? }
+ExprStmt       = { WHITESPACE? ~ Expr ~ ";" ~ WHITESPACE? }
 
 // Program
-program = _{ (assignment_stmt | expression_stmt)+ }
+Program = { (AssignmentStmt | ExprStmt)+ }

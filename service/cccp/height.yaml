@@ -1,0 +1,8 @@
+name: CCCP Height Check
+time_interval: 600
+script: |
+  number_diff = 100;
+  public_height = BNB.LatestBlock();
+  atn_height = BNB_PUB.LatestBlock();
+  height_diff = when public_height > atn_height then public_height - atn_height else atn_height - public_height;
+  when height_diff < number_diff then Slack.Send(CORE, 'the Difference in the Block Height of BSC is more than ' + number_diff) else false;

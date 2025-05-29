@@ -96,3 +96,9 @@ url_config:
     url: "https://blockchain.info/balance"
   - name: "ATN"
     url: "https://bitcoin-mainnet.l.allthatnode.com/archive/json_rpc/15c0cc94fe514fc29cd63def61e609ce"
+
+channel_config:
+  - name: "APY"
+    id: "C08TWJU6B45"
+  - name: "CORE"
+    id: "C01NBNYSQ0J"

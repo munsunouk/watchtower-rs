@@ -5,7 +5,8 @@ pub mod types;
 use crate::{
     cli::db::postgres::PostgresClient,
     rule::{
-        contract_call::ContractCallRule, contract_event::ContractEventRule, rpc_call::RpcCallRule,
+        contract_call::ContractCallRule, contract_event::ContractEventRule, parse_token_to_string,
+        rpc_call::RpcCallRule,
     },
     utils::error::GeneralError,
 };
@@ -339,16 +340,16 @@ pub fn arithmetic_token(left: &Token, right: &Token, operator: &str) -> Option<T
             if !check_type_arithmetic(left, right, operator) {
                 return None;
             }
-
             parse_arithmetic(value, expected_value, operator)
         }
-        _ => {
-            println!(
-                "left, right, operator: {:?}, {:?}, {:?}",
-                left, right, operator
-            );
-            None
+        (Token::String(value), Token::String(expected_value)) => {
+            parse_string_arithmetic(value, expected_value, operator)
         }
+        (Token::String(value), other) | (other, Token::String(value)) => {
+            let other_str = parse_token_to_string(other).unwrap_or_default();
+            parse_string_arithmetic(value, &other_str, operator)
+        }
+        _ => None,
     }
 }
 
@@ -445,6 +446,24 @@ pub fn parse_arithmetic(value: &U256, expected_value: &U256, operator: &str) -> 
         OPERATOR_SUB => value.checked_sub(*expected_value).map(Token::Uint),
         OPERATOR_MUL => value.checked_mul(*expected_value).map(Token::Uint),
         OPERATOR_DIV => value.checked_div(*expected_value).map(Token::Uint),
+        _ => None,
+    }
+}
+
+/// # Description
+/// This function parses string arithmetic operations.
+/// # Arguments
+///
+/// * `value` - The string value to parse.
+/// * `expected_value` - The expected value to concatenate with.
+/// * `operator` - The operator string.
+///
+/// # Returns
+///
+/// An optional token containing the parsed value.
+pub fn parse_string_arithmetic(value: &str, expected_value: &str, operator: &str) -> Option<Token> {
+    match operator {
+        OPERATOR_ADD => Some(Token::String(value.to_string() + expected_value)),
         _ => None,
     }
 }

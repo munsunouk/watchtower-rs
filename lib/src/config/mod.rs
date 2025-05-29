@@ -12,6 +12,7 @@ pub struct ParamConfig {
     pub oid_config: Vec<OidConfig>,
     pub balance_config: Vec<BalanceConfig>,
     pub url_config: Vec<UrlConfig>,
+    pub channel_config: Vec<ChannelConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -45,6 +46,12 @@ pub struct UrlConfig {
     pub url: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct ChannelConfig {
+    pub name: String,
+    pub id: String,
+}
+
 /// # Description
 /// This struct represents the configuration for the application.
 /// # Arguments
@@ -55,7 +62,7 @@ pub struct UrlConfig {
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct Configuration {
     #[validate]
-    pub slack_config: SlackConfig,
+    pub notification_config: Vec<NotificationConfig>,
     #[validate]
     pub rpc_config: Vec<RPCConfig>,
     #[validate]
@@ -74,6 +81,8 @@ pub struct Configuration {
     pub blockchain_call_target: Vec<BlockchainTargetValue>,
     #[validate]
     pub contract_event_target: Vec<ContractEventTargetValue>,
+    #[validate]
+    pub notification_call_target: Vec<NotificationCallTargetValue>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -85,9 +94,9 @@ pub struct Rule {
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
-pub struct SlackConfig {
-    pub token: String,
-    pub channel: String,
+pub struct NotificationConfig {
+    pub service: String,
+    pub key: String,
 }
 
 /// # Description
@@ -180,6 +189,13 @@ pub struct ContractEventTargetValue {
     pub name: String,
     pub event_index: i32,
     pub target_index: String,
+}
+
+#[derive(Default, Debug, Clone, Deserialize, Validate)]
+pub struct NotificationCallTargetValue {
+    pub name: String,
+    pub params: Vec<Option<Token>>,
+    pub param_nessesary: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

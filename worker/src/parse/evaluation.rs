@@ -4,9 +4,11 @@ use ethers::types::U256;
 use serde_json::{json, Value};
 use sqlx::{postgres::PgRow, Row};
 
+use watch_tower_lib::cli::slack::SlackClient;
 use watch_tower_lib::config::{
     set_param_config, BlockchainTargetValue, Configuration, ContractCallTargetValue,
-    ContractConfig, ContractEventTargetValue, EVMProvider, RPCTargetValue,
+    ContractConfig, ContractEventTargetValue, EVMProvider, NotificationCallTargetValue,
+    NotificationConfig, RPCTargetValue,
 };
 use watch_tower_lib::utils::types::ChainID;
 use watch_tower_lib::utils::{
@@ -90,7 +92,7 @@ pub fn parse_pair<'a>(
 ) -> ParsePairFuture<'a> {
     Box::pin(async move {
         match pair.as_rule() {
-            Rule::program => {
+            Rule::Program => {
                 let inner = pair.into_inner();
 
                 let mut result = Token::Bool(false);
@@ -102,7 +104,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::expression_stmt => {
+            Rule::ExprStmt => {
                 let inner = pair.into_inner();
 
                 let mut result = Token::Bool(false);
@@ -114,7 +116,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::assignment_stmt => {
+            Rule::AssignmentStmt => {
                 let mut inner = pair.into_inner();
 
                 let identifer = inner
@@ -133,13 +135,13 @@ pub fn parse_pair<'a>(
                 );
                 context.variables.clear();
 
-                let result = Token::Bool(true);
+                let result = Token::Bool(false);
 
                 Ok(result)
             }
 
             // operation level parsing
-            Rule::expression => {
+            Rule::Expr => {
                 let mut inner = pair.into_inner();
                 let first = inner
                     .next()
@@ -187,7 +189,45 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::operation => {
+            Rule::Condition => {
+                let mut inner = pair.into_inner();
+                let first = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+
+                let result = parse_pair(config, first, context).await?;
+                Ok(result)
+            }
+
+            Rule::When => {
+                let mut inner = pair.into_inner();
+                let first = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+
+                let condition = parse_pair(config, first, context).await?;
+
+                let then_expr = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+
+                let else_expr = inner
+                    .next()
+                    .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
+
+                let result = if condition
+                    .into_bool()
+                    .ok_or(GeneralError::InvalidTypeConvert)?
+                {
+                    parse_pair(config, then_expr, context).await?
+                } else {
+                    parse_pair(config, else_expr, context).await?
+                };
+
+                Ok(result)
+            }
+
+            Rule::Operation => {
                 let mut inner = pair.into_inner();
                 let left = inner
                     .next()
@@ -211,7 +251,7 @@ pub fn parse_pair<'a>(
                 }
             }
 
-            Rule::term => {
+            Rule::Term => {
                 let mut inner = pair.into_inner();
                 let mut result = parse_pair(config, inner.next().unwrap(), context).await?;
 
@@ -227,7 +267,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::factor => {
+            Rule::Factor => {
                 let mut inner = pair.into_inner();
                 let first = inner
                     .next()
@@ -246,7 +286,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::params => {
+            Rule::Params => {
                 let mut inner = pair.into_inner().peekable();
                 let mut params_vec = Vec::new();
 
@@ -262,10 +302,10 @@ pub fn parse_pair<'a>(
                     ParseResultType::ArrayParam(params_vec),
                 );
 
-                Ok(Token::Bool(true))
+                Ok(Token::Bool(false))
             }
 
-            Rule::primary => {
+            Rule::Primary => {
                 let mut inner = pair.into_inner();
                 let first = inner
                     .next()
@@ -279,11 +319,19 @@ pub fn parse_pair<'a>(
                 _ => Err(GeneralError::InvalidOperator(pair.as_str().to_string())),
             },
 
-            Rule::number => Ok(Token::Uint(parse_string_to_uint(
+            Rule::Number => Ok(Token::Uint(parse_string_to_uint(
                 pair.as_str().to_string(),
             )?)),
 
-            Rule::hex_address => {
+            Rule::StringLiteral => {
+                let string = pair.as_str();
+
+                let string = string.replace("'", "");
+
+                Ok(Token::String(string.to_string()))
+            }
+
+            Rule::Address => {
                 let address = pair.as_str();
                 Ok(Token::Address(
                     ethers::types::Address::from_str(address).map_err(|_| {
@@ -292,7 +340,7 @@ pub fn parse_pair<'a>(
                 ))
             }
 
-            Rule::call_stmt => {
+            Rule::CallStmt => {
                 let inner = pair.into_inner();
 
                 let mut result = Token::Bool(false);
@@ -310,7 +358,84 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::blockchain_call => {
+            Rule::NotificationCallExpr => {
+                let inner = pair.into_inner();
+                let mut result = Token::Bool(false);
+
+                for unwrapped_pair in inner {
+                    result = parse_pair(config, unwrapped_pair, context).await?;
+                }
+
+                let notification = match context.variables.get("notification") {
+                    Some(ParseResultType::String(notification)) => notification.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let key = match context.variables.get("key") {
+                    Some(ParseResultType::String(key)) => key.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let param_config = set_param_config(PARAM_CONFIG_PATH);
+
+                let param_nessesary = match context.variables.get("param_nessesary") {
+                    Some(ParseResultType::Array(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let function_params = match context.variables.get("function_params") {
+                    Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
+                    _ => return Err(GeneralError::InvalidTypeConvert),
+                };
+
+                let mut slack_client = None;
+                for (param_nessery, function_param) in
+                    param_nessesary.iter().zip(function_params.iter())
+                {
+                    match param_nessery.as_str() {
+                        "Channel" => {
+                            if let Some(token) = function_param {
+                                if let Token::String(channel_name) = token {
+                                    for channel in param_config.channel_config.iter() {
+                                        if (channel.name == *channel_name)
+                                            && (notification == "Slack")
+                                        {
+                                            slack_client =
+                                                Some(SlackClient::new(&key, &channel.id));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "Message" => {
+                            if let Some(token) = function_param {
+                                if let Token::String(message) = token {
+                                    if notification == "Slack" {
+                                        if let Some(client) = &slack_client {
+                                            let slack_msg =
+                                                format!("```{}```", message.to_string());
+
+                                            client
+                                                .send_alert(
+                                                    "Notification",
+                                                    &slack_msg,
+                                                    Some("<!here>"),
+                                                )
+                                                .await
+                                                .unwrap();
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(result)
+            }
+
+            Rule::ChainFunctionCallExpr => {
                 let inner = pair.into_inner();
 
                 let result;
@@ -403,7 +528,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::rpc_call => {
+            Rule::RpcFunctionCallExpr => {
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
@@ -517,7 +642,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::contract_call => {
+            Rule::ContractMethodCallExpr => {
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
@@ -633,7 +758,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::contract_event => {
+            Rule::EventCallExpr => {
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
@@ -696,7 +821,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::blockchain => {
+            Rule::Chain => {
                 let blockchain = pair.as_str();
 
                 for provider in context.config.evm_providers.clone() {
@@ -716,10 +841,10 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(true))
+                Ok(Token::Bool(false))
             }
 
-            Rule::service => {
+            Rule::Service => {
                 let service = pair.as_str();
 
                 if let Some(_) = context.variables.get("chain_id") {
@@ -746,10 +871,31 @@ pub fn parse_pair<'a>(
                 } else {
                 }
 
-                Ok(Token::Bool(true))
+                Ok(Token::Bool(false))
             }
 
-            Rule::contract => {
+            Rule::Notification => {
+                let notification = pair.as_str();
+
+                for notification_config in context.config.notification_config.clone() {
+                    let NotificationConfig { service, key } = notification_config;
+
+                    if notification == service {
+                        context.variables.insert(
+                            "notification".to_string(),
+                            ParseResultType::String(service.to_string()),
+                        );
+
+                        context
+                            .variables
+                            .insert("key".to_string(), ParseResultType::String(key.to_string()));
+                    }
+                }
+
+                Ok(Token::Bool(false))
+            }
+
+            Rule::Contract => {
                 let contract_str = pair.as_str();
                 let mut found = false;
 
@@ -796,7 +942,7 @@ pub fn parse_pair<'a>(
                                 .variables
                                 .insert("address".to_string(), ParseResultType::String(address));
 
-                            found = true;
+                            found = false;
                             break;
                         }
                     }
@@ -805,7 +951,7 @@ pub fn parse_pair<'a>(
                 Ok(Token::Bool(found))
             }
 
-            Rule::identifier => {
+            Rule::Identifier => {
                 let identifier = pair.as_str();
 
                 let check_store_value = check_store_value(context.symbol_table, identifier);
@@ -843,7 +989,7 @@ pub fn parse_pair<'a>(
                 Ok(result)
             }
 
-            Rule::rpc_call_target => {
+            Rule::RpcFunctionName => {
                 let rpc_call_target_str = pair.as_str();
 
                 for rpc_call_target in context.config.rpc_call_target.clone() {
@@ -919,10 +1065,10 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(true))
+                Ok(Token::Bool(false))
             }
 
-            Rule::contract_call_target => {
+            Rule::ContractMethodName => {
                 let contract_call_target_str = pair.as_str();
 
                 for contract_call_target in context.config.contract_call_target.clone() {
@@ -949,10 +1095,10 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(true))
+                Ok(Token::Bool(false))
             }
 
-            Rule::contract_event_target => {
+            Rule::EventName => {
                 let contract_event_target_str = pair.as_str();
 
                 for contract_event_target in context.config.contract_event_target.clone() {
@@ -974,10 +1120,36 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(true))
+                Ok(Token::Bool(false))
             }
 
-            Rule::blockchain_call_target => {
+            Rule::NotificationFunctionName => {
+                let notification_call_target_str = pair.as_str();
+
+                for notification_call_target in context.config.notification_call_target.clone() {
+                    let NotificationCallTargetValue {
+                        name,
+                        params,
+                        param_nessesary,
+                    } = notification_call_target;
+
+                    if notification_call_target_str == name {
+                        context.variables.insert(
+                            "name".to_string(),
+                            ParseResultType::ArrayParam(params.clone()),
+                        );
+
+                        context.variables.insert(
+                            "param_nessesary".to_string(),
+                            ParseResultType::Array(param_nessesary),
+                        );
+                    }
+                }
+
+                Ok(Token::Bool(false))
+            }
+
+            Rule::ChainFunctionName => {
                 let blockchain_call_target_str = pair.as_str();
 
                 for blockchain_call_target in context.config.blockchain_call_target.clone() {
@@ -999,55 +1171,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(true))
-            }
-
-            Rule::rpc_call_property => {
-                let inner = pair.into_inner();
-
-                let mut result = Token::Bool(false);
-
-                for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
-                }
-
-                Ok(result)
-            }
-
-            Rule::contract_call_property => {
-                let inner = pair.into_inner();
-
-                let mut result = Token::Bool(false);
-
-                for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
-                }
-
-                Ok(result)
-            }
-
-            Rule::contract_event_property => {
-                let inner = pair.into_inner();
-
-                let mut result = Token::Bool(false);
-
-                for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
-                }
-
-                Ok(result)
-            }
-
-            Rule::blockchain_call_property => {
-                let inner = pair.into_inner();
-
-                let mut result = Token::Bool(false);
-
-                for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
-                }
-
-                Ok(result)
+                Ok(Token::Bool(false))
             }
 
             _ => Err(GeneralError::InvalidRuleDecode(format!(
@@ -1131,7 +1255,7 @@ pub async fn parse_result(
 ) -> Result<Token, GeneralError> {
     let mut symbol_table = SymbolTable::new();
 
-    let pairs = match RuleEvaluationParser::parse(Rule::program, program_input) {
+    let pairs = match RuleEvaluationParser::parse(Rule::Program, program_input) {
         Ok(pairs) => pairs,
         Err(_) => {
             return Err(GeneralError::InvalidRuleDecode(program_input.to_string()));
@@ -1164,23 +1288,13 @@ mod tests {
 
     fn test_new_parse_rule() {
         let test_input = "
-         bifrostBN = Bifrost.LatestBlock();
-
-         currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrostBN);
-         BRPVaultAddress = Bifrost.BRP.VaultAddress.VaultAddress(bifrostBN, currentRound_MethodParams);
-         systemVaultAddress = Bifrost.BRP.Registration.SystemVault(bifrostBN, currentRound_MethodParams);
-
-         vaultBalance = BRP.VaultBalance(Blockchain, BRPVaultAddress);
-         systemvaultBalance = BRP.VaultBalance(Blockchain, systemVaultAddress);
-         btcLiq = vaultBalance + systemvaultBalance;
-
-         totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrostBN);
-         unifiedBTCLiq = totalSupply - 1110100;
-         unifiedBTCLiq - btcLiq > 1000000;
-         
+  public_height = BNB.LatestBlock();
+  atn_height = BNB_PUB.LatestBlock();
+  height_diff = when public_height > atn_height then public_height - atn_height else atn_height - public_height;
+  when height_diff < 10 then Slack.Send(CORE, 'CCCP Height Diff') else false;
         ";
 
-        let pairs = RuleEvaluationParser::parse(Rule::program, test_input).unwrap();
+        let pairs = RuleEvaluationParser::parse(Rule::Program, test_input).unwrap();
         println!("pairs: {:?}", pairs);
     }
 
