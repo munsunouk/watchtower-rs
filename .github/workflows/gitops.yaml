@@ -1,0 +1,14 @@
+name: Common Reusable Workflow
+
+on: [push]
+
+# for OIDC
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+jobs:
+  common-workflow:
+    uses: bifrost-platform/github-actions/.github/workflows/common.yml@main
+    secrets: inherit
