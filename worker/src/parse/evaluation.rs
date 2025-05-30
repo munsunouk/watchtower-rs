@@ -412,17 +412,8 @@ pub fn parse_pair<'a>(
                                 if let Token::String(message) = token {
                                     if notification == "Slack" {
                                         if let Some(client) = &slack_client {
-                                            let slack_msg =
-                                                format!("```{}```", message.to_string());
-
-                                            client
-                                                .send_alert(
-                                                    "Notification",
-                                                    &slack_msg,
-                                                    Some("<!here>"),
-                                                )
-                                                .await
-                                                .unwrap();
+                                            println!("{}", message);
+                                            client.send_message(&message).await.unwrap();
                                         }
                                         break;
                                     }
@@ -1288,10 +1279,11 @@ mod tests {
 
     fn test_new_parse_rule() {
         let test_input = "
+  number_diff = 100;
   public_height = BNB.LatestBlock();
   atn_height = BNB_PUB.LatestBlock();
   height_diff = when public_height > atn_height then public_height - atn_height else atn_height - public_height;
-  when height_diff < 10 then Slack.Send(CORE, 'CCCP Height Diff') else false;
+  when height_diff < number_diff then Slack.Send(CORE, '*BTCFi Boost 상품 정보* 🚀\n> APY: 3.12% 📈  \n> TVL: $559.41 💎') else false;
         ";
 
         let pairs = RuleEvaluationParser::parse(Rule::Program, test_input).unwrap();

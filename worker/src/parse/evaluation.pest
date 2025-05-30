@@ -80,7 +80,7 @@ Params = { "(" ~ (Expr ~ ("," ~ Expr)*)? ~ ")" }
 Identifier    = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/")* }
 Number        = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 Address       = @{ "0x" ~ ASCII_HEX_DIGIT+ }
-StringLiteral = @{ "'" ~ (ASCII_ALPHANUMERIC | " " | "_" | "-" | "/" | ".")+ ~ "'" }
+StringLiteral = @{ "'" ~ ((!"'" ~ ANY)*) ~ "'" }
 
 // expression
 RpcFunctionCallExpr    = { Service ~ "." ~ RpcFunctionName ~ Params }

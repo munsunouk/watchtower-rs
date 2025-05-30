@@ -5,4 +5,4 @@ script: |
   public_height = BNB.LatestBlock();
   atn_height = BNB_PUB.LatestBlock();
   height_diff = when public_height > atn_height then public_height - atn_height else atn_height - public_height;
-  when height_diff > number_diff then Slack.Send(CORE, 'the Difference in the Block Height of BSC is more than ' + number_diff) else false;
+  when height_diff < number_diff then Slack.Send(CORE, '*CCCP BSC Block 알람* 🚀\n <!here>\n> 블록 차이: ' + height_diff + '\n> 퍼블릭노드 : ' + public_height + '\n> ATN노드 : ' + atn_height) else false;

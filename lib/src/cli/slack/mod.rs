@@ -27,7 +27,10 @@ impl SlackNotifier {
         let token = SlackApiToken::new(token_value);
         let session = client.open_session(&token);
 
-        let message = SlackMessageContent::new().with_text(text.to_string());
+        let formatted_text = text.replace("\\n", "\n");
+        let message = SlackMessageContent::new().with_text(formatted_text);
+
+        println!("{}", text);
 
         let request =
             SlackApiChatPostMessageRequest::new(SlackChannelId(self.channel.clone()), message);
@@ -51,16 +54,16 @@ impl SlackNotifier {
             .expect("Failed to install rustls crypto provider");
 
         let alert_text = match hashtag {
-            Some(tag) => format!("*{}*\n{} {}", title, tag, message),
-            None => format!("*{}*\n{}", title, message),
+            Some(tag) => format!("{}\n{}", message, tag),
+            None => message.to_string(),
         };
+        let formatted_alert_text = alert_text.replace("\\n", "\n").replace("\\>", "> ");
+        let message = SlackMessageContent::new().with_text(formatted_alert_text);
 
         let client = slack_morphism::SlackClient::new(SlackClientHyperConnector::new().unwrap());
         let token_value: SlackApiTokenValue = self.token.clone().into();
         let token = SlackApiToken::new(token_value);
         let session = client.open_session(&token);
-
-        let message = SlackMessageContent::new().with_text(alert_text);
 
         let request =
             SlackApiChatPostMessageRequest::new(SlackChannelId(self.channel.clone()), message);
