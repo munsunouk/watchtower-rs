@@ -1,0 +1,10 @@
+name: Bifrost Chainlink POL Balance Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  BalancePOL = Bifrost.Balance(bifrostBN, POL);
+
+  CompareBalance = 10000000000000000000;
+
+  CompareBalance > BalancePOL;

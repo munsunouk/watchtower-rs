@@ -1,0 +1,10 @@
+name: Bifrost Aggregator DAI Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorDAI = Bifrost.AggregatorOracle.DAI.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorDAI;
+  diff > (3600 * 72);

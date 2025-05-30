@@ -1,0 +1,10 @@
+name: Bifrost Chainlink POL Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostChainlinkPOL = Bifrost.ChainlinkOracle.POL.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostChainlinkPOL;
+  diff > (3600 * 72);

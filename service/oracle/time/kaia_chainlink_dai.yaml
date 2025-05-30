@@ -1,0 +1,10 @@
+name: Kaia Chainlink DAI Time Check
+time_interval: 300
+script: |
+  kaiaBN = Kaia.LatestBlock();
+  currentTimestamp = Kaia.LatestTimestamp();
+
+  kaiaChainlinkDAI = Kaia.ChainlinkOracle.DAI.LatestTimestamp(kaiaBN);
+
+  diff = currentTimestamp - kaiaChainlinkDAI;
+  diff > (3600 * 48);

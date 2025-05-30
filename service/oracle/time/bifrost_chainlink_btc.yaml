@@ -1,0 +1,10 @@
+name: Bifrost Chainlink BTC Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostChainlinkBTC;
+  diff > (3600 * 72);

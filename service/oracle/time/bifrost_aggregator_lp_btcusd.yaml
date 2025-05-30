@@ -1,0 +1,10 @@
+name: Bifrost Aggregator LP(BTCUSD/USDC) Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorLPBTCUSDUSDC = Bifrost.AggregatorOracle.LP_BTCUSD_USDC.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorLPBTCUSDUSDC;
+  diff > (3600 * 72);

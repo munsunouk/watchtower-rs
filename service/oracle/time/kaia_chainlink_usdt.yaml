@@ -1,0 +1,10 @@
+name: Kaia Chainlink USDT Time Check
+time_interval: 300
+script: |
+  kaiaBN = Kaia.LatestBlock();
+  currentTimestamp = Kaia.LatestTimestamp();
+
+  kaiaChainlinkUSDT = Kaia.ChainlinkOracle.USDT.LatestTimestamp(kaiaBN);
+
+  diff = currentTimestamp - kaiaChainlinkUSDT;
+  diff > (3600 * 48);

@@ -1,0 +1,10 @@
+name: Kaia Chainlink ETH Time Check
+time_interval: 300
+script: |
+  kaiaBN = Kaia.LatestBlock();
+  currentTimestamp = Kaia.LatestTimestamp();
+
+  kaiaChainlinkETH = Kaia.ChainlinkOracle.ETH.LatestTimestamp(kaiaBN);
+
+  diff = currentTimestamp - kaiaChainlinkETH;
+  diff > (3600 * 72);

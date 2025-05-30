@@ -1,0 +1,10 @@
+name: Base Chainlink BTC Time Check
+time_interval: 300
+script: |
+  baseBN = Base.LatestBlock();
+  currentTimestamp = Base.LatestTimestamp();
+
+  baseChainlinkBTC = Base.ChainlinkOracle.BTC.LatestTimestamp(baseBN);
+
+  diff = currentTimestamp - baseChainlinkBTC;
+  diff > (3600 * 72);

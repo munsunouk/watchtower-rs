@@ -1,0 +1,10 @@
+name: Bifrost Bifnet DAI Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostBifnetDAI = Bifrost.BifnetOracle.DAI.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostBifnetDAI;
+  diff > (3600 * 48);

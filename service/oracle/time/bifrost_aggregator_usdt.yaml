@@ -1,0 +1,10 @@
+name: Bifrost Aggregator USDT Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorUSDT = Bifrost.AggregatorOracle.USDT.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorUSDT;
+  diff > (3600 * 48);

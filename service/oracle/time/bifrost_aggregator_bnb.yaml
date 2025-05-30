@@ -1,0 +1,10 @@
+name: Bifrost Aggregator BNB Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorBNB = Bifrost.AggregatorOracle.BNB.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorBNB;
+  diff > (3600 * 72);

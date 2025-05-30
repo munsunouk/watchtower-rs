@@ -1,0 +1,10 @@
+name: Bifrost Bifnet ETH Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostBifnetETH = Bifrost.BifnetOracle.ETH.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostBifnetETH;
+  diff > (3600 * 72);

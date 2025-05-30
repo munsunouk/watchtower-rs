@@ -1,0 +1,10 @@
+name: Bifrost Aggregator POL Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorPOL = Bifrost.AggregatorOracle.POL.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorPOL;
+  diff > (3600 * 72);

@@ -1,0 +1,10 @@
+name: Bifrost Aggregator BIFI Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorBIFI = Bifrost.AggregatorOracle.BIFI.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorBIFI;
+  diff > (3600 * 72);

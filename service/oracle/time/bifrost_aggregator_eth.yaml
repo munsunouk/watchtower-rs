@@ -1,0 +1,10 @@
+name: Bifrost Aggregator ETH Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorETH = Bifrost.AggregatorOracle.ETH.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorETH;
+  diff > (3600 * 72);

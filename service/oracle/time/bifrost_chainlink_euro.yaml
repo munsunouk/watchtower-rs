@@ -1,0 +1,10 @@
+name: Bifrost Chainlink EURO Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostChainlinkEURO = Bifrost.ChainlinkOracle.EURO.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostChainlinkEURO;
+  diff > (3600 * 72);

@@ -47,72 +47,7 @@ impl Runner {
 
     /// Runs the get_result function periodically based on the rule's time_interval
     pub async fn run(&self) -> Result<(), WorkerError> {
-        let time_interval = self.rule.time_interval;
-
-        // Ensure log directory exists
-        let log_dir = Path::new("service/log");
-        if !log_dir.exists() {
-            create_dir_all(log_dir).unwrap();
-        }
-
-        let success_log_path = log_dir.join("success.log");
-        let failed_log_path = log_dir.join("failed.log");
-
-        // Set up panic hook to log panics
-        let failed_log_path_clone = failed_log_path.clone();
-        let rule_name = self.rule.name.clone();
-        panic::set_hook(Box::new(move |panic_info| {
-            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-            let panic_message = panic_info.to_string();
-            let log_entry = format!("[Failed] {} {} {}\n", rule_name, panic_message, timestamp);
-
-            if let Ok(mut file) = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&failed_log_path_clone)
-            {
-                let _ = file.write_all(log_entry.as_bytes());
-            }
-        }));
-
-        loop {
-            match self.get_result().await {
-                Ok(_) => {
-                    // Log success
-                    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                    let log_entry = format!("[Info] {} {}\n", self.rule.name, timestamp);
-
-                    if let Ok(mut file) = OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(&success_log_path)
-                    {
-                        let _ = file.write_all(log_entry.as_bytes());
-                    }
-                }
-                Err(e) => {
-                    // Log failure
-                    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-                    let log_entry = format!(
-                        "[Failed] {} {} {}\n",
-                        self.rule.name,
-                        e.to_string(),
-                        timestamp
-                    );
-
-                    if let Ok(mut file) = OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(&failed_log_path)
-                    {
-                        let _ = file.write_all(log_entry.as_bytes());
-                    }
-                    e.log();
-                }
-            }
-
-            sleep(Duration::from_secs(time_interval)).await;
-        }
+        self.get_result().await
     }
 
     async fn get_result(&self) -> Result<(), WorkerError> {

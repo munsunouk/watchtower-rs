@@ -1,0 +1,10 @@
+name: Bifrost Aggregator BTCUSD Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorBTCUSD = Bifrost.AggregatorOracle.BTCUSD.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorBTCUSD;
+  diff > (3600 * 48);

@@ -1,0 +1,10 @@
+name: Bifrost Chainlink USDC Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostChainlinkUSDC = Bifrost.ChainlinkOracle.USDC.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostChainlinkUSDC;
+  diff > (3600 * 48);

@@ -1,0 +1,10 @@
+name: Bifrost Chainlink-Bifnet POL Price Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+
+  bifrostChainlinkPOL = Bifrost.ChainlinkOracle.POL.LatestPrice(bifrostBN);
+  bifrostBifnetPOL = Bifrost.BifnetOracle.POL.LatestPrice(bifrostBN);
+
+  diff = (bifrostChainlinkPOL * 100) / bifrostBifnetPOL;
+  diff < 105 && diff > 95;

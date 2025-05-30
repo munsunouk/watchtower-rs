@@ -1,0 +1,10 @@
+name: Kaia Chainlink BTC Time Check
+time_interval: 300
+script: |
+  kaiaBN = Kaia.LatestBlock();
+  currentTimestamp = Kaia.LatestTimestamp();
+
+  kaiaChainlinkBTC = Kaia.ChainlinkOracle.BTC.LatestTimestamp(kaiaBN);
+
+  diff = currentTimestamp - kaiaChainlinkBTC;
+  diff > (3600 * 72);

@@ -58,6 +58,7 @@ Contract                 = {
 }
 ContractMethodName       = {
     "LatestPrice"
+  | "LatestTimestamp"
   | "Liquidity"
   | "SystemVault"
   | "Relayer"

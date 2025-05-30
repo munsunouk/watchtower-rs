@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   watchtower:
@@ -19,34 +19,100 @@ services:
       start_period: 40s
     command: >
       sh -c "
-        # Kaia Chainlink
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_btc.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_eth.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_usdc.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_usdt.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_dai.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_xrp.yaml &
 
-        # Bifrost Chainlink
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_btc.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_eth.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_usdc.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_usdt.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_dai.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_bnb.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_matic.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_euro.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_btcusd.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_wstbfc.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_lp_btcusd.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_aggregator.yaml &
-
-        # Base Chainlink
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/base_chainlink_btc.yaml &
 
         # BRP
         /usr/local/bin/watch_tower_worker --rule-path /app/service/brp/balance.yaml &
         /usr/local/bin/watch_tower_worker --rule-path /app/service/brp/height.yaml &
+
+        # CCCP
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/cccp/height.yaml &
+
+        # Oracle
+        ## Balance
+
+        ### Bifrost
+        #### Chainlink
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_eth.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_usdc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_usdt.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_bnb.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_pol.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_dai.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_btc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_btcusd.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_wstbfc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_euro.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_chainlink_lp_btcusd.yaml &
+
+        #### Aggregator
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/bifrost_aggregator.yaml &
+
+        ### Kaia
+        #### Chainlink
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_btc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_dai.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_usdt.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_xrp.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_eth.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/kaia_chainlink_usdc.yaml &
+
+        ### Base
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/balance/base_chainlink_btc.yaml &
+
+        ##Time
+        ###Bifrost
+        #### Chainlink
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_eth.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_usdc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_usdt.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_dai.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_bnb.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_pol.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_btc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_chainlink_euro.yaml &
+
+        #### Bifnet
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_bfc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_bifi.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_eth.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_usdc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_usdt.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_bnb.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_pol.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_dai.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_wbtc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_btcb.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_bifnet_btc.yaml &
+
+        #### Aggregator
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_eth.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_usdc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_usdt.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_bnb.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_pol.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_bfc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_wstbfc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_btcusd.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_bifi.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_dai.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_wbtc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_btc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/bifrost_aggregator_lp_btcusd.yaml &
+        
+        ###Kaia
+        #### Chainlink
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/kaia_chainlink_btc.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/kaia_chainlink_dai.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/kaia_chainlink_usdt.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/kaia_chainlink_xrp.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/kaia_chainlink_eth.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/kaia_chainlink_usdc.yaml &
+        
+        ###Base
+        #### Chainlink
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/time/base_chainlink_btc.yaml &
+
 
         # Oracle Manager Decision
         /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/decision/bifrost_oraclemanager_bfc.yaml &
@@ -76,7 +142,7 @@ services:
         /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/price/bifrost_chainlink_bifnet_usdc.yaml &
         /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/price/bifrost_chainlink_bifnet_usdt.yaml &
         /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/price/bifrost_chainlink_bifnet_bnb.yaml &
-        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/price/bifrost_chainlink_bifnet_matic.yaml &
+        /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/price/bifrost_chainlink_bifnet_pol.yaml &
         /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/price/bifrost_chainlink_bifnet_dai.yaml &
         /usr/local/bin/watch_tower_worker --rule-path /app/service/oracle/price/bifrost_chainlink_bifnet_btc.yaml &
 

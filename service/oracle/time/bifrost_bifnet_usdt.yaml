@@ -1,0 +1,10 @@
+name: Bifrost Bifnet USDT Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostBifnetUSDT = Bifrost.BifnetOracle.USDT.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostBifnetUSDT;
+  diff > (3600 * 48);

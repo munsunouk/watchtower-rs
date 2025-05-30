@@ -1,0 +1,10 @@
+name: Bifrost Chainlink DAI Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostChainlinkDAI = Bifrost.ChainlinkOracle.DAI.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostChainlinkDAI;
+  diff > (3600 * 48);

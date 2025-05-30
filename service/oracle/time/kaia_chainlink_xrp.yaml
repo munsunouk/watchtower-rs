@@ -1,0 +1,10 @@
+name: Kaia Chainlink XRP Time Check
+time_interval: 300
+script: |
+  kaiaBN = Kaia.LatestBlock();
+  currentTimestamp = Kaia.LatestTimestamp();
+
+  kaiaChainlinkXRP = Kaia.ChainlinkOracle.XRP.LatestTimestamp(kaiaBN);
+
+  diff = currentTimestamp - kaiaChainlinkXRP;
+  diff > (3600 * 72);

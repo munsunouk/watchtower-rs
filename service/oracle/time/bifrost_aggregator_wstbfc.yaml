@@ -1,0 +1,10 @@
+name: Bifrost Aggregator WSTBFC Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostAggregatorWSTBFC = Bifrost.AggregatorOracle.WSTBFC.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostAggregatorWSTBFC;
+  diff > (3600 * 72);

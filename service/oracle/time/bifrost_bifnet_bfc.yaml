@@ -1,0 +1,10 @@
+name: Bifrost Bifnet BFC Time Check
+time_interval: 300
+script: |
+  bifrostBN = Bifrost.LatestBlock();
+  currentTimestamp = Bifrost.LatestTimestamp();
+
+  bifrostBifnetBFC = Bifrost.BifnetOracle.BFC.LatestTimestamp(bifrostBN);
+
+  diff = currentTimestamp - bifrostBifnetBFC;
+  diff > (3600 * 72);
