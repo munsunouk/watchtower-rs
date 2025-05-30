@@ -915,13 +915,13 @@ pub fn parse_pair<'a>(
                             let config_dir = std::path::Path::new(CONFIG_PATH).parent().unwrap();
                             // Resolve the ABI path relative to the config file
                             let abi_path = config_dir.join(path);
-
-                            let abi_content = fs::read_to_string(abi_path).map_err(|e| {
-                                GeneralError::InvalidTypeConvertError(format!(
-                                    "Failed to read ABI file: {}",
-                                    e
-                                ))
-                            })?;
+                            let abi_content =
+                                fs::read_to_string(abi_path.clone()).map_err(|_e| {
+                                    GeneralError::InvalidTypeConvertError(format!(
+                                        "Failed to read ABI file: {}",
+                                        &abi_path.display()
+                                    ))
+                                })?;
 
                             let abi = parse_abi_text(&abi_content)?;
 
