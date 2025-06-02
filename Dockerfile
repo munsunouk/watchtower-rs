@@ -23,6 +23,7 @@ COPY --from=builder /usr/src/watchtower/target/release/watch_tower_worker .
 
 WORKDIR /app
 COPY service /app/service
+COPY lib/src/cli/abi /app/lib/src/cli/abi
 
 # Create log directory and set permissions
 RUN mkdir -p /app/service/log && \

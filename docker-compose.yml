@@ -7,7 +7,6 @@ services:
       - ./service:/app/service
       - ./worker/config.yaml:/app/worker/config.yaml
       - ./worker/param.yaml:/app/worker/param.yaml
-      - ./lib/src/cli/abi:/app/lib/src/cli/abi
     environment:
       - RUST_LOG=info
     working_dir: /app
