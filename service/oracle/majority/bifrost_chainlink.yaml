@@ -3,4 +3,4 @@ time_interval: 300
 script: |
   bifrost_BlockNumber = Bifrost.LatestBlock();
   less_majority_OID = Bifrost.OracleManager.LessMajority.OID(bifrost_BlockNumber);
-  feeder = Bifrost.Internal.Feeder.Relayer(bifrost_BlockNumber);
+  feeder = Bifrost.CCCP.Feeder.Relayer(bifrost_BlockNumber);

@@ -4,7 +4,7 @@ script: |
   bifrostBN = Bifrost.LatestBlock();
   currentTimestamp = Bifrost.LatestTimestamp();
 
-  feeder = Bifrost.Internal.Feeder.Relayer(bifrostBN);
+  feeder = Bifrost.CCCP.Feeder.Relayer(bifrostBN);
   decisionInterval = Bifrost.OracleManager.TimeFilter.Decision(bifrostBN, BFC);
   lastDecision = Bifrost.OracleManager.Info.LastTimestamp(bifrostBN, BFC);
 

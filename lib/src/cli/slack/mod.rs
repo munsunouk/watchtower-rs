@@ -11,6 +11,9 @@ pub struct SlackNotifier {
 
 impl SlackNotifier {
     pub fn new(token: &str, channel: &str) -> Self {
+        // Try to install default provider, but continue if it fails
+        let _ = default_provider().install_default();
+
         Self {
             token: token.to_string(),
             channel: channel.to_string(),
@@ -18,10 +21,6 @@ impl SlackNotifier {
     }
 
     pub async fn send_message(&self, text: &str) -> Result<(), ClientError> {
-        default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
-
         let client = slack_morphism::SlackClient::new(SlackClientHyperConnector::new().unwrap());
         let token_value: SlackApiTokenValue = self.token.clone().into();
         let token = SlackApiToken::new(token_value);
@@ -49,10 +48,6 @@ impl SlackNotifier {
         message: &str,
         hashtag: Option<&str>,
     ) -> Result<(), ClientError> {
-        default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
-
         let alert_text = match hashtag {
             Some(tag) => format!("{}\n{}", message, tag),
             None => message.to_string(),

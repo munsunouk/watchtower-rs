@@ -1,0 +1,13 @@
+name: ETH Sepolia Round Sync Check
+time_interval: 600
+script: |
+  active_status = 1;
+
+  bifrostBN = Bifrost_Testnet.LatestBlock();
+  bifrost_round_status = Bifrost_Testnet.CCCP.LatestRound.Status(bifrostBN);
+
+  ethBN = ETH_Sepolia.LatestBlock();
+  eth_round_status = ETH_Sepolia.CCCP.LatestRound.Status(ethBN);
+  sync_diff = when bifrost_round_status > eth_round_status then bifrost_round_status - eth_round_status else eth_round_status - bifrost_round_status;
+
+  when bifrost_round_status != eth_round_status then Slack.Send(CCCP, '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost Testnet: ' + bifrost_round_status + '\n> ETH Sepolia : ' + eth_round_status) else false;

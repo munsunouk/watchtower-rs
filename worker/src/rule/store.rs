@@ -1,7 +1,10 @@
-use ethers::{abi::Token, types::U256};
+use ethers::types::U256;
 use std::collections::HashMap;
+
+use watch_tower_lib::utils::types::GeneralToken;
+
 pub struct SymbolTable {
-    pub store: HashMap<String, Token>,
+    pub store: HashMap<String, GeneralToken>,
 }
 
 impl SymbolTable {
@@ -11,31 +14,31 @@ impl SymbolTable {
         }
     }
 
-    pub fn assign(&mut self, key: String, value: Token) {
+    pub fn assign(&mut self, key: String, value: GeneralToken) {
         self.store.insert(key, value);
     }
 
-    pub fn eval(&self, key: &str) -> Token {
+    pub fn eval(&self, key: &str) -> GeneralToken {
         self.store
             .get(key)
             .cloned()
             .unwrap_or_else(|| panic!("Invalid key: {}", key))
     }
 
-    pub fn check_store_value(&self, key: &str) -> Token {
-        Token::Bool(self.store.contains_key(key))
+    pub fn check_store_value(&self, key: &str) -> GeneralToken {
+        GeneralToken::Bool(self.store.contains_key(key))
     }
 }
 
-pub fn assign(store: &mut SymbolTable, key: String, value: Token) {
+pub fn assign(store: &mut SymbolTable, key: String, value: GeneralToken) {
     store.assign(key, value);
 }
 
-pub fn check_store_value(store: &SymbolTable, key: &str) -> Token {
+pub fn check_store_value(store: &SymbolTable, key: &str) -> GeneralToken {
     store.check_store_value(key)
 }
 
-pub fn eval(store: &SymbolTable, key: &str) -> Token {
+pub fn eval(store: &SymbolTable, key: &str) -> GeneralToken {
     store.eval(key)
 }
 
@@ -44,7 +47,7 @@ pub enum StoreValue {
     Uint(U256),
     Bool(bool),
     String(String),
-    Array(Vec<Token>),
+    Array(Vec<GeneralToken>),
 }
 
 impl From<U256> for StoreValue {
@@ -65,8 +68,8 @@ impl From<String> for StoreValue {
     }
 }
 
-impl From<Vec<Token>> for StoreValue {
-    fn from(v: Vec<Token>) -> Self {
+impl From<Vec<GeneralToken>> for StoreValue {
+    fn from(v: Vec<GeneralToken>) -> Self {
         StoreValue::Array(v)
     }
 }
@@ -98,7 +101,7 @@ impl From<StoreValue> for String {
     }
 }
 
-impl From<StoreValue> for Vec<Token> {
+impl From<StoreValue> for Vec<GeneralToken> {
     fn from(value: StoreValue) -> Self {
         match value {
             StoreValue::Array(v) => v,

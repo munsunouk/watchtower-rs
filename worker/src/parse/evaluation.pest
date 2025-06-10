@@ -16,8 +16,8 @@ Primary   = { boolean_literal | CallStmt | Address | Number | Identifier | Strin
 
 // specific identifiers
 Notification             = { "Slack" }
-Chain                    = { "Ethereum" | "BifrostTestnet" | "Bifrost" | "Base" | "Kaia" | "BNB_PUB" | "BNB" }
-Service                  = { "ChainlinkOracle" | "BifnetOracle" | "Bifagg" | "Everdex" | "BRP" | "CCCP" | "BIFI" | "OracleManager" | "Internal" }
+Chain                    = { "Arbitrum_Sepolia" | "ETH_Sepolia" | "Base_Sepolia" | "Bifrost_Testnet" | "BNB_Testnet" | "ETH" | "Bifrost" | "Base" | "Kaia" | "BNB_PUB" | "BNB" | "POL" | "Arbitrum" | "Core" | "Oasys" }
+Service                  = { "ChainlinkOracle" | "BifnetOracle" | "Bifagg" | "Everdex" | "BRP" | "CCCP" | "BIFI" | "OracleManager" | "BTCFI" | "Boost" | "Validator" }
 Contract                 = {
     "WBTC"
   | "BTC"
@@ -55,6 +55,9 @@ Contract                 = {
   | "TimeFilter"
   | "Info"
   | "FeedTime"
+  | "Candidate"
+  | "State"
+  | "LatestRound"
 }
 ContractMethodName       = {
     "LatestPrice"
@@ -70,15 +73,16 @@ ContractMethodName       = {
   | "FeedTime"
   | "VaultAddress"
   | "TotalSupply"
+  | "Status"
 }
 EventName                = { "BridgeAmount" | "OID" }
 ChainFunctionName        = { "LatestBlock" | "LatestTimestamp" | "Balance" }
-RpcFunctionName          = { "VaultBalance" | "ApiHeight" | "BTCHeight" }
+RpcFunctionName          = { "VaultBalance" | "ApiHeight" | "BTCHeight" | "Apy" | "DepositApy" | "DepositTVL" | "BoostApy" | "BoostTvl" }
 NotificationFunctionName = { "Send" }
 
 Params = { "(" ~ (Expr ~ ("," ~ Expr)*)? ~ ")" }
 
-Identifier    = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/")* }
+Identifier    = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/" | "-")* }
 Number        = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 Address       = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 StringLiteral = @{ "'" ~ ((!"'" ~ ANY)*) ~ "'" }

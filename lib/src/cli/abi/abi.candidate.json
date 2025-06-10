@@ -1,0 +1,123 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "candidate",
+        "type": "address"
+      }
+    ],
+    "name": "candidate_state",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "candidate",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "stash",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "bond",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "initial_bond",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "nomination_count",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "voting_power",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "lowest_top_nomination_amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "highest_bottom_nomination_amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "lowest_bottom_nomination_amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "top_capacity",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "bottom_capacity",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "status",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "is_selected",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "commission",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "last_block",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "blocks_produced",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "productivity",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "reward_dst",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "awarded_tokens",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "tier",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct BfcStaking.candidate_meta_data",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

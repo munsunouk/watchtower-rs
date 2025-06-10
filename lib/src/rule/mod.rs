@@ -25,6 +25,7 @@ use crate::{
         constants::{DEFAULT_INDEX, FILTER_INDEX_SPLIT_CHAR},
         convert_hex_param, convert_hex_token,
         error::{GeneralError, IndexType},
+        types::GeneralToken,
         DbRuleType,
     },
 };
@@ -37,15 +38,15 @@ use crate::{
 ///
 /// # Returns
 ///
-pub fn parse_token_to_string(token: &Token) -> Result<String, GeneralError> {
+pub fn parse_token_to_string(token: &GeneralToken) -> Result<String, GeneralError> {
     match token {
-        Token::Uint(value) => Ok(value.to_string()),
-        Token::Int(value) => Ok(value.to_string()),
-        Token::Address(value) => Ok(value.to_string()),
-        Token::Bool(value) => Ok(value.to_string()),
-        Token::Bytes(value) => Ok(hex::encode(value)),
-        Token::FixedBytes(value) => Ok(hex::encode(value)),
-        Token::String(value) => Ok(value.clone()),
+        GeneralToken::Uint(value) => Ok(value.to_string()),
+        GeneralToken::Int(value) => Ok(value.to_string()),
+        GeneralToken::Address(value) => Ok(value.to_string()),
+        GeneralToken::Bool(value) => Ok(value.to_string()),
+        GeneralToken::Bytes(value) => Ok(hex::encode(value)),
+        GeneralToken::FixedBytes(value) => Ok(hex::encode(value)),
+        GeneralToken::String(value) => Ok(value.clone()),
         _ => Err(GeneralError::InvalidTypeConvert),
     }
 }

@@ -6,4 +6,5 @@ script: |
   atn_height = BRP.BTCHeight(ATN);
 
   height_diff = when mempool_height > atn_height then mempool_height - atn_height else 0;
-  when height_diff > number_diff then Slack.Send(CORE, '*BRP BTC Block 알람* 🚀\n <!here>\n> 블록 차이: ' + height_diff + '\n> 멤풀 : ' + mempool_height + '\n> ATN노드 : ' + atn_height) else false;
+  when height_diff > number_diff then Slack.Send(CORE, '*BRP BTC Block 알람* 🚀\n <!here>\n> 블록 차이: ' + height_diff + '\n> 멤풀(mempool.space) : ' + mempool_height + '\n> ATN노드 : ' + atn_height) else false;
+  when height_diff > number_diff then Slack.Send(BTCFI, '*BRP BTC Block 알람* 🚀\n <!here>\n> 블록 차이: ' + height_diff + '\n> 멤풀(mempool.space) : ' + mempool_height + '\n> ATN노드 : ' + atn_height) else false;

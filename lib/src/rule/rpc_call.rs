@@ -34,6 +34,7 @@ use super::{parse_string_to_index, parse_string_to_target_index, TargetIndex};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RpcCallRule {
     pub url: String,
+    pub url_token: Option<String>,
     pub call_type: RpcCallType,
     pub method_type: Method,
     pub api_body: Option<Value>,
@@ -71,6 +72,7 @@ impl TryFrom<&PgRow> for RpcCallRule {
 
         Ok(RpcCallRule {
             url: row.get(DB_URL_COLUMN),
+            url_token: None,
             call_type,
             method_type,
             api_body: Some(api_body),
@@ -83,6 +85,7 @@ impl TryFrom<&PgRow> for RpcCallRule {
 impl RpcCallRule {
     pub fn new(
         url: String,
+        url_token: Option<String>,
         call_type: String,
         method_type: String,
         api_body: Option<Value>,
@@ -101,6 +104,7 @@ impl RpcCallRule {
 
         Ok(Self {
             url,
+            url_token,
             call_type,
             method_type,
             api_body,

@@ -51,7 +51,7 @@ impl Runner {
     }
 
     async fn get_result(&self) -> Result<(), WorkerError> {
-        let result = parse_result(&self.config, &self.rule.script).await.unwrap();
+        let result = parse_result(&self.config, &self.rule).await.unwrap();
 
         println!("result: {:?}", result);
         Ok(())

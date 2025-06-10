@@ -1,0 +1,11 @@
+name: BIFI BtcUSD Rate Check
+time_interval: 300
+script: |
+
+  notify_rate = 10;
+
+  btcfi_apy = BTCFI.Apy(BTCFI);
+  bifi_apy = BIFI.DepositApy(BIFI);
+  total_apy = btcfi_apy + bifi_apy;
+
+  when total_apy < notify_rate then Slack.Send(APY, '*btcUSD Pool APY 알람* 🚀\n> APY가 ' + notify_rate + '% 미만입니다.\n> 현재 APY: ' + total_apy + '%') else false;

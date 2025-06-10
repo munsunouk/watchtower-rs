@@ -1,0 +1,10 @@
+name: Jerry Validator Status Check
+time_interval: 600
+script: |
+  active_status = 1;
+  relayer_name = 'Jerry';
+
+  bifrostBN = Bifrost.LatestBlock();
+  relayer_status = Bifrost.CCCP.State.Status(bifrostBN, relayer_name);
+  statue_name = when relayer_status == 2 then 'kicked out' else 'idle';
+  when relayer_status != active_status then Slack.Send(CCCP, '*Relayer Liveness 알람* 🚀\n> Relayer : ' + relayer_name + '\n> 상태 :' + statue_name) else false;

@@ -43,7 +43,12 @@ impl RpcCall {
 
         let response = self
             .client
-            .request_with_query(self.rule.method_type.clone(), &self.rule.url, &query)
+            .request_with_query(
+                self.rule.method_type.clone(),
+                &self.rule.url,
+                &self.rule.url_token,
+                &query,
+            )
             .await
             .map_err(|e| WorkerError::InternalProviderError(e.to_string()))?;
 
@@ -74,7 +79,12 @@ impl RpcCall {
 
         let response = self
             .client
-            .request_with_json(self.rule.method_type.clone(), &self.rule.url, &api_body)
+            .request_with_json(
+                self.rule.method_type.clone(),
+                &self.rule.url,
+                &self.rule.url_token,
+                &api_body,
+            )
             .await;
 
         match response {
@@ -105,53 +115,63 @@ impl RpcCall {
     }
 }
 
-// #[cfg(test)]
-// mod test {
+#[cfg(test)]
+mod test {
 
-//     use std::sync::Arc;
+    use std::sync::Arc;
 
-//     use ethers::abi::ParamType;
-//     use reqwest::{Client, Method};
-//     use serde_json::json;
-//     use watch_tower_lib::{cli::db::data::RpcCallRuleData, utils::constants::RPC_CALL_RULE_TYPE};
+    use ethers::abi::ParamType;
+    use reqwest::{Client, Method};
+    use serde_json::json;
+    use watch_tower_lib::rule::TargetIndex;
 
-//     use crate::rule::{convert_value_to_param_type, decodes_token};
+    use crate::rule::{convert_value_to_param_type, decodes_token};
 
-//     use super::*;
+    use super::*;
 
-//     #[tokio::test]
-//     async fn test_fetch_api_call_with_query() {
-//         let client = Arc::new(Client::new());
-//         let method_type = Method::GET;
-//         let url = "https://blockchain.info/balance".to_string();
-//         let query = json!({
-//             "active": "bc1p2cmsnvtvxxvvyxm055vc45827zdyvawsyps6ctqta7lapuh2hepqsp5qas|bc1q6ylrskh4p6u983kx8f0mp0ztwer850u0xzeszj"
-//         });
+    #[tokio::test]
+    async fn test_fetch_api_call_with_query() {
+        let client = Arc::new(Client::new());
+        let method_type = Method::GET;
+        let url = "<URL>".to_string();
+        let url_token: Option<String> = Some("<TOKEN>".to_string());
+        let query = json!({});
 
-//         let res = client
-//             .request(method_type, url)
-//             .query(&query)
-//             .send()
-//             .await
-//             .unwrap();
+        let res = client
+            .request(method_type, url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", url_token.as_ref().unwrap()),
+            )
+            .query(&query)
+            .send()
+            .await
+            .unwrap();
 
-//         let status: U64 = res.status().as_u16().into();
+        let status: U64 = res.status().as_u16().into();
 
-//         let status_token = Token::Uint(U256::from(status.as_u64()));
+        let status_token = Token::Uint(U256::from(status.as_u64()));
 
-//         let body = res.json::<Value>().await.unwrap();
+        let body = res.json::<Value>().await.unwrap();
 
-//         println!("body: {:?}", body);
+        let body_token = convert_value_to_token(&body).unwrap();
+        let body_param_type = convert_value_to_param_type(&body).unwrap();
 
-//         let body_token = convert_value_to_token(&body).unwrap();
-//         let body_param_type = convert_value_to_param_type(&body).unwrap();
+        let param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
+        let tokens = Token::Tuple(vec![status_token, body_token]);
 
-//         let param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
-//         let tokens = Token::Tuple(vec![status_token, body_token]);
+        let result = decodes_token(
+            &tokens,
+            &param_type,
+            &vec![
+                TargetIndex::Index(1),  // value
+                TargetIndex::Index(1),  // data
+                TargetIndex::Index(0),  // first item
+                TargetIndex::Index(12), // tvl
+            ],
+        )
+        .unwrap();
 
-//         let result =
-//             decodes_token(&tokens, &param_type, &vec![vec![1, 0, 0], vec![1, 1, 0]]).unwrap();
-
-//         println!("result: {:?}", result);
-//     }
-// }
+        println!("result: {:?}", result);
+    }
+}

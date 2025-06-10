@@ -1,9 +1,13 @@
 use ethers::{abi::Token, types::U256, utils::hex};
+use num_bigint::BigInt;
 use serde::Deserialize;
 use std::borrow::Cow;
 use validator::Validate;
 
-use crate::utils::{error::GeneralError, types::ChainID};
+use crate::utils::{
+    error::GeneralError,
+    types::{ChainID, GeneralToken},
+};
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct ParamConfig {
@@ -13,6 +17,7 @@ pub struct ParamConfig {
     pub balance_config: Vec<BalanceConfig>,
     pub url_config: Vec<UrlConfig>,
     pub channel_config: Vec<ChannelConfig>,
+    pub validator_config: Vec<ValidatorConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -44,12 +49,20 @@ pub struct BalanceConfig {
 pub struct UrlConfig {
     pub name: String,
     pub url: String,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct ChannelConfig {
     pub name: String,
     pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct ValidatorConfig {
+    pub name: String,
+    pub address: String,
+    pub controller_address: String,
 }
 
 /// # Description
@@ -173,8 +186,9 @@ pub struct ContractConfig {
 pub struct ContractCallTargetValue {
     pub name: String,
     #[serde(deserialize_with = "deserialize_params")]
-    pub params: Vec<Option<Token>>,
+    pub params: Vec<Option<GeneralToken>>,
     pub param_nessesary: Vec<String>,
+    pub available_contract: Option<String>,
     pub target_index: String,
 }
 
@@ -194,7 +208,7 @@ pub struct ContractEventTargetValue {
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
 pub struct NotificationCallTargetValue {
     pub name: String,
-    pub params: Vec<Option<Token>>,
+    pub params: Vec<Option<GeneralToken>>,
     pub param_nessesary: Vec<String>,
 }
 
@@ -245,13 +259,13 @@ impl std::fmt::Display for ParamValue {
     }
 }
 
-fn deserialize_params<'de, D>(deserializer: D) -> Result<Vec<Option<Token>>, D::Error>
+fn deserialize_params<'de, D>(deserializer: D) -> Result<Vec<Option<GeneralToken>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let values: Vec<ParamValue> = Vec::deserialize(deserializer)?;
 
-    let tokens: Vec<Option<Token>> = values
+    let tokens: Vec<Option<GeneralToken>> = values
         .into_iter()
         .map(|value| {
             match value {
@@ -259,98 +273,102 @@ where
                     if s.starts_with("0x") {
                         // Try to parse as address
                         if let Ok(addr) = s.parse::<ethers::types::Address>() {
-                            Some(Token::Address(addr))
+                            Some(GeneralToken::Address(addr))
                         } else {
-                            Some(Token::String(s))
+                            Some(GeneralToken::String(s))
                         }
                     } else {
-                        Some(Token::String(s))
+                        Some(GeneralToken::String(s))
                     }
                 }
-                ParamValue::Number(n) => Some(Token::Uint(ethers::types::U256::from(n))),
-                ParamValue::Boolean(b) => Some(Token::Bool(b)),
+                ParamValue::Number(n) => Some(GeneralToken::Uint(ethers::types::U256::from(n))),
+                ParamValue::Boolean(b) => Some(GeneralToken::Bool(b)),
                 ParamValue::Address(addr) => {
                     if let Ok(addr) = addr.parse::<ethers::types::Address>() {
-                        Some(Token::Address(addr))
+                        Some(GeneralToken::Address(addr))
                     } else {
                         None
                     }
                 }
                 ParamValue::Bytes(bytes) => {
                     if let Ok(bytes) = hex::decode(bytes) {
-                        Some(Token::Bytes(bytes))
+                        Some(GeneralToken::Bytes(bytes))
                     } else {
                         None
                     }
                 }
                 ParamValue::FixedBytes(bytes) => {
                     if let Ok(bytes) = hex::decode(bytes) {
-                        Some(Token::FixedBytes(bytes))
+                        Some(GeneralToken::FixedBytes(bytes))
                     } else {
                         None
                     }
                 }
                 ParamValue::Uint(uint) => {
                     if let Ok(n) = uint.parse::<u64>() {
-                        Some(Token::Uint(ethers::types::U256::from(n)))
+                        Some(GeneralToken::Uint(ethers::types::U256::from(n)))
                     } else {
                         None
                     }
                 }
                 ParamValue::Int(int) => {
                     if let Ok(n) = int.parse::<i64>() {
-                        Some(Token::Int(U256::from(n)))
+                        Some(GeneralToken::Int(BigInt::from(n)))
                     } else {
                         None
                     }
                 }
                 ParamValue::Array(arr) => {
-                    let tokens: Vec<Option<Token>> = arr
+                    let tokens: Vec<Option<GeneralToken>> = arr
                         .into_iter()
                         .map(|v| match v {
                             ParamValue::String(s) => {
                                 if s.starts_with("0x") {
                                     if let Ok(addr) = s.parse::<ethers::types::Address>() {
-                                        Some(Token::Address(addr))
+                                        Some(GeneralToken::Address(addr))
                                     } else {
-                                        Some(Token::String(s))
+                                        Some(GeneralToken::String(s))
                                     }
                                 } else {
-                                    Some(Token::String(s))
+                                    Some(GeneralToken::String(s))
                                 }
                             }
                             ParamValue::Number(n) => {
-                                Some(Token::Uint(ethers::types::U256::from(n)))
+                                Some(GeneralToken::Uint(ethers::types::U256::from(n)))
                             }
-                            ParamValue::Boolean(b) => Some(Token::Bool(b)),
+                            ParamValue::Boolean(b) => Some(GeneralToken::Bool(b)),
                             _ => None,
                         })
                         .collect();
-                    Some(Token::Array(tokens.into_iter().filter_map(|t| t).collect()))
+                    Some(GeneralToken::Array(
+                        tokens.into_iter().filter_map(|t| t).collect(),
+                    ))
                 }
                 ParamValue::Tuple(tuple) => {
-                    let tokens: Vec<Option<Token>> = tuple
+                    let tokens: Vec<Option<GeneralToken>> = tuple
                         .into_iter()
                         .map(|v| match v {
                             ParamValue::String(s) => {
                                 if s.starts_with("0x") {
                                     if let Ok(addr) = s.parse::<ethers::types::Address>() {
-                                        Some(Token::Address(addr))
+                                        Some(GeneralToken::Address(addr))
                                     } else {
-                                        Some(Token::String(s))
+                                        Some(GeneralToken::String(s))
                                     }
                                 } else {
-                                    Some(Token::String(s))
+                                    Some(GeneralToken::String(s))
                                 }
                             }
                             ParamValue::Number(n) => {
-                                Some(Token::Uint(ethers::types::U256::from(n)))
+                                Some(GeneralToken::Uint(ethers::types::U256::from(n)))
                             }
-                            ParamValue::Boolean(b) => Some(Token::Bool(b)),
+                            ParamValue::Boolean(b) => Some(GeneralToken::Bool(b)),
                             _ => None,
                         })
                         .collect();
-                    Some(Token::Tuple(tokens.into_iter().filter_map(|t| t).collect()))
+                    Some(GeneralToken::Tuple(
+                        tokens.into_iter().filter_map(|t| t).collect(),
+                    ))
                 }
             }
         })

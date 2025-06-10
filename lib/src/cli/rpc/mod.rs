@@ -18,17 +18,20 @@ impl RpcClient {
         &self,
         method: Method,
         url: &String,
+        url_token: &Option<String>,
         query: &Value,
     ) -> Result<Response, ClientError> {
         let mut error_msg = String::default();
 
         for provider in &self.providers {
-            match provider
-                .request(method.clone(), url)
-                .query(query)
-                .send()
-                .await
-            {
+            let mut request = provider.request(method.clone(), url);
+
+            // Add bearer token if provided
+            if let Some(token) = url_token {
+                request = request.header("Authorization", format!("Bearer {}", token.trim()));
+            }
+
+            match request.query(query).send().await {
                 Ok(response) => return Ok(response),
                 Err(error) => {
                     error_msg = format!("❗️ [method: {:?}] [Error: {}]", method, error.to_string());
@@ -44,17 +47,20 @@ impl RpcClient {
         &self,
         method: Method,
         url: &String,
+        url_token: &Option<String>,
         body: &Value,
     ) -> Result<Response, ClientError> {
         let mut error_msg = String::default();
 
         for provider in &self.providers {
-            match provider
-                .request(method.clone(), url)
-                .json(body)
-                .send()
-                .await
-            {
+            let mut request = provider.request(method.clone(), url);
+
+            // Add bearer token if provided
+            if let Some(token) = url_token {
+                request = request.header("Authorization", format!("Bearer {}", token.trim()));
+            }
+
+            match request.json(body).send().await {
                 Ok(response) => return Ok(response),
                 Err(error) => {
                     error_msg = format!(

@@ -37,8 +37,14 @@ use crate::rule::decode_meta_data;
 use crate::rule::get::{get, get_eth_balance, get_latest_block, get_latest_block_number};
 use crate::rule::store::{assign, check_store_value, eval, SymbolTable};
 use crate::utils::constants::{CONFIG_PATH, PARAM_CONFIG_PATH};
+use watch_tower_lib::utils::types::GeneralToken;
 
 use hex;
+
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
+use std::fs::{create_dir_all, File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// # Description
 /// This struct represents an evaluation rule.
@@ -68,7 +74,8 @@ impl TryFrom<&PgRow> for EvaluationRule {
 #[grammar = "parse/evaluation.pest"]
 pub struct RuleEvaluationParser;
 
-pub type ParsePairFuture<'a> = Pin<Box<dyn Future<Output = Result<Token, GeneralError>> + 'a>>;
+pub type ParsePairFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<GeneralToken, GeneralError>> + 'a>>;
 
 pub struct Context<'a> {
     pub config: &'a Configuration,
@@ -87,6 +94,7 @@ pub struct Context<'a> {
 /// * `(HashMap<(String, String), String>, Vec<Token>)` - The rule values and values.
 pub fn parse_pair<'a>(
     config: &'a Configuration,
+    program_rule: &'a watch_tower_lib::config::Rule,
     pair: Pair<'a, Rule>,
     context: &'a mut Context,
 ) -> ParsePairFuture<'a> {
@@ -95,10 +103,10 @@ pub fn parse_pair<'a>(
             Rule::Program => {
                 let inner = pair.into_inner();
 
-                let mut result = Token::Bool(false);
+                let mut result = GeneralToken::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
+                    result = parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -107,10 +115,10 @@ pub fn parse_pair<'a>(
             Rule::ExprStmt => {
                 let inner = pair.into_inner();
 
-                let mut result = Token::Bool(false);
+                let mut result = GeneralToken::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
+                    result = parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 Ok(result)
@@ -126,7 +134,7 @@ pub fn parse_pair<'a>(
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                let result = parse_pair(config, first, context).await?;
+                let result = parse_pair(config, program_rule, first, context).await?;
 
                 assign(
                     context.symbol_table,
@@ -135,7 +143,7 @@ pub fn parse_pair<'a>(
                 );
                 context.variables.clear();
 
-                let result = Token::Bool(false);
+                let result = GeneralToken::Bool(false);
 
                 Ok(result)
             }
@@ -146,20 +154,20 @@ pub fn parse_pair<'a>(
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                let mut result = parse_pair(config, first, context).await?;
+                let mut result = parse_pair(config, program_rule, first, context).await?;
 
                 while let Some(op) = inner.next() {
                     let next = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                    let right = parse_pair(config, next, context).await?;
+                    let right = parse_pair(config, program_rule, next, context).await?;
 
                     result = match op.as_str() {
                         LOGIC_OPERATOR_AND => {
                             if result.type_check(&ParamType::Bool)
                                 && right.type_check(&ParamType::Bool)
                             {
-                                Token::Bool(
+                                GeneralToken::Bool(
                                     result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
                                         && right
                                             .into_bool()
@@ -173,7 +181,7 @@ pub fn parse_pair<'a>(
                             if result.type_check(&ParamType::Bool)
                                 && right.type_check(&ParamType::Bool)
                             {
-                                Token::Bool(
+                                GeneralToken::Bool(
                                     result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
                                         || right
                                             .into_bool()
@@ -195,7 +203,7 @@ pub fn parse_pair<'a>(
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
 
-                let result = parse_pair(config, first, context).await?;
+                let result = parse_pair(config, program_rule, first, context).await?;
                 Ok(result)
             }
 
@@ -205,7 +213,7 @@ pub fn parse_pair<'a>(
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
 
-                let condition = parse_pair(config, first, context).await?;
+                let condition = parse_pair(config, program_rule, first, context).await?;
 
                 let then_expr = inner
                     .next()
@@ -219,9 +227,9 @@ pub fn parse_pair<'a>(
                     .into_bool()
                     .ok_or(GeneralError::InvalidTypeConvert)?
                 {
-                    parse_pair(config, then_expr, context).await?
+                    parse_pair(config, program_rule, then_expr, context).await?
                 } else {
-                    parse_pair(config, else_expr, context).await?
+                    parse_pair(config, program_rule, else_expr, context).await?
                 };
 
                 Ok(result)
@@ -232,14 +240,14 @@ pub fn parse_pair<'a>(
                 let left = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
-                    .map(|p| parse_pair(config, p, context))?;
+                    .map(|p| parse_pair(config, program_rule, p, context))?;
                 let left = left.await?;
 
                 if let Some(op) = inner.next() {
                     let right = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))
-                        .map(|p| parse_pair(config, p, context))?;
+                        .map(|p| parse_pair(config, program_rule, p, context))?;
                     let right = right.await?;
 
                     let err_msg = format!("{:?}, {:?}, {}", left, right, op.as_str().to_string());
@@ -253,13 +261,14 @@ pub fn parse_pair<'a>(
 
             Rule::Term => {
                 let mut inner = pair.into_inner();
-                let mut result = parse_pair(config, inner.next().unwrap(), context).await?;
+                let mut result =
+                    parse_pair(config, program_rule, inner.next().unwrap(), context).await?;
 
                 while let Some(op) = inner.next() {
                     let next = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                    let right = parse_pair(config, next, context).await?;
+                    let right = parse_pair(config, program_rule, next, context).await?;
 
                     result = arithmetic_token(&result, &right, op.as_str()).unwrap();
                 }
@@ -272,16 +281,15 @@ pub fn parse_pair<'a>(
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                let mut result = parse_pair(config, first, context).await?;
+                let mut result = parse_pair(config, program_rule, first, context).await?;
 
                 while let Some(op) = inner.next() {
                     let next = inner
                         .next()
                         .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                    let right = parse_pair(config, next, context).await?;
+                    let right = parse_pair(config, program_rule, next, context).await?;
 
-                    result = arithmetic_token(&result, &right, op.as_str())
-                        .unwrap_or_else(|| Token::Uint(U256::from(0)));
+                    result = arithmetic_token(&result, &right, op.as_str()).unwrap();
                 }
                 Ok(result)
             }
@@ -292,7 +300,8 @@ pub fn parse_pair<'a>(
 
                 if inner.peek().is_some() {
                     for unwrapped_pair in inner {
-                        let result = parse_pair(config, unwrapped_pair, context).await?;
+                        let result =
+                            parse_pair(config, program_rule, unwrapped_pair, context).await?;
                         params_vec.push(Some(result.clone()));
                     }
                 }
@@ -302,7 +311,7 @@ pub fn parse_pair<'a>(
                     ParseResultType::ArrayParam(params_vec),
                 );
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::Primary => {
@@ -310,16 +319,16 @@ pub fn parse_pair<'a>(
                 let first = inner
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
-                parse_pair(config, first, context).await
+                parse_pair(config, program_rule, first, context).await
             }
 
             Rule::boolean_literal => match pair.as_str() {
-                BOOLEAN_LITERAL_TRUE => Ok(Token::Bool(true)),
-                BOOLEAN_LITERAL_FALSE => Ok(Token::Bool(false)),
+                BOOLEAN_LITERAL_TRUE => Ok(GeneralToken::Bool(true)),
+                BOOLEAN_LITERAL_FALSE => Ok(GeneralToken::Bool(false)),
                 _ => Err(GeneralError::InvalidOperator(pair.as_str().to_string())),
             },
 
-            Rule::Number => Ok(Token::Uint(parse_string_to_uint(
+            Rule::Number => Ok(GeneralToken::Uint(parse_string_to_uint(
                 pair.as_str().to_string(),
             )?)),
 
@@ -328,12 +337,12 @@ pub fn parse_pair<'a>(
 
                 let string = string.replace("'", "");
 
-                Ok(Token::String(string.to_string()))
+                Ok(GeneralToken::String(string.to_string()))
             }
 
             Rule::Address => {
                 let address = pair.as_str();
-                Ok(Token::Address(
+                Ok(GeneralToken::Address(
                     ethers::types::Address::from_str(address).map_err(|_| {
                         GeneralError::InvalidRuleDecode(format!("Invalid address: {}", address))
                     })?,
@@ -343,10 +352,10 @@ pub fn parse_pair<'a>(
             Rule::CallStmt => {
                 let inner = pair.into_inner();
 
-                let mut result = Token::Bool(false);
+                let mut result = GeneralToken::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
+                    result = parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 if let Some(_meta_data) = context.variables.get("meta_data") {
@@ -360,10 +369,10 @@ pub fn parse_pair<'a>(
 
             Rule::NotificationCallExpr => {
                 let inner = pair.into_inner();
-                let mut result = Token::Bool(false);
+                let mut result = GeneralToken::Bool(false);
 
                 for unwrapped_pair in inner {
-                    result = parse_pair(config, unwrapped_pair, context).await?;
+                    result = parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 let notification = match context.variables.get("notification") {
@@ -389,19 +398,22 @@ pub fn parse_pair<'a>(
                 };
 
                 let mut slack_client = None;
+                let mut channel_name = String::new();
+
                 for (param_nessery, function_param) in
                     param_nessesary.iter().zip(function_params.iter())
                 {
                     match param_nessery.as_str() {
                         "Channel" => {
                             if let Some(token) = function_param {
-                                if let Token::String(channel_name) = token {
-                                    for channel in param_config.channel_config.iter() {
-                                        if (channel.name == *channel_name)
+                                if let GeneralToken::String(channel) = token {
+                                    channel_name = channel.clone();
+                                    for channel_config in param_config.channel_config.iter() {
+                                        if (channel_config.name == *channel)
                                             && (notification == "Slack")
                                         {
                                             slack_client =
-                                                Some(SlackNotifier::new(&key, &channel.id));
+                                                Some(SlackNotifier::new(&key, &channel_config.id));
                                         }
                                     }
                                 }
@@ -409,11 +421,24 @@ pub fn parse_pair<'a>(
                         }
                         "Message" => {
                             if let Some(token) = function_param {
-                                if let Token::String(message) = token {
+                                if let GeneralToken::String(message) = token {
                                     if notification == "Slack" {
                                         if let Some(client) = &slack_client {
-                                            println!("{}", message);
-                                            client.send_message(&message).await.unwrap();
+                                            // Check if similar message was sent in last 3 hours for this rule and channel
+                                            if !check_recent_notification(
+                                                &program_rule.name,
+                                                &channel_name,
+                                            ) {
+                                                client.send_message(&message).await.unwrap();
+                                                // Log the notification with channel info
+                                                if let Err(e) = log_notification(
+                                                    &program_rule.name,
+                                                    &channel_name,
+                                                    &message,
+                                                ) {
+                                                    eprintln!("Failed to log notification: {}", e);
+                                                }
+                                            }
                                         }
                                         break;
                                     }
@@ -432,7 +457,7 @@ pub fn parse_pair<'a>(
                 let result;
 
                 for unwrapped_pair in inner {
-                    parse_pair(config, unwrapped_pair, context).await?;
+                    parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 let param_config = set_param_config(PARAM_CONFIG_PATH);
@@ -477,7 +502,7 @@ pub fn parse_pair<'a>(
                         }
                         "Balance" => {
                             if let Some(token) = function_param {
-                                if let Token::String(balance_name) = token {
+                                if let GeneralToken::String(balance_name) = token {
                                     for balance in param_config.balance_config.iter() {
                                         if (balance.name == *balance_name)
                                             && (balance.blockchain == *blockchain)
@@ -523,7 +548,7 @@ pub fn parse_pair<'a>(
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
-                    parse_pair(config, unwrapped_pair, context).await?;
+                    parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 let param_config = set_param_config(PARAM_CONFIG_PATH);
@@ -549,6 +574,7 @@ pub fn parse_pair<'a>(
                 };
 
                 let mut url: Option<String> = None;
+                let mut url_token: Option<String> = None;
 
                 let mut api_body = if let Some(ParseResultType::JSON(api_body)) =
                     context.variables.get("api_body")
@@ -572,10 +598,15 @@ pub fn parse_pair<'a>(
                     match param_nessery.as_str() {
                         "Url" => {
                             if let Some(token) = function_param {
-                                if let Token::String(url_name) = token {
+                                if let GeneralToken::String(url_name) = token {
                                     for url_config in param_config.url_config.iter() {
                                         if url_config.name == *url_name {
                                             url = Some(url_config.url.clone());
+
+                                            if let Some(token_str) = &url_config.token {
+                                                url_token = Some(token_str.clone());
+                                            }
+
                                             break;
                                         }
                                     }
@@ -586,11 +617,11 @@ pub fn parse_pair<'a>(
                             if let Some(token) = function_param {
                                 if token.type_check(&ParamType::Array(Box::new(ParamType::String)))
                                 {
-                                    if let Token::Array(tokens) = token {
+                                    if let GeneralToken::Array(tokens) = token {
                                         let strings: Result<Vec<String>, GeneralError> = tokens
                                             .iter()
                                             .map(|t| match t {
-                                                Token::String(s) => Ok(s.clone()),
+                                                GeneralToken::String(s) => Ok(s.clone()),
                                                 _ => Err(GeneralError::InvalidTypeConvert),
                                             })
                                             .collect();
@@ -600,7 +631,7 @@ pub fn parse_pair<'a>(
                                         }));
                                     }
                                 } else if token.type_check(&ParamType::String) {
-                                    if let Token::String(single_string) = token {
+                                    if let GeneralToken::String(single_string) = token {
                                         api_query = Some(json!({
                                             "active": single_string
                                         }));
@@ -621,6 +652,7 @@ pub fn parse_pair<'a>(
                     config,
                     (
                         url.unwrap(),
+                        url_token,
                         call_type,
                         method_type,
                         api_body,
@@ -637,7 +669,7 @@ pub fn parse_pair<'a>(
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
-                    parse_pair(config, unwrapped_pair, context).await?;
+                    parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 let param_config = set_param_config(PARAM_CONFIG_PATH);
@@ -680,6 +712,14 @@ pub fn parse_pair<'a>(
                     _ => return Err(GeneralError::InvalidTypeConvert),
                 };
 
+                let available_contract = if let Some(ParseResultType::String(available_contract)) =
+                    context.variables.get("available_contract")
+                {
+                    Some(available_contract.clone())
+                } else {
+                    None
+                };
+
                 for (param_nessery, function_param) in
                     param_nessesary.iter().zip(function_params.iter())
                 {
@@ -693,10 +733,10 @@ pub fn parse_pair<'a>(
                         }
                         "Pool" => {
                             if let Some(token) = function_param {
-                                if let Token::String(pool_name) = token {
+                                if let GeneralToken::String(pool_name) = token {
                                     for pool in param_config.pool_config.iter() {
                                         if pool.name == *pool_name {
-                                            params.push(Some(Token::Address(
+                                            params.push(Some(GeneralToken::Address(
                                                 pool.address.parse().unwrap(),
                                             )));
                                             break;
@@ -707,7 +747,7 @@ pub fn parse_pair<'a>(
                         }
                         "OID" => {
                             if let Some(token) = function_param {
-                                if let Token::String(oid_name) = token {
+                                if let GeneralToken::String(oid_name) = token {
                                     for oid in param_config.oid_config.iter() {
                                         if oid.name == *oid_name {
                                             // Convert to bytes32
@@ -718,7 +758,30 @@ pub fn parse_pair<'a>(
                                                         oid.address
                                                     ))
                                                 })?;
-                                            params.push(Some(Token::FixedBytes(bytes)));
+                                            params.push(Some(GeneralToken::FixedBytes(bytes)));
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "Validator" => {
+                            if let Some(token) = function_param {
+                                if let GeneralToken::String(validator_name) = token {
+                                    for validator in param_config.validator_config.iter() {
+                                        if validator.name == *validator_name {
+                                            if available_contract.as_deref() == Some("State") {
+                                                params.push(Some(GeneralToken::Address(
+                                                    validator.address.parse().unwrap(),
+                                                )));
+                                            } else if available_contract.as_deref()
+                                                == Some("Candidate")
+                                            {
+                                                params.push(Some(GeneralToken::Address(
+                                                    validator.controller_address.parse().unwrap(),
+                                                )));
+                                            }
+
                                             break;
                                         }
                                     }
@@ -753,7 +816,7 @@ pub fn parse_pair<'a>(
                 let inner = pair.into_inner();
 
                 for unwrapped_pair in inner {
-                    parse_pair(config, unwrapped_pair, context).await?;
+                    parse_pair(config, program_rule, unwrapped_pair, context).await?;
                 }
 
                 let chain_id = match context.variables.get("chain_id").unwrap() {
@@ -832,7 +895,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::Service => {
@@ -843,6 +906,7 @@ pub fn parse_pair<'a>(
                         let ContractConfig {
                             service: parsed_service,
                             blockchain,
+                            contract,
                             ..
                         } = contract_config;
 
@@ -857,12 +921,16 @@ pub fn parse_pair<'a>(
                                 "service".to_string(),
                                 ParseResultType::String(service.to_string()),
                             );
+
+                            context
+                                .variables
+                                .insert("contract".to_string(), ParseResultType::String(contract));
                         }
                     }
                 } else {
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::Notification => {
@@ -883,7 +951,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::Contract => {
@@ -939,7 +1007,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(found))
+                Ok(GeneralToken::Bool(found))
             }
 
             Rule::Identifier => {
@@ -947,10 +1015,10 @@ pub fn parse_pair<'a>(
 
                 let check_store_value = check_store_value(context.symbol_table, identifier);
 
-                let result = if check_store_value == Token::Bool(true) {
+                let result = if check_store_value == GeneralToken::Bool(true) {
                     eval(context.symbol_table, identifier)
                 } else {
-                    Token::String(identifier.to_string())
+                    GeneralToken::String(identifier.to_string())
                 };
 
                 if let Some(ParseResultType::HashMap(existing)) =
@@ -959,7 +1027,7 @@ pub fn parse_pair<'a>(
                     let mut new_hashmap = existing.clone();
                     new_hashmap.insert(
                         identifier.to_string(),
-                        ParseResultType::Token(result.clone()),
+                        ParseResultType::GeneralToken(result.clone()),
                     );
                     context.variables.insert(
                         "identifier".to_string(),
@@ -969,7 +1037,7 @@ pub fn parse_pair<'a>(
                     let mut new_hashmap = HashMap::new();
                     new_hashmap.insert(
                         identifier.to_string(),
-                        ParseResultType::Token(result.clone()),
+                        ParseResultType::GeneralToken(result.clone()),
                     );
                     context.variables.insert(
                         "identifier".to_string(),
@@ -1056,7 +1124,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::ContractMethodName => {
@@ -1068,25 +1136,50 @@ pub fn parse_pair<'a>(
                         params,
                         target_index,
                         param_nessesary,
+                        available_contract,
                     } = contract_call_target;
 
                     if contract_call_target_str == name {
-                        context.variables.insert(
-                            "method_params".to_string(),
-                            ParseResultType::ArrayParam(params.clone()),
-                        );
-                        context.variables.insert(
-                            "target_index".to_string(),
-                            ParseResultType::String(target_index),
-                        );
-                        context.variables.insert(
-                            "param_nessesary".to_string(),
-                            ParseResultType::Array(param_nessesary),
-                        );
+                        let should_insert = if let Some(available_contract) = available_contract {
+                            if let Some(ParseResultType::String(contract)) =
+                                context.variables.get("contract")
+                            {
+                                if available_contract == *contract {
+                                    context.variables.insert(
+                                        "available_contract".to_string(),
+                                        ParseResultType::String(available_contract),
+                                    );
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            true
+                        };
+
+                        if should_insert {
+                            context.variables.insert(
+                                "method_params".to_string(),
+                                ParseResultType::ArrayParam(params.clone()),
+                            );
+                            context.variables.insert(
+                                "target_index".to_string(),
+                                ParseResultType::String(target_index),
+                            );
+                            context.variables.insert(
+                                "param_nessesary".to_string(),
+                                ParseResultType::Array(param_nessesary),
+                            );
+
+                            break;
+                        }
                     }
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::EventName => {
@@ -1111,7 +1204,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::NotificationFunctionName => {
@@ -1137,7 +1230,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             Rule::ChainFunctionName => {
@@ -1162,7 +1255,7 @@ pub fn parse_pair<'a>(
                     }
                 }
 
-                Ok(Token::Bool(false))
+                Ok(GeneralToken::Bool(false))
             }
 
             _ => Err(GeneralError::InvalidRuleDecode(format!(
@@ -1227,7 +1320,8 @@ pub enum ParseResultType {
     JSON(Value),
     ChainID(ChainID),
     Array(Vec<String>),
-    ArrayParam(Vec<Option<Token>>),
+    ArrayParam(Vec<Option<GeneralToken>>),
+    GeneralToken(GeneralToken),
     Token(Token),
     EventIndex(i32),
     HashMap(HashMap<String, ParseResultType>),
@@ -1242,32 +1336,98 @@ pub enum ParseResultType {
 /// A `Result` struct.
 pub async fn parse_result(
     config: &Configuration,
-    program_input: &str,
-) -> Result<Token, GeneralError> {
+    program_rule: &watch_tower_lib::config::Rule,
+) -> Result<GeneralToken, GeneralError> {
     let mut symbol_table = SymbolTable::new();
 
-    let pairs = match RuleEvaluationParser::parse(Rule::Program, program_input) {
+    let pairs = match RuleEvaluationParser::parse(Rule::Program, &program_rule.script) {
         Ok(pairs) => pairs,
         Err(_) => {
-            return Err(GeneralError::InvalidRuleDecode(program_input.to_string()));
+            return Err(GeneralError::InvalidRuleDecode(
+                program_rule.script.to_string(),
+            ));
         }
     };
-    let mut result = Token::Bool(false);
+    let mut result = GeneralToken::Bool(false);
     let mut context = Context {
         config,
         symbol_table: &mut symbol_table,
         variables: &mut HashMap::new(),
     };
     for pair in pairs {
-        result = parse_pair(config, pair, &mut context).await?;
+        result = parse_pair(config, program_rule, pair, &mut context).await?;
     }
     Ok(result)
+}
+
+/// Log notification to file
+fn log_notification(rule_name: &str, channel: &str, message: &str) -> std::io::Result<()> {
+    let log_dir = "./service/log";
+    let log_path = format!("{}/notification.log", log_dir);
+
+    // Create directory if it doesn't exist
+    create_dir_all(log_dir)?;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)?;
+
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    writeln!(
+        file,
+        "[Notification] ({}) [{}] {} {}",
+        rule_name, channel, timestamp, message
+    )?;
+    Ok(())
+}
+
+/// Check if a similar message was sent in the last 3 hours
+fn check_recent_notification(rule_name: &str, channel: &str) -> bool {
+    let log_path = "./service/log/notification.log";
+    if let Ok(file) = File::open(log_path) {
+        let reader = BufReader::new(file);
+        let current_time = Local::now();
+
+        // 3 hours in seconds
+        let three_hours = chrono::Duration::hours(3);
+
+        for line in reader.lines().flatten() {
+            if line.contains(&format!("({})", rule_name))
+                && line.contains(&format!("[{}]", channel))
+            {
+                // Extract timestamp from log line - format: [Notification] (rule_name) [channel] YYYY-MM-DD HH:MM:SS
+                let parts: Vec<&str> = line.split("] ").collect();
+                if parts.len() >= 2 {
+                    // Get the last part which contains the timestamp and message
+                    let last_part = parts.last().unwrap();
+                    let timestamp_str = last_part
+                        .split_whitespace()
+                        .take(2)
+                        .collect::<Vec<&str>>()
+                        .join(" ");
+
+                    if let Ok(log_time) =
+                        NaiveDateTime::parse_from_str(&timestamp_str, "%Y-%m-%d %H:%M:%S")
+                    {
+                        let log_time = Local.from_local_datetime(&log_time).unwrap();
+                        if current_time.signed_duration_since(log_time) < three_hours {
+                            return true;
+                        }
+                    } else {
+                        println!("failed parse log");
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]
 mod tests {
 
-    use watch_tower_lib::config::set_test_config;
+    use watch_tower_lib::config::{set_rule, set_test_config};
 
     use super::*;
 
@@ -1276,150 +1436,14 @@ mod tests {
     }
 
     #[test]
-
     fn test_new_parse_rule() {
-        let test_input = "
-  number_diff = 100;
-  public_height = BNB.LatestBlock();
-  atn_height = BNB_PUB.LatestBlock();
-  height_diff = when public_height > atn_height then public_height - atn_height else atn_height - public_height;
-  when height_diff < number_diff then Slack.Send(CORE, '*BTCFi Boost 상품 정보* 🚀\n> APY: 3.12% 📈  \n> TVL: $559.41 💎') else false;
+        let test_input: &'static str = "
+        active_status = 1;
+        bifrostBN = Bifrost_Testnet.LatestBlock();
+        arbitrumBN = Arbitrum_Sepolia.LatestBlock();
         ";
 
         let pairs = RuleEvaluationParser::parse(Rule::Program, test_input).unwrap();
         println!("pairs: {:?}", pairs);
-    }
-
-    #[tokio::test]
-    async fn test_parse_result() {
-        // let test_input = "
-        //  bifrost_BlockNumber = 24454853;
-        //  Bifrost.CCCP.Socket.BridgeAmount(bifrost_BlockNumber);
-        // ";
-
-        let test_input = "
-            bifrostBN = Bifrost.LatestBlock();
-
-            bifrostChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
-            bifrostChainlinkBTC1 = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
-
-            (bifrostChainlinkBTC + bifrostChainlinkBTC1) / 2;
-        ";
-
-        // target 들 매개변수로 변경
-        // 유저 보다 먼저 확인하는 작업
-        // logger, test case 추가
-        // 스마트 라우터 공통
-        // let test_input = "
-        //  bifrostBN = Bifrost.LatestBlock();
-
-        //  reserve0 = Bifrost.Everdex.Poolinfo.BtcUSD/USDC_BtcUSD_Liquidity(bifrostBN);
-        //  reserve1 = Bifrost.Everdex.Poolinfo.BtcUSD/USDC_USDC_Liquidity(bifrostBN);
-        //  reserve0 * 100 / (reserve1 * 1000000000000);
-        // ";
-
-        // let test_input = "
-        //  bifrostBN = Bifrost.LatestBlock();
-        //  reserve0 = Bifrost.Everdex.     .stBFC/BFC_stBFC_Liquidity(bifrostBN);
-        //  reserve1 = Bifrost.Everdex.SmartRouter.stBFC/BFC_BFC_Liquidity(bifrostBN);
-
-        //  reserve0 * 100 / reserve1;
-        // ";
-
-        // let test_input = "
-        //  bifrost_BlockNumber = Bifrost.LatestBlock();
-        //  totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
-        //  currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrost_BlockNumber);
-        //  Bifrost.BRP.VaultAddress.VaultAddress(bifrost_BlockNumber, currentRound_MethodParams);
-        // ";
-
-        //주석
-        // symbol_table parse_result 안
-        // let test_input = "
-
-        // kaiaBN = Kaia.LatestBlock();
-        // bifrostBN = Bifrost.LatestBlock();
-
-        // bifrostChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
-        // kaiaChainlinkBTC = Kaia.ChainlinkOracle.BTC.LatestPrice(kaiaBN);
-
-        // (bifrostChainlinkBTC + kaiaChainlinkBTC) / 2;";
-
-        let config = setup();
-
-        let result = parse_result(&config, test_input).await.unwrap();
-
-        println!("result: {:?}", result);
-    }
-
-    #[tokio::test]
-    async fn test_parse_result1() {
-        let test_input = "
-
-         bifrost_BlockNumber = Bifrost.LatestBlock();
-         reserve0 = Bifrost.Everdex.SmartRouter.Liquidity(bifrost_BlockNumber, stBFC/BFC);
-        ";
-
-        let config = setup();
-
-        let result = parse_result(&config, test_input).await.unwrap();
-
-        println!("result: {:?}", result);
-    }
-
-    #[tokio::test]
-    async fn test_parse_result2() {
-        let test_input = "
-         bifrost_BlockNumber = Bifrost.LatestBlock();
-         liquidity = Bifrost.BIFI.LendingPool.Liquidity(bifrost_BlockNumber, stBFC|BFC);
-         liquidity > 5000000000000000000000000;
-        ";
-
-        let config = setup();
-
-        let result = parse_result(&config, test_input).await.unwrap();
-
-        println!("result: {:?}", result);
-    }
-
-    #[tokio::test]
-    async fn test_parse_result3() {
-        let test_input = "
-         bifrost_BlockNumber = 24454853;
-         amount = Bifrost.CCCP.Socket.BridgeAmount(bifrost_BlockNumber);
-         amount > 9500;
-        ";
-
-        let config = setup();
-
-        let result = parse_result(&config, test_input).await.unwrap();
-
-        println!("result: {:?}", result);
-    }
-
-    #[tokio::test]
-    async fn test_parse_result4() {
-        let test_input = "
-         bifrost_BlockNumber = Bifrost.LatestBlock();
-
-         currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrost_BlockNumber);
-         BRPVaultAddress = Bifrost.BRP.VaultAddress.VaultAddress(bifrost_BlockNumber, currentRound_MethodParams);
-         systemVaultAddress = Bifrost.BRP.Registration.SystemVault(bifrost_BlockNumber, currentRound_MethodParams);
-
-         vaultBalance = BRP.VaultBalance(BRPVaultAddress);
-         systemvaultBalance = BRP.VaultBalance(systemVaultAddress);
-         btcLiq = vaultBalance + systemvaultBalance;
-
-         totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
-         unifiedBTCLiq = totalSupply - 1110100;
-         unifiedBTCLiq - btcLiq > 1000000;
-         
-        ";
-
-        let config = setup();
-
-        let result = parse_result(&config, test_input).await.unwrap();
-
-        println!("result: {:?}", result);
     }
 }

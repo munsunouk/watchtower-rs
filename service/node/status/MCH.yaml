@@ -1,0 +1,10 @@
+name: MCH Node Status Check
+time_interval: 600
+script: |
+  active_status = 1;
+  node_name = 'MCH';
+
+  bifrostBN = Bifrost.LatestBlock();
+  node_status = Bifrost.Validator.Candidate.Status(bifrostBN, node_name);
+  statue_name = when node_status == 2 then 'kicked out' else 'idle';
+  when node_status != active_status then Slack.Send(TEST, '*Node Liveness 알람* 🚀\n> Node : ' + node_name + '\n> 상태 :' + statue_name) else false;

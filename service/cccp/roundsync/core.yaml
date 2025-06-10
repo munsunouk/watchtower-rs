@@ -1,0 +1,13 @@
+name: Core Round Sync Check
+time_interval: 600
+script: |
+  active_status = 1;
+
+  bifrostBN = Bifrost.LatestBlock();
+  bifrost_round_status = Bifrost.CCCP.LatestRound.Status(bifrostBN);
+
+  coreBN = Core.LatestBlock();
+  core_round_status = Core.CCCP.LatestRound.Status(coreBN);
+  sync_diff = when bifrost_round_status > core_round_status then bifrost_round_status - core_round_status else core_round_status - bifrost_round_status;
+
+  when bifrost_round_status != core_round_status then Slack.Send(CCCP, '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> Core : ' + core_round_status) else false;

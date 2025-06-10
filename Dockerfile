@@ -25,8 +25,10 @@ WORKDIR /app
 COPY service /app/service
 COPY lib/src/cli/abi /app/lib/src/cli/abi
 
-# Create log directory and set permissions
+# Create log directory and notification.log file with permissions
 RUN mkdir -p /app/service/log && \
-    chmod 777 /app/service/log
+    touch /app/service/log/notification.log && \
+    chmod 777 /app/service/log && \
+    chmod 666 /app/service/log/notification.log
 
 CMD ["./watch_tower_worker"] 

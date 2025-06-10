@@ -28,6 +28,8 @@ use watch_tower_lib::{
         constants::DEFAULT_INDEX,
         convert_hex_param, convert_hex_token,
         error::{GeneralError, IndexType},
+        format_float_to_4_decimal, parse_f64_to_uint, parse_string_to_float, parse_string_to_uint,
+        types::GeneralToken,
     },
 };
 
@@ -125,21 +127,21 @@ pub fn _parse_token_to_string(token: &Token) -> Result<String, WorkerError> {
 
 fn convert_value_to_param_type(value: &Value) -> Result<ParamType, WorkerError> {
     match value {
+        Value::Null => Ok(ParamType::Tuple(vec![])),
+        Value::Bool(_) => Ok(ParamType::Bool),
         Value::String(s) => Ok(convert_hex_param(s).map_err(|_| WorkerError::InvalidTypeConvert)?),
         Value::Number(n) => {
-            if n.is_i64() {
-                if let Some(i) = n.as_i64() {
-                    if i >= 0 {
-                        U256::try_from(i).map_err(|_| WorkerError::InvalidTypeConvert)?;
-                        return Ok(ParamType::Uint(256));
-                    }
-                    // Default to Int256 if unsigned conversion is not safe
-                    return Ok(ParamType::Int(256));
-                }
+            if let Some(i) = n.as_i64() {
+                // Check if conversion is safe
+                let _ = Int::try_from(i).map_err(|_| WorkerError::InvalidTypeConvert)?;
+                Ok(ParamType::Uint(256))
+            } else if let Some(u) = n.as_u64() {
+                let _ = U256::try_from(u).map_err(|_| WorkerError::InvalidTypeConvert)?;
+                Ok(ParamType::Uint(256))
+            } else {
+                Err(WorkerError::InvalidTypeConvertError(n.to_string()))
             }
-            Err(WorkerError::InvalidTypeConvertError(n.to_string()))
         }
-        Value::Bool(_) => Ok(ParamType::Bool),
         Value::Array(arr) => {
             let inner_types: Result<Vec<ParamType>, WorkerError> =
                 arr.iter().map(convert_value_to_param_type).collect();
@@ -152,20 +154,18 @@ fn convert_value_to_param_type(value: &Value) -> Result<ParamType, WorkerError> 
                     return convert_value_to_param_type(result);
                 }
             }
-            let inner_types: Result<Vec<ParamType>, WorkerError> = obj
-                .iter()
-                .map(|(_, v)| convert_value_to_param_type(v))
-                .collect();
+            let inner_types: Result<Vec<ParamType>, WorkerError> =
+                obj.values().map(convert_value_to_param_type).collect();
             Ok(ParamType::Tuple(inner_types?))
         }
-        _ => Err(WorkerError::InvalidTypeConvertError(value.to_string())),
     }
 }
 
 fn convert_value_to_token(value: &Value) -> Result<Token, WorkerError> {
     match value {
-        Value::Null => Err(WorkerError::InvalidTypeConvert),
+        Value::Null => Ok(Token::Tuple(vec![])),
         Value::Bool(b) => Ok(Token::Bool(*b)),
+        Value::String(s) => convert_hex_token(s).map_err(|_| WorkerError::InvalidTypeConvert),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 // Check if conversion is safe
@@ -178,7 +178,6 @@ fn convert_value_to_token(value: &Value) -> Result<Token, WorkerError> {
                 Err(WorkerError::InvalidTypeConvertError(n.to_string()))
             }
         }
-        Value::String(s) => convert_hex_token(s).map_err(|_| WorkerError::InvalidTypeConvert),
         Value::Array(arr) => {
             let tokens: Result<Vec<Token>, WorkerError> =
                 arr.iter().map(convert_value_to_token).collect();
@@ -230,7 +229,9 @@ pub fn decode_token(
             (ParamType::FixedBytes(_), Token::FixedBytes(value)) => {
                 Ok(Token::FixedBytes(value.clone()))
             }
-            (ParamType::Array(_), Token::Array(value)) => Ok(Token::Array(value.clone())),
+            (ParamType::Array(_), Token::Array(value))
+            | (ParamType::Tuple(_), Token::Tuple(value))
+            | (ParamType::Tuple(_), Token::Array(value)) => Ok(Token::Array(value.clone())),
             _ => Err(WorkerError::InvalidTypeConvert),
         };
     }
@@ -452,9 +453,9 @@ fn ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamTyp
 }
 
 fn initial_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
-    if let Token::Tuple(_) = token {
+    if let (Token::Tuple(_)) | (Token::Array(_)) = token {
         (token, param_type)
-    } else if let ParamType::Tuple(_) = param_type {
+    } else if let (ParamType::Tuple(_)) | (ParamType::Array(_)) = param_type {
         (Token::Tuple(vec![token]), param_type)
     } else {
         (
@@ -475,12 +476,15 @@ fn initial_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, 
 fn nested_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
     match (token.clone(), param_type.clone()) {
         // If both are tuples, recursively check their inner types
-        (Token::Tuple(tokens), ParamType::Tuple(param_types)) => {
+        (Token::Tuple(tokens), ParamType::Tuple(param_types))
+        | (Token::Array(tokens), ParamType::Tuple(param_types)) => {
             // If param_type has more nesting, but token is not, wrap the entire token
             if param_types
                 .iter()
                 .any(|pt| matches!(pt, ParamType::Tuple(_)))
-                && !tokens.iter().any(|t| matches!(t, Token::Tuple(_)))
+                && !tokens
+                    .iter()
+                    .any(|t| matches!(t, Token::Tuple(_) | Token::Array(_)))
             {
                 (Token::Tuple(vec![token]), param_type)
             } else {
@@ -502,35 +506,56 @@ fn nested_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, P
 }
 
 pub fn decode_meta_data(
-    token: &Token,
+    token: &GeneralToken,
     variables: &mut HashMap<String, ParseResultType>,
-) -> Result<Token, GeneralError> {
+) -> Result<GeneralToken, GeneralError> {
     let meta_data = variables.get("meta_data").unwrap();
     match meta_data {
         ParseResultType::String(meta_data) if meta_data == "VaultAddress" => {
-            if let Token::Array(arr) = token {
+            if let GeneralToken::Array(arr) = token {
                 let sum = arr.iter().fold(U256::zero(), |acc, token| {
-                    if let Token::Uint(value) = token {
+                    if let GeneralToken::Uint(value) = token {
                         acc + value
                     } else {
                         acc
                     }
                 });
-                Ok(Token::Uint(sum))
+                Ok(GeneralToken::Uint(sum))
             } else {
                 Err(GeneralError::InvalidTypeConvert)
             }
         }
         ParseResultType::String(meta_data) if meta_data == "any" => {
-            if let Token::Array(arr) = token {
+            if let GeneralToken::Array(arr) = token {
                 let any = arr.iter().any(|token| {
-                    if let Token::Uint(value) = token {
+                    if let GeneralToken::Uint(value) = token {
                         !value.is_zero()
                     } else {
                         false
                     }
                 });
-                Ok(Token::Bool(any))
+                Ok(GeneralToken::Bool(any))
+            } else {
+                Err(GeneralError::InvalidTypeConvert)
+            }
+        }
+        ParseResultType::String(meta_data) if meta_data == "APY" => {
+            if let GeneralToken::String(apy) = token {
+                let mut apy_float = parse_string_to_float(apy.clone()).unwrap() * 100.0;
+                apy_float = format_float_to_4_decimal(apy_float);
+
+                Ok(GeneralToken::Float(apy_float))
+            } else {
+                Err(GeneralError::InvalidTypeConvert)
+            }
+        }
+
+        ParseResultType::String(meta_data) if meta_data == "Float" => {
+            if let GeneralToken::String(apy) = token {
+                let mut apy_float = parse_string_to_float(apy.clone()).unwrap();
+                apy_float = format_float_to_4_decimal(apy_float);
+
+                Ok(GeneralToken::Float(apy_float))
             } else {
                 Err(GeneralError::InvalidTypeConvert)
             }
@@ -543,15 +568,15 @@ pub fn decode_meta_data(
 mod tests {
     use super::*;
     use tracing_subscriber::fmt::init;
-    use watch_tower_lib::utils::compare_token;
+    use watch_tower_lib::utils::{compare_token, types::GeneralToken};
 
     #[test]
     fn test_compare_token() -> Result<(), WorkerError> {
         init();
 
         let result = compare_token(
-            &Token::FixedBytes([0, 1, 74, 52].to_vec()),
-            &Token::FixedBytes([0, 1, 74, 52].to_vec()),
+            &GeneralToken::FixedBytes([0, 1, 74, 52].to_vec()),
+            &GeneralToken::FixedBytes([0, 1, 74, 52].to_vec()),
             "==",
         );
 
