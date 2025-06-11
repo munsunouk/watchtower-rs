@@ -47,7 +47,10 @@ pub fn parse_token_to_string(token: &GeneralToken) -> Result<String, GeneralErro
         GeneralToken::Bytes(value) => Ok(hex::encode(value)),
         GeneralToken::FixedBytes(value) => Ok(hex::encode(value)),
         GeneralToken::String(value) => Ok(value.clone()),
-        _ => Err(GeneralError::InvalidTypeConvert),
+        _ => Err(GeneralError::InvalidTypeConvertError(format!(
+            "{:?}",
+            token
+        ))),
     }
 }
 

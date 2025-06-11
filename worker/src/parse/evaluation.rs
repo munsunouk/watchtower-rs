@@ -168,13 +168,23 @@ pub fn parse_pair<'a>(
                                 && right.type_check(&ParamType::Bool)
                             {
                                 GeneralToken::Bool(
-                                    result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
-                                        && right
-                                            .into_bool()
-                                            .ok_or(GeneralError::InvalidTypeConvert)?,
+                                    result.clone().into_bool().ok_or(
+                                        GeneralError::InvalidTypeConvertError(format!(
+                                            "Expected bool, got {:?}",
+                                            result
+                                        )),
+                                    )? && right.clone().into_bool().ok_or(
+                                        GeneralError::InvalidTypeConvertError(format!(
+                                            "Expected bool, got {:?}",
+                                            right
+                                        )),
+                                    )?,
                                 )
                             } else {
-                                return Err(GeneralError::InvalidTypeConvert);
+                                return Err(GeneralError::InvalidTypeConvertError(format!(
+                                    "Expected bool, got {:?}",
+                                    result
+                                )));
                             }
                         }
                         LOGIC_OPERATOR_OR => {
@@ -182,13 +192,23 @@ pub fn parse_pair<'a>(
                                 && right.type_check(&ParamType::Bool)
                             {
                                 GeneralToken::Bool(
-                                    result.into_bool().ok_or(GeneralError::InvalidTypeConvert)?
-                                        || right
-                                            .into_bool()
-                                            .ok_or(GeneralError::InvalidTypeConvert)?,
+                                    result.clone().into_bool().ok_or(
+                                        GeneralError::InvalidTypeConvertError(format!(
+                                            "Expected bool, got {:?}",
+                                            result
+                                        )),
+                                    )? || right.clone().into_bool().ok_or(
+                                        GeneralError::InvalidTypeConvertError(format!(
+                                            "Expected bool, got {:?}",
+                                            right
+                                        )),
+                                    )?,
                                 )
                             } else {
-                                return Err(GeneralError::InvalidTypeConvert);
+                                return Err(GeneralError::InvalidTypeConvertError(format!(
+                                    "Expected bool, got {:?}",
+                                    result
+                                )));
                             }
                         }
                         _ => return Err(GeneralError::InvalidOperator(op.as_str().to_string())),
@@ -223,10 +243,12 @@ pub fn parse_pair<'a>(
                     .next()
                     .ok_or(GeneralError::InvalidIndex(IndexType::USize(DEFAULT_INDEX)))?;
 
-                let result = if condition
-                    .into_bool()
-                    .ok_or(GeneralError::InvalidTypeConvert)?
-                {
+                let result = if condition.clone().into_bool().ok_or(
+                    GeneralError::InvalidTypeConvertError(format!(
+                        "Expected bool, got {:?}",
+                        condition
+                    )),
+                )? {
                     parse_pair(config, program_rule, then_expr, context).await?
                 } else {
                     parse_pair(config, program_rule, else_expr, context).await?
@@ -377,24 +399,40 @@ pub fn parse_pair<'a>(
 
                 let notification = match context.variables.get("notification") {
                     Some(ParseResultType::String(notification)) => notification.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for notification".to_string(),
+                        ))
+                    }
                 };
 
                 let key = match context.variables.get("key") {
                     Some(ParseResultType::String(key)) => key.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for key".to_string(),
+                        ))
+                    }
                 };
 
                 let param_config = set_param_config(PARAM_CONFIG_PATH);
 
                 let param_nessesary = match context.variables.get("param_nessesary") {
                     Some(ParseResultType::Array(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected Array for param_nessesary".to_string(),
+                        ))
+                    }
                 };
 
                 let function_params = match context.variables.get("function_params") {
                     Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ArrayParam for function_params".to_string(),
+                        ))
+                    }
                 };
 
                 let mut slack_client = None;
@@ -464,22 +502,38 @@ pub fn parse_pair<'a>(
 
                 let chain_id = match context.variables.get("chain_id").unwrap() {
                     ParseResultType::ChainID(id) => *id as i32,
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ChainID for chain_id".to_string(),
+                        ))
+                    }
                 };
 
                 let blockchain = match context.variables.get("blockchain").unwrap() {
                     ParseResultType::String(blockchain) => blockchain.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for blockchain".to_string(),
+                        ))
+                    }
                 };
 
                 let param_nessesary = match context.variables.get("param_nessesary") {
                     Some(ParseResultType::Array(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected Array for param_nessesary".to_string(),
+                        ))
+                    }
                 };
 
                 let function_params = match context.variables.get("function_params") {
                     Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ArrayParam for function_params".to_string(),
+                        ))
+                    }
                 };
 
                 let mut target_block_number = get_latest_block_number(config, chain_id)
@@ -514,7 +568,11 @@ pub fn parse_pair<'a>(
                                 }
                             }
                         }
-                        _ => return Err(GeneralError::InvalidTypeConvert),
+                        _ => {
+                            return Err(GeneralError::InvalidTypeConvertError(
+                                "Invalid token type".to_string(),
+                            ))
+                        }
                     }
                 }
 
@@ -536,9 +594,17 @@ pub fn parse_pair<'a>(
                             )
                             .await;
                         }
-                        _ => return Err(GeneralError::InvalidTypeConvert),
+                        _ => {
+                            return Err(GeneralError::InvalidTypeConvertError(
+                                "Invalid token type".to_string(),
+                            ))
+                        }
                     },
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for name".to_string(),
+                        ))
+                    }
                 }
 
                 Ok(result)
@@ -555,22 +621,38 @@ pub fn parse_pair<'a>(
 
                 let call_type = match context.variables.get("call_type").unwrap() {
                     ParseResultType::String(call_type) => call_type.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for call_type".to_string(),
+                        ))
+                    }
                 };
 
                 let method_type = match context.variables.get("method_type").unwrap() {
                     ParseResultType::String(method_type) => method_type.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for method_type".to_string(),
+                        ))
+                    }
                 };
 
                 let param_nessesary = match context.variables.get("param_nessesary") {
                     Some(ParseResultType::Array(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected Array for param_nessesary".to_string(),
+                        ))
+                    }
                 };
 
                 let function_params = match context.variables.get("function_params") {
                     Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ArrayParam for function_params".to_string(),
+                        ))
+                    }
                 };
 
                 let mut url: Option<String> = None;
@@ -622,7 +704,9 @@ pub fn parse_pair<'a>(
                                             .iter()
                                             .map(|t| match t {
                                                 GeneralToken::String(s) => Ok(s.clone()),
-                                                _ => Err(GeneralError::InvalidTypeConvert),
+                                                _ => Err(GeneralError::InvalidTypeConvertError(
+                                                    format!("Expected String, got {:?}", t),
+                                                )),
                                             })
                                             .collect();
                                         let joined_string = strings?.join("|");
@@ -639,13 +723,21 @@ pub fn parse_pair<'a>(
                                 }
                             }
                         }
-                        _ => {}
+                        _ => {
+                            return Err(GeneralError::InvalidTypeConvertError(
+                                "Invalid token type".to_string(),
+                            ))
+                        }
                     }
                 }
 
                 let target_index = match context.variables.get("target_index").unwrap() {
                     ParseResultType::String(idx) => idx.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for target_index".to_string(),
+                        ))
+                    }
                 };
 
                 let result = get(
@@ -676,20 +768,36 @@ pub fn parse_pair<'a>(
 
                 let chain_id = match context.variables.get("chain_id").unwrap() {
                     ParseResultType::ChainID(id) => *id as i32,
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ChainID for chain_id".to_string(),
+                        ))
+                    }
                 };
                 let address = match context.variables.get("address").unwrap() {
                     ParseResultType::String(addr) => addr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for address".to_string(),
+                        ))
+                    }
                 };
                 let abi = match context.variables.get("abi").unwrap() {
                     ParseResultType::JSON(abi) => abi.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected JSON for abi".to_string(),
+                        ))
+                    }
                 };
 
                 let target_index = match context.variables.get("target_index").unwrap() {
                     ParseResultType::String(idx) => idx.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for target_index".to_string(),
+                        ))
+                    }
                 };
 
                 let mut target_block_number = get_latest_block_number(config, chain_id)
@@ -699,17 +807,37 @@ pub fn parse_pair<'a>(
 
                 let param_nessesary = match context.variables.get("param_nessesary") {
                     Some(ParseResultType::Array(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected Array for param_nessesary".to_string(),
+                        ))
+                    }
                 };
 
                 let function_params = match context.variables.get("function_params") {
                     Some(ParseResultType::ArrayParam(arr)) => arr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ArrayParam for function_params".to_string(),
+                        ))
+                    }
                 };
 
                 let mut params = match context.variables.get("method_params").unwrap() {
                     ParseResultType::ArrayParam(params) => params.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ArrayParam for method_params".to_string(),
+                        ))
+                    }
+                };
+
+                let available_contract = if let Some(ParseResultType::String(available_contract)) =
+                    context.variables.get("available_contract")
+                {
+                    Some(available_contract.clone())
+                } else {
+                    None
                 };
 
                 let available_contract = if let Some(ParseResultType::String(available_contract)) =
@@ -821,23 +949,43 @@ pub fn parse_pair<'a>(
 
                 let chain_id = match context.variables.get("chain_id").unwrap() {
                     ParseResultType::ChainID(id) => *id as i32,
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected ChainID for chain_id".to_string(),
+                        ))
+                    }
                 };
                 let address = match context.variables.get("address").unwrap() {
                     ParseResultType::String(addr) => addr.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for address".to_string(),
+                        ))
+                    }
                 };
                 let abi = match context.variables.get("abi").unwrap() {
                     ParseResultType::JSON(abi) => abi.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected JSON for abi".to_string(),
+                        ))
+                    }
                 };
                 let event_index = match context.variables.get("event_index").unwrap() {
                     ParseResultType::EventIndex(idx) => idx.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected EventIndex for event_index".to_string(),
+                        ))
+                    }
                 };
                 let target_index = match context.variables.get("target_index").unwrap() {
                     ParseResultType::String(idx) => idx.clone(),
-                    _ => return Err(GeneralError::InvalidTypeConvert),
+                    _ => {
+                        return Err(GeneralError::InvalidTypeConvertError(
+                            "Expected String for target_index".to_string(),
+                        ))
+                    }
                 };
 
                 let mut target_block_number = get_latest_block_number(config, chain_id)
@@ -914,7 +1062,11 @@ pub fn parse_pair<'a>(
                             && *blockchain
                                 == *match context.variables.get("blockchain").unwrap() {
                                     ParseResultType::String(s) => s,
-                                    _ => return Err(GeneralError::InvalidTypeConvert),
+                                    _ => {
+                                        return Err(GeneralError::InvalidTypeConvertError(
+                                            "Expected String for blockchain".to_string(),
+                                        ))
+                                    }
                                 }
                         {
                             context.variables.insert(

@@ -181,7 +181,7 @@ fn convert_value_to_token(value: &Value) -> Result<Token, WorkerError> {
         Value::Array(arr) => {
             let tokens: Result<Vec<Token>, WorkerError> =
                 arr.iter().map(convert_value_to_token).collect();
-            Ok(Token::Array(tokens?))
+            Ok(Token::Tuple(tokens?))
         }
         Value::Object(obj) => {
             // Handle JSON-RPC response by extracting the result field
@@ -232,7 +232,11 @@ pub fn decode_token(
             (ParamType::Array(_), Token::Array(value))
             | (ParamType::Tuple(_), Token::Tuple(value))
             | (ParamType::Tuple(_), Token::Array(value)) => Ok(Token::Array(value.clone())),
-            _ => Err(WorkerError::InvalidTypeConvert),
+            _ => {
+                println!("token : {:?}", token);
+                println!("param_type : {:?}", param_type);
+                Err(WorkerError::InvalidTypeConvert)
+            }
         };
     }
 
@@ -253,8 +257,6 @@ pub fn decode_token(
 
                 return decode_token(inner_token, inner_type, rest);
             } else {
-                println!("inner_types : {:?}", inner_types);
-                println!("token : {:?}", token);
                 return Err(WorkerError::InvalidTypeConvert);
             }
         }
@@ -344,6 +346,9 @@ pub fn decodes_token(
     let (wrapped_token, wrapped_param_type) =
         ensure_token_wrapper(token.clone(), param_type.clone());
 
+    // println!("wrapped_token: {:?}", wrapped_token);
+    // println!("wrapped_param_type: {:?}", wrapped_param_type);
+
     // Convert TargetIndex to usize indices, handling ForEach
     let mut indices = Vec::new();
     let mut foreach_positions = Vec::new();
@@ -418,7 +423,7 @@ pub fn decodes_token(
         return Err(WorkerError::InvalidIndexDepth);
     }
 
-    Ok(Token::Array(decoded_tokens))
+    Ok(Token::Tuple(decoded_tokens))
 }
 
 /// # Description
@@ -448,6 +453,7 @@ pub fn parse_string_to_values(values: Vec<String>) -> Result<Vec<Vec<usize>>, Wo
 
 fn ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
     let (token, param_type) = initial_ensure_token_wrapper(token, param_type);
+
     let (token, param_type) = nested_ensure_token_wrapper(token, param_type);
     (token, param_type)
 }
@@ -512,7 +518,7 @@ pub fn decode_meta_data(
     let meta_data = variables.get("meta_data").unwrap();
     match meta_data {
         ParseResultType::String(meta_data) if meta_data == "VaultAddress" => {
-            if let GeneralToken::Array(arr) = token {
+            if let GeneralToken::Tuple(arr) = token {
                 let sum = arr.iter().fold(U256::zero(), |acc, token| {
                     if let GeneralToken::Uint(value) = token {
                         acc + value
@@ -522,11 +528,14 @@ pub fn decode_meta_data(
                 });
                 Ok(GeneralToken::Uint(sum))
             } else {
-                Err(GeneralError::InvalidTypeConvert)
+                Err(GeneralError::InvalidTypeConvertError(format!(
+                    "Expected Array, got {:?}",
+                    token
+                )))
             }
         }
         ParseResultType::String(meta_data) if meta_data == "any" => {
-            if let GeneralToken::Array(arr) = token {
+            if let GeneralToken::Tuple(arr) = token {
                 let any = arr.iter().any(|token| {
                     if let GeneralToken::Uint(value) = token {
                         !value.is_zero()
@@ -536,7 +545,10 @@ pub fn decode_meta_data(
                 });
                 Ok(GeneralToken::Bool(any))
             } else {
-                Err(GeneralError::InvalidTypeConvert)
+                Err(GeneralError::InvalidTypeConvertError(format!(
+                    "Expected Array, got {:?}",
+                    token
+                )))
             }
         }
         ParseResultType::String(meta_data) if meta_data == "APY" => {
@@ -546,7 +558,10 @@ pub fn decode_meta_data(
 
                 Ok(GeneralToken::Float(apy_float))
             } else {
-                Err(GeneralError::InvalidTypeConvert)
+                Err(GeneralError::InvalidTypeConvertError(format!(
+                    "Expected String, got {:?}",
+                    token
+                )))
             }
         }
 
@@ -557,7 +572,10 @@ pub fn decode_meta_data(
 
                 Ok(GeneralToken::Float(apy_float))
             } else {
-                Err(GeneralError::InvalidTypeConvert)
+                Err(GeneralError::InvalidTypeConvertError(format!(
+                    "Expected String, got {:?}",
+                    token
+                )))
             }
         }
         _ => Ok(token.clone()),
@@ -584,74 +602,4 @@ mod tests {
 
         Ok(())
     }
-
-    // #[test]
-    // fn test_decodes_token() -> Result<(), WorkerError> {
-    //     let test_token = Token::Tuple(vec![
-    //         Token::Uint(U256::from(200)),
-    //         Token::Tuple(vec![
-    //             Token::Tuple(vec![
-    //                 Token::Int(U256::from(10900000)),
-    //                 Token::Int(U256::from(2)),
-    //                 Token::Int(U256::from(10900000)),
-    //             ]),
-    //             Token::Tuple(vec![
-    //                 Token::Int(U256::from(0)),
-    //                 Token::Int(U256::from(0)),
-    //                 Token::Int(U256::from(0)),
-    //             ]),
-    //             Token::Tuple(vec![
-    //                 Token::Int(U256::from(0)),
-    //                 Token::Int(U256::from(2)),
-    //                 Token::Int(U256::from(20000)),
-    //             ]),
-    //             Token::Tuple(vec![
-    //                 Token::Uint(U256::from(500000000)),
-    //                 Token::Uint(U256::from(3)),
-    //                 Token::Uint(U256::from(500000000)),
-    //             ]),
-    //             Token::Tuple(vec![
-    //                 Token::Uint(U256::from(10000000)),
-    //                 Token::Uint(U256::from(1)),
-    //                 Token::Uint(U256::from(10000000)),
-    //             ]),
-    //             Token::Tuple(vec![
-    //                 Token::Int(U256::from(0)),
-    //                 Token::Int(U256::from(0)),
-    //                 Token::Int(U256::from(0)),
-    //             ]),
-    //             Token::Tuple(vec![
-    //                 Token::Int(U256::from(21000)),
-    //                 Token::Int(U256::from(2)),
-    //                 Token::Int(U256::from(21000)),
-    //             ]),
-    //             Token::Tuple(vec![
-    //                 Token::Tuple(vec![
-    //                     Token::Int(U256::from(0)),
-    //                     Token::Int(U256::from(0)),
-    //                     Token::Int(U256::from(0)),
-    //                 ]),
-    //                 Token::Tuple(vec![
-    //                     Token::Int(U256::from(0)),
-    //                     Token::Int(U256::from(0)),
-    //                     Token::Int(U256::from(0)),
-    //                 ]),
-    //                 Token::Tuple(vec![
-    //                     Token::Uint(U256::from(709000000)),
-    //                     Token::Uint(U256::from(3)),
-    //                     Token::Uint(U256::from(709000000)),
-    //                 ]),
-    //                 Token::Tuple(vec![
-    //                     Token::Int(U256::from(0)),
-    //                     Token::Int(U256::from(0)),
-    //                     Token::Int(U256::from(0)),
-    //                 ]),
-    //             ]),
-    //         ]),
-    //     ]);
-
-    //     let decoded_tokens = decodes_token(&test_token, &ParamType::Tuple(vec![]), &vec![vec![0]])?;
-    //     println!("{:?}", decoded_tokens);
-    //     Ok(())
-    // }
 }

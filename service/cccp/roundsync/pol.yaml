@@ -1,7 +1,7 @@
 name: POL Round Sync Check
 time_interval: 600
 script: |
-  active_status = 1;
+  active_status = 2;
 
   bifrostBN = Bifrost.LatestBlock();
   bifrost_round_status = Bifrost.CCCP.LatestRound.Status(bifrostBN);

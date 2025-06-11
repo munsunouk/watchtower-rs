@@ -1,7 +1,7 @@
 name: Arbitrum Sepolia Round Sync Check
 time_interval: 600
 script: |
-  active_status = 1;
+  active_status = 2;
 
   bifrostBN = Bifrost_Testnet.LatestBlock();
   bifrost_round_status = Bifrost_Testnet.CCCP.LatestRound.Status(bifrostBN);

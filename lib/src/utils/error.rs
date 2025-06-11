@@ -58,28 +58,26 @@ pub enum DatabaseError {
 #[derive(Error, Debug)]
 #[repr(u16)]
 pub enum GeneralError {
-    #[error("[Error Type : General], [Issue : Invalid type conversion]")]
-    InvalidTypeConvert = 1013,
+    #[error("[Error Type : General], [Issue : Invalid type convert error {0}]")]
+    InvalidTypeConvertError(String) = 1013,
     #[error("[Error Type : General], [Issue : Invalid type ABI]")]
     InvalidTypeABI = 1014,
-    #[error("[Error Type : General], [Issue : Invalid type convert error {0}]")]
-    InvalidTypeConvertError(String) = 1015,
     #[error("[Error Type : General], [Issue : Invalid index: {0}]")]
-    InvalidIndex(IndexType) = 1016,
+    InvalidIndex(IndexType) = 1015,
     #[error("[Error Type : General], [Issue : Invalid empty token]")]
-    InvalidEmptyToken = 1017,
+    InvalidEmptyToken = 1016,
     #[error("[Error Type : General], [Issue : Invalid rule name]")]
-    InvalidRuleName = 1018,
+    InvalidRuleName = 1017,
     #[error("[Error Type : General], [Issue : Invalid rule decode: {0}]")]
-    InvalidRuleDecode(String) = 1019,
+    InvalidRuleDecode(String) = 1018,
     #[error("[Error Type : General], [Issue : Invalid evaluate opration : {0}]")]
-    InvalidOperator(String) = 1020,
+    InvalidOperator(String) = 1019,
     #[error("[Error Type : General], [Issue : Invalid config file path provided. Please check your file path.]")]
-    InvalidConfigFilePath = 1021,
+    InvalidConfigFilePath = 1020,
     #[error("[Error Type : General], [Issue : Invalid config file structure provided. Please check your file structure.]")]
-    InvalidConfigFileStructure = 1022,
+    InvalidConfigFileStructure = 1021,
     #[error("[Error Type : General], [Issue : Invalid database: {0}]")]
-    InvalidDatabase(String) = 1023,
+    InvalidDatabase(String) = 1022,
 }
 
 impl GeneralError {

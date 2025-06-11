@@ -127,7 +127,7 @@ impl DbRuleType {
 pub fn parse_i32_to_usize(input: i32) -> Result<usize, GeneralError> {
     input
         .try_into()
-        .map_err(|_| GeneralError::InvalidTypeConvert)
+        .map_err(|_| GeneralError::InvalidTypeConvertError(input.to_string()))
 }
 
 pub fn parse_u256_to_u64(input: U256) -> U64 {
@@ -137,7 +137,7 @@ pub fn parse_u256_to_u64(input: U256) -> U64 {
 pub fn parse_string_to_u64(input: String) -> Result<U64, GeneralError> {
     input
         .parse::<U64>()
-        .map_err(|_| GeneralError::InvalidTypeConvert)
+        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
 }
 
 pub fn parse_i64_to_u64(input: i64) -> U64 {
@@ -152,12 +152,13 @@ pub fn parse_string_to_rpc_call_type(input: String) -> Result<RpcCallType, Gener
     match input.as_str() {
         "body" => Ok(RpcCallType::Body),
         "query" => Ok(RpcCallType::Query),
-        _ => Err(GeneralError::InvalidTypeConvert),
+        _ => Err(GeneralError::InvalidTypeConvertError(input)),
     }
 }
 
 pub fn parse_json_to_value(input: Json<Value>) -> Result<Value, GeneralError> {
-    serde_json::to_value(input).map_err(|_| GeneralError::InvalidTypeConvert)
+    serde_json::to_value(input)
+        .map_err(|_| GeneralError::InvalidTypeConvertError("JSON conversion failed".to_string()))
 }
 
 /// Parses a JSON value into an ABI.
@@ -195,7 +196,10 @@ pub fn parse_token_to_i64(token: Token) -> Result<i64, GeneralError> {
     match token {
         Token::Uint(value) => Ok(value.as_u64() as i64),
         Token::Int(value) => Ok(value.as_u64() as i64),
-        _ => Err(GeneralError::InvalidTypeConvert),
+        _ => Err(GeneralError::InvalidTypeConvertError(format!(
+            "{:?}",
+            token
+        ))),
     }
 }
 
@@ -268,7 +272,7 @@ pub fn parse_string_to_i32(input: String) -> Result<i32, GeneralError> {
 pub fn parse_to_address(input: String) -> Result<Address, GeneralError> {
     input
         .parse::<Address>()
-        .map_err(|_| GeneralError::InvalidTypeConvert)
+        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
 }
 
 /// # Description
@@ -611,7 +615,8 @@ pub fn convert_hex_param(str_param: &str) -> Result<ParamType, GeneralError> {
 }
 
 pub fn hex_to_eth_amount(hex: &str) -> Result<U256, GeneralError> {
-    U256::from_str_radix(&hex[2..], 16).map_err(|_| GeneralError::InvalidTypeConvert)
+    U256::from_str_radix(&hex[2..], 16)
+        .map_err(|_| GeneralError::InvalidTypeConvertError(hex.to_string()))
 }
 
 /// # Description

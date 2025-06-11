@@ -125,7 +125,7 @@ impl GeneralToken {
             GeneralToken::FixedBytes(value) => Ok(hex::encode(value)),
             GeneralToken::String(value) => Ok(value),
             GeneralToken::Float(value) => Ok(value.to_string()),
-            _ => Err(GeneralError::InvalidTypeConvert),
+            _ => Err(GeneralError::InvalidTypeConvertError(format!("{:?}", self))),
         }
     }
 
