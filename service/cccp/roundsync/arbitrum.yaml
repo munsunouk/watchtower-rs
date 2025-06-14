@@ -10,4 +10,4 @@ script: |
   arbitrum_round_status = Arbitrum.CCCP.LatestRound.Status(arbitrumBN);
   sync_diff = when bifrost_round_status > arbitrum_round_status then bifrost_round_status - arbitrum_round_status else arbitrum_round_status - bifrost_round_status;
 
-  when bifrost_round_status != arbitrum_round_status then Slack.Send(CCCP, '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> Arbitrum : ' + arbitrum_round_status) else false;
+  when sync_diff > active_status then Slack.Send(CCCP, '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> Arbitrum : ' + arbitrum_round_status) else false;

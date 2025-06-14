@@ -10,4 +10,4 @@ script: |
   bnb_round_status = BNB.CCCP.LatestRound.Status(bnbBN);
   sync_diff = when bifrost_round_status > bnb_round_status then bifrost_round_status - bnb_round_status else bnb_round_status - bifrost_round_status;
 
-  when bifrost_round_status != bnb_round_status then Slack.Send(CCCP, '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> BNB : ' + bnb_round_status) else false;
+  when sync_diff > active_status then Slack.Send(CCCP, '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> BNB : ' + bnb_round_status) else false;
