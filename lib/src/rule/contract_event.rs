@@ -1,26 +1,19 @@
-use ethers::{
-    abi::{Abi, Event, ParamType},
-    prelude::*,
-    types::U64,
-};
+use ethers::{abi::Abi, prelude::*, types::U64};
 
 use serde_json::Value;
 use sqlx::{postgres::PgRow, Row};
 
-use crate::{
-    cli::eth::EthClient,
-    utils::{
-        constants::{
-            DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-            DB_EVENT_INDEX_COLUMN, DB_ID_COLUMN, DB_NAME_COLUMN, DB_VALUES_COLUMN, DEFAULT_INDEX,
-        },
-        error::{GeneralError, IndexType},
-        parse_i32_to_usize, parse_i64_to_u64, parse_to_abi, parse_to_address, parse_u256_to_u64,
-        types::{ChainID, RuleID},
+use crate::utils::{
+    constants::{
+        DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
+        DB_EVENT_INDEX_COLUMN, DB_ID_COLUMN, DB_VALUES_COLUMN,
     },
+    error::GeneralError,
+    parse_i32_to_usize, parse_i64_to_u64, parse_to_abi, parse_to_address, parse_u256_to_u64,
+    types::{ChainID, RuleID},
 };
 
-use super::{parse_string_to_index, parse_string_to_target_index, TargetIndex};
+use super::{parse_string_to_target_index, TargetIndex};
 
 /// # Description
 /// This struct represents a log of contract events.

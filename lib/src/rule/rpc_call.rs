@@ -1,28 +1,18 @@
-use crate::{
-    cli::rpc::RpcClient,
-    utils::{
-        constants::{
-            DB_API_BODY_TYPE_COLUMN, DB_CALL_TIME_INTERVAL_COLUMN, DB_CALL_TYPE_COLUMN,
-            DB_ID_COLUMN, DB_METHOD_TYPE_COLUMN, DB_NAME_COLUMN, DB_URL_COLUMN, DB_VALUES_COLUMN,
-        },
-        parse_i32_to_usize, parse_json_to_value, parse_string_to_method,
-        parse_string_to_rpc_call_type,
-        types::RuleID,
-        RpcCallType,
+use crate::utils::{
+    constants::{
+        DB_API_BODY_TYPE_COLUMN, DB_CALL_TYPE_COLUMN, DB_METHOD_TYPE_COLUMN, DB_URL_COLUMN,
+        DB_VALUES_COLUMN,
     },
+    parse_json_to_value, parse_string_to_method, parse_string_to_rpc_call_type, RpcCallType,
 };
-use ethers::{
-    abi::{ParamType, Token},
-    types::{U256, U64},
-};
+
 use reqwest::Method;
 use serde_json::Value;
 use sqlx::{postgres::PgRow, Row};
-use std::str::FromStr;
 
 use crate::utils::error::GeneralError;
 
-use super::{parse_string_to_index, parse_string_to_target_index, TargetIndex};
+use super::{parse_string_to_target_index, TargetIndex};
 
 /// # Description
 /// This struct represents a rule for RPC calls.

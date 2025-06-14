@@ -28,14 +28,17 @@ use watch_tower_lib::{
         constants::DEFAULT_INDEX,
         convert_hex_param, convert_hex_token,
         error::{GeneralError, IndexType},
-        format_float_to_4_decimal, parse_f64_to_uint, parse_string_to_float, parse_string_to_uint,
+        format_float_to_4_decimal, parse_string_to_float,
         types::GeneralToken,
     },
 };
 
 use crate::{
     parse::evaluation::ParseResultType,
-    utils::{constants::FILTER_INDEX_SPLIT_CHAR, error::WorkerError},
+    utils::{
+        // constants::FILTER_INDEX_SPLIT_CHAR,
+        error::WorkerError,
+    },
 };
 
 /// # Description
@@ -121,7 +124,10 @@ pub fn _parse_token_to_string(token: &Token) -> Result<String, WorkerError> {
         Token::Bytes(value) => Ok(hex::encode(value)),
         Token::FixedBytes(value) => Ok(hex::encode(value)),
         Token::String(value) => Ok(value.clone()),
-        _ => Err(WorkerError::InvalidTypeConvert),
+        _ => Err(WorkerError::InvalidTypeConvertError(format!(
+            "parse_token_to_string Expected Token, got {:?}",
+            token
+        ))),
     }
 }
 
@@ -129,14 +135,29 @@ fn convert_value_to_param_type(value: &Value) -> Result<ParamType, WorkerError> 
     match value {
         Value::Null => Ok(ParamType::Tuple(vec![])),
         Value::Bool(_) => Ok(ParamType::Bool),
-        Value::String(s) => Ok(convert_hex_param(s).map_err(|_| WorkerError::InvalidTypeConvert)?),
+        Value::String(s) => Ok(convert_hex_param(s).map_err(|_| {
+            WorkerError::InvalidTypeConvertError(format!(
+                "convert_value_to_param_type string Expected Token, got {:?}",
+                s
+            ))
+        })?),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 // Check if conversion is safe
-                let _ = Int::try_from(i).map_err(|_| WorkerError::InvalidTypeConvert)?;
+                let _ = Int::try_from(i).map_err(|_| {
+                    WorkerError::InvalidTypeConvertError(format!(
+                        "convert_value_to_param_type number Expected Token, got {:?}",
+                        i
+                    ))
+                })?;
                 Ok(ParamType::Uint(256))
             } else if let Some(u) = n.as_u64() {
-                let _ = U256::try_from(u).map_err(|_| WorkerError::InvalidTypeConvert)?;
+                let _ = U256::try_from(u).map_err(|_| {
+                    WorkerError::InvalidTypeConvertError(format!(
+                        "convert_value_to_param_type number Expected Token, got {:?}",
+                        u
+                    ))
+                })?;
                 Ok(ParamType::Uint(256))
             } else {
                 Err(WorkerError::InvalidTypeConvertError(n.to_string()))
@@ -165,14 +186,29 @@ fn convert_value_to_token(value: &Value) -> Result<Token, WorkerError> {
     match value {
         Value::Null => Ok(Token::Tuple(vec![])),
         Value::Bool(b) => Ok(Token::Bool(*b)),
-        Value::String(s) => convert_hex_token(s).map_err(|_| WorkerError::InvalidTypeConvert),
+        Value::String(s) => Ok(convert_hex_token(s).map_err(|_| {
+            WorkerError::InvalidTypeConvertError(format!(
+                "convert_value_to_token string Expected Token, got {:?}",
+                s
+            ))
+        })?),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 // Check if conversion is safe
-                let int_value = Int::try_from(i).map_err(|_| WorkerError::InvalidTypeConvert)?;
+                let int_value = Int::try_from(i).map_err(|_| {
+                    WorkerError::InvalidTypeConvertError(format!(
+                        "convert_value_to_token number Expected Token, got {:?}",
+                        i
+                    ))
+                })?;
                 Ok(Token::Int(int_value))
             } else if let Some(u) = n.as_u64() {
-                let uint_value = U256::try_from(u).map_err(|_| WorkerError::InvalidTypeConvert)?;
+                let uint_value = U256::try_from(u).map_err(|_| {
+                    WorkerError::InvalidTypeConvertError(format!(
+                        "convert_value_to_token number Expected Token, got {:?}",
+                        u
+                    ))
+                })?;
                 Ok(Token::Uint(uint_value))
             } else {
                 Err(WorkerError::InvalidTypeConvertError(n.to_string()))
@@ -230,13 +266,12 @@ pub fn decode_token(
                 Ok(Token::FixedBytes(value.clone()))
             }
             (ParamType::Array(_), Token::Array(value))
-            | (ParamType::Tuple(_), Token::Tuple(value))
             | (ParamType::Tuple(_), Token::Array(value)) => Ok(Token::Array(value.clone())),
-            _ => {
-                println!("token : {:?}", token);
-                println!("param_type : {:?}", param_type);
-                Err(WorkerError::InvalidTypeConvert)
-            }
+            (ParamType::Tuple(_), Token::Tuple(value)) => Ok(Token::Tuple(value.clone())),
+            _ => Err(WorkerError::InvalidTypeConvertError(format!(
+                "decode_token expected_index Expected Token, got {:?}",
+                token
+            ))),
         };
     }
 
@@ -257,12 +292,15 @@ pub fn decode_token(
 
                 return decode_token(inner_token, inner_type, rest);
             } else {
-                return Err(WorkerError::InvalidTypeConvert);
+                return Err(WorkerError::InvalidTypeConvertError(format!(
+                    "param_type Expected Token, got {:?}",
+                    token
+                )));
             }
         }
         ParamType::Array(inner_type) => {
-            if let Token::Array(array_tokens) = token {
-                let inner_token = array_tokens
+            if let Token::Tuple(tokens) | Token::Array(tokens) = token {
+                let inner_token = tokens
                     .get(*index)
                     .ok_or(WorkerError::InvalidIndex(IndexType::USize(*index)))?;
 
@@ -281,7 +319,10 @@ pub fn decode_token(
         _ => {}
     }
 
-    Err(WorkerError::InvalidTypeConvert)
+    Err(WorkerError::InvalidTypeConvertError(format!(
+        "decode_token Expected Token, got {:?}",
+        token
+    )))
 }
 
 /// # Description
@@ -426,30 +467,30 @@ pub fn decodes_token(
     Ok(Token::Tuple(decoded_tokens))
 }
 
-/// # Description
-/// This function parses values into a vector of indices.
-/// # Arguments
-///
-/// * `values` - A vector of strings.
-///
-/// # Returns
-///
-/// Returns a vector of vectors of indices.
-pub fn parse_string_to_values(values: Vec<String>) -> Result<Vec<Vec<usize>>, WorkerError> {
-    values
-        .iter()
-        .map(|rule_filter| {
-            let indices = rule_filter
-                .split(FILTER_INDEX_SPLIT_CHAR)
-                .map(|s| {
-                    s.parse()
-                        .map_err(|_| WorkerError::InvalidTypeConvertError(s.to_string()))
-                })
-                .collect::<Result<Vec<usize>, WorkerError>>()?;
-            Ok(indices)
-        })
-        .collect()
-}
+// /// # Description
+// /// This function parses values into a vector of indices.
+// /// # Arguments
+// ///
+// /// * `values` - A vector of strings.
+// ///
+// /// # Returns
+// ///
+// /// Returns a vector of vectors of indices.
+// pub fn parse_string_to_values(values: Vec<String>) -> Result<Vec<Vec<usize>>, WorkerError> {
+//     values
+//         .iter()
+//         .map(|rule_filter| {
+//             let indices = rule_filter
+//                 .split(FILTER_INDEX_SPLIT_CHAR)
+//                 .map(|s| {
+//                     s.parse()
+//                         .map_err(|_| WorkerError::InvalidTypeConvertError(s.to_string()))
+//                 })
+//                 .collect::<Result<Vec<usize>, WorkerError>>()?;
+//             Ok(indices)
+//         })
+//         .collect()
+// }
 
 fn ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
     let (token, param_type) = initial_ensure_token_wrapper(token, param_type);
@@ -459,9 +500,9 @@ fn ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamTyp
 }
 
 fn initial_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, ParamType) {
-    if let (Token::Tuple(_)) | (Token::Array(_)) = token {
+    if let Token::Tuple(_) = token {
         (token, param_type)
-    } else if let (ParamType::Tuple(_)) | (ParamType::Array(_)) = param_type {
+    } else if let ParamType::Tuple(_) = param_type {
         (Token::Tuple(vec![token]), param_type)
     } else {
         (
@@ -488,11 +529,15 @@ fn nested_ensure_token_wrapper(token: Token, param_type: ParamType) -> (Token, P
             if param_types
                 .iter()
                 .any(|pt| matches!(pt, ParamType::Tuple(_)))
-                && !tokens
-                    .iter()
-                    .any(|t| matches!(t, Token::Tuple(_) | Token::Array(_)))
+                && !tokens.iter().any(|t| matches!(t, Token::Tuple(_)))
             {
                 (Token::Tuple(vec![token]), param_type)
+            } else if param_types
+                .iter()
+                .any(|pt| matches!(pt, ParamType::Array(_)))
+                && !tokens.iter().any(|t| matches!(t, Token::Array(_)))
+            {
+                (Token::Array(vec![token]), param_type)
             } else {
                 let mut wrapped_tokens = Vec::new();
                 for (token, param_type) in tokens.into_iter().zip(param_types.into_iter()) {

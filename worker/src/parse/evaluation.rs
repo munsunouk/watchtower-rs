@@ -41,10 +41,9 @@ use watch_tower_lib::utils::types::GeneralToken;
 
 use hex;
 
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
+use chrono::{Local, NaiveDateTime, TimeZone};
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// # Description
 /// This struct represents an evaluation rule.
@@ -658,7 +657,7 @@ pub fn parse_pair<'a>(
                 let mut url: Option<String> = None;
                 let mut url_token: Option<String> = None;
 
-                let mut api_body = if let Some(ParseResultType::JSON(api_body)) =
+                let api_body = if let Some(ParseResultType::JSON(api_body)) =
                     context.variables.get("api_body")
                 {
                     Some(api_body.clone())
@@ -830,14 +829,6 @@ pub fn parse_pair<'a>(
                             "Expected ArrayParam for method_params".to_string(),
                         ))
                     }
-                };
-
-                let available_contract = if let Some(ParseResultType::String(available_contract)) =
-                    context.variables.get("available_contract")
-                {
-                    Some(available_contract.clone())
-                } else {
-                    None
                 };
 
                 let available_contract = if let Some(ParseResultType::String(available_contract)) =
@@ -1054,7 +1045,6 @@ pub fn parse_pair<'a>(
                         let ContractConfig {
                             service: parsed_service,
                             blockchain,
-                            contract,
                             ..
                         } = contract_config;
 
@@ -1073,10 +1063,6 @@ pub fn parse_pair<'a>(
                                 "service".to_string(),
                                 ParseResultType::String(service.to_string()),
                             );
-
-                            context
-                                .variables
-                                .insert("contract".to_string(), ParseResultType::String(contract));
                         }
                     }
                 } else {
@@ -1144,6 +1130,10 @@ pub fn parse_pair<'a>(
                                 })?;
 
                             let abi = parse_abi_text(&abi_content)?;
+
+                            context
+                                .variables
+                                .insert("contract".to_string(), ParseResultType::String(contract));
 
                             context
                                 .variables
@@ -1465,6 +1455,7 @@ pub fn parse_abi_text(abi_text: &str) -> Result<Value, GeneralError> {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ParseResultType {
     String(String),
     _Number(U256),
@@ -1579,13 +1570,7 @@ fn check_recent_notification(rule_name: &str, channel: &str) -> bool {
 #[cfg(test)]
 mod tests {
 
-    use watch_tower_lib::config::{set_rule, set_test_config};
-
     use super::*;
-
-    fn setup() -> Configuration {
-        set_test_config("/Users/munseon-ug/rust/watchtower/worker/config.yaml")
-    }
 
     #[test]
     fn test_new_parse_rule() {

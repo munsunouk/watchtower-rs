@@ -1,13 +1,5 @@
-use chrono::Local;
-use std::{
-    fs::{create_dir_all, OpenOptions},
-    io::Write,
-    panic,
-    path::Path,
-};
-
 use sentry::ClientInitGuard;
-use tokio::time::{sleep, Duration};
+
 use watch_tower_lib::config::{set_config, set_rule, Configuration, Rule};
 
 use crate::{

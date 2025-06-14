@@ -1,25 +1,20 @@
 use ethers::{
-    abi::{Abi, Function, Param, ParamType, Token},
+    abi::{Abi, Token},
     prelude::*,
 };
 use serde_json::Value;
 
 use std::convert::TryFrom;
 
-use super::{parse_string_to_index, parse_string_to_target_index, TargetIndex};
-use crate::{
-    cli::eth::EthClient,
-    utils::{
-        constants::{
-            DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN,
-            DB_CHECK_BLOCK_INTERVAL_COLUMN, DB_ID_COLUMN, DB_METHOD_PARAMS_COLUMN, DB_NAME_COLUMN,
-            DB_TARGET_BLOCK_NUMBER_COLUMN, DB_VALUES_COLUMN, DEFAULT_INDEX,
-        },
-        error::{ClientError, GeneralError, IndexType},
-        parse_i32_to_usize, parse_i64_to_u64, parse_string_to_u64, parse_to_abi, parse_to_address,
-        parse_u256_to_u64,
-        types::{ChainID, RuleID},
+use super::{parse_string_to_target_index, TargetIndex};
+use crate::utils::{
+    constants::{
+        DB_ABI_COLUMN, DB_ADDRESS_COLUMN, DB_BLOCK_NUMBER_COLUMN, DB_CHAIN_ID_COLUMN, DB_ID_COLUMN,
+        DB_METHOD_PARAMS_COLUMN, DB_TARGET_BLOCK_NUMBER_COLUMN, DB_VALUES_COLUMN,
     },
+    error::GeneralError,
+    parse_i32_to_usize, parse_string_to_u64, parse_to_abi, parse_to_address, parse_u256_to_u64,
+    types::{ChainID, RuleID},
 };
 use sqlx::{postgres::PgRow, Row};
 
@@ -75,14 +70,6 @@ impl TryFrom<&PgRow> for ContractCallRule {
         let chain_id = parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)).map_err(|e| {
             GeneralError::InvalidTypeConvertError(format!("Failed to parse chain ID: {}", e))
         })? as ChainID;
-
-        let check_block_interval = parse_i32_to_usize(row.get(DB_CHECK_BLOCK_INTERVAL_COLUMN))
-            .map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!(
-                    "Failed to parse block interval: {}",
-                    e
-                ))
-            })?;
 
         let target_block_number = parse_string_to_u64(row.get(DB_TARGET_BLOCK_NUMBER_COLUMN))
             .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))?;

@@ -3,10 +3,8 @@ use crate::*;
 pub mod constants;
 pub mod error;
 pub mod log;
-pub mod msg;
 pub mod setting;
 
-use constants::CONFIG_PATH;
 use ethers::{
     abi::Token,
     providers::Http,
@@ -15,16 +13,9 @@ use ethers::{
 
 use std::sync::atomic::Ordering::SeqCst;
 use tokio::runtime::Runtime;
-use watch_tower_lib::{
-    cli::slack::SlackNotifier,
-    config::{set_config, set_rule},
-    utils::error::ClientError,
-};
+use watch_tower_lib::utils::error::ClientError;
 
-use crate::{
-    parse::parse_result,
-    rule::{ContractCall, ContractEvent},
-};
+use crate::rule::{ContractCall, ContractEvent};
 
 use constants::{ADD_MEMORY_VALUE_ORDER, DEFAULT_MEMORY_VALUE_ORDER};
 use error::WorkerError;

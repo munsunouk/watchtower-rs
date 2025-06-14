@@ -29,3 +29,6 @@ logs/
 # Param files that might contain secrets
 **/param.yaml
 **/param.*.yaml 
+
+# Run scripts
+run_workers.sh

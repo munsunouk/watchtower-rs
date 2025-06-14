@@ -8,3 +8,4 @@ script: |
   CompareBalance = 10000000000000000;
 
   CompareBalance > BalanceBTC;
+  when CompareBalance > BalanceBTC then Slack.Send(TEST, '*Node Liveness 알람* 🚀\n> Node : ' + node_name + '\n> 상태 :' + statue_name) else false;

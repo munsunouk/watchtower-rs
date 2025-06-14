@@ -6,29 +6,11 @@ pub mod contract_event;
 /// Module for RPC call rules and related functionality.
 pub mod rpc_call;
 
-use contract_call::ContractCallRule;
-use contract_event::ContractEventRule;
-use rpc_call::RpcCallRule;
-use serde_json::Value;
+use std::str::FromStr;
 
-use std::{str::FromStr, sync::Arc};
+use ethers::utils::hex;
 
-use ethers::{
-    abi::{Abi, Int, ParamType, Token, Uint},
-    prelude::*,
-    utils::hex,
-};
-
-use crate::{
-    cli::db::postgres::PostgresClient,
-    utils::{
-        constants::{DEFAULT_INDEX, FILTER_INDEX_SPLIT_CHAR},
-        convert_hex_param, convert_hex_token,
-        error::{GeneralError, IndexType},
-        types::GeneralToken,
-        DbRuleType,
-    },
-};
+use crate::utils::{constants::FILTER_INDEX_SPLIT_CHAR, error::GeneralError, types::GeneralToken};
 
 /// # Description
 /// This function parses a token to a string.

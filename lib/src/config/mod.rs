@@ -1,4 +1,4 @@
-use ethers::{abi::Token, types::U256, utils::hex};
+use ethers::utils::hex;
 use num_bigint::BigInt;
 use serde::Deserialize;
 use std::borrow::Cow;

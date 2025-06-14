@@ -5,8 +5,7 @@ pub mod types;
 use crate::{
     cli::db::postgres::PostgresClient,
     rule::{
-        contract_call::ContractCallRule, contract_event::ContractEventRule, parse_token_to_string,
-        rpc_call::RpcCallRule,
+        contract_call::ContractCallRule, contract_event::ContractEventRule, rpc_call::RpcCallRule,
     },
     utils::error::GeneralError,
 };

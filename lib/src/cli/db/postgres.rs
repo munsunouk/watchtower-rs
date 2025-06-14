@@ -2,11 +2,10 @@ use crate::utils::constants::{
     ADD_CONTRACT_CALL_RULE, ADD_CONTRACT_EVENT_RULE, ADD_EVALUATION_RULE, ADD_RPC_CALL_RULE,
     CONTRACT_CALL_BLOCK_LOG, CONTRACT_CALL_LOG, CONTRACT_CALL_RULE, CONTRACT_EVENT_BLOCK_LOG,
     CONTRACT_EVENT_LOG, CONTRACT_EVENT_RULE, DB_SCHEMA_EXISTS, DB_SCHEMA_LOAD, DB_SCHEMA_MAX_ID,
-    DB_SELECT_ID_BY_NAME, DB_TABLE_NAME, DELETE_BY_ID, DELETE_BY_RULE_ID,
-    DELETE_EVALUATION_RULE_NAME, EVALUATION_RULE, INSERT_ASSIGN_DATA,
-    INSERT_CONTRACT_CALL_BLOCK_LOG, INSERT_CONTRACT_CALL_LOG, INSERT_CONTRACT_EVENT_BLOCK_LOGS,
-    INSERT_CONTRACT_EVENT_LOG, INSERT_RPC_LOG, RPC_CALL_LOG, RPC_CALL_RULE, SCHEMA,
-    SELECT_ASSIGN_DATA, SELECT_BY_START_DATE, SELECT_EVALUATION_RULE_BY_NAME,
+    DB_TABLE_NAME, DELETE_BY_ID, DELETE_BY_RULE_ID, DELETE_EVALUATION_RULE_NAME, EVALUATION_RULE,
+    INSERT_ASSIGN_DATA, INSERT_CONTRACT_CALL_BLOCK_LOG, INSERT_CONTRACT_CALL_LOG,
+    INSERT_CONTRACT_EVENT_BLOCK_LOGS, INSERT_CONTRACT_EVENT_LOG, INSERT_RPC_LOG, RPC_CALL_LOG,
+    RPC_CALL_RULE, SCHEMA, SELECT_BY_START_DATE, SELECT_EVALUATION_RULE_BY_NAME,
     SELECT_JOIN_EVENT_RULE_CHAIN_ID, SELECT_LOG_BY_RULE_ID, SELECT_LOG_BY_RULE_ID_START_DATE,
     SELECT_RULE_BY_NAME, SELECT_TABLE_BY_EVALUATION_RULE_ID_WITH_LIMIT, SELECT_TABLE_BY_ID,
     SELECT_TABLE_BY_NAME, UPDATE_CONTRACT_CALL_RULE, UPDATE_CONTRACT_EVENT_RULE,
@@ -16,12 +15,7 @@ use crate::utils::error::DatabaseError;
 use crate::utils::DbRuleType;
 use ethers::abi::Token;
 use ethers::types::{H160, U256};
-use futures::executor::block_on;
-use sqlx::{
-    pool::Pool,
-    postgres::{PgListener, PgRow},
-    Executor, PgPool, Postgres, Row,
-};
+use sqlx::{pool::Pool, postgres::PgRow, Executor, PgPool, Postgres, Row};
 
 use crate::cli::db::data::{ContractCallRuleData, ContractEventRuleData, RpcCallRuleData};
 
@@ -31,11 +25,6 @@ use chrono::{DateTime, Utc};
 use std::future::Future;
 use std::str::FromStr;
 use tokio::time;
-
-// use postgres::types::Json;
-use postgres::{Client, NoTls};
-use serde_json::Value;
-// use postgres_types::Json;
 
 /// Parse JSONB value to [Option<Token>]
 ///
@@ -83,37 +72,6 @@ pub fn parse_jsonb_to_tokens(
 
     Ok(tokens)
 }
-
-pub fn select_assign_data_sync(name: &str) -> Result<U256, DatabaseError> {
-    // let mut client =
-    //     Client::connect("postgres://root:secret@localhost:5434/postgres", NoTls).unwrap();
-
-    // let row = client
-    //     .query_one("SELECT * FROM assign_data WHERE name = $1", &[&name])
-    //     .unwrap();
-
-    Ok(U256::from(23769979))
-}
-
-pub fn select_fetched_raw_data_with_filter(
-    rule_type: &str,
-    rule_id: i32,
-) -> Result<Token, DatabaseError> {
-    // let mut client =
-    //     Client::connect("postgres://root:secret@localhost:5434/postgres", NoTls).unwrap();
-
-    // let row = client
-    //     .query_one(
-    //         "SELECT * FROM fetched_raw_data WHERE rule_type = $2 AND rule_id = $3",
-    //         &[&rule_type, &rule_id],
-    //     )
-    //     .unwrap();
-
-    Ok(Token::Int(U256::from(9999998)))
-
-    // Ok(row)
-}
-
 /// Postgres's Pool type for the DatabasePool
 #[derive(Debug, Clone)]
 pub struct PostgresClient {
@@ -1185,154 +1143,6 @@ impl PostgresClient {
 
         Ok(())
     }
-
-    pub async fn get_fetched_raw_data_with_filter(
-        &self,
-        select_data: &str,
-        query: Query,
-    ) -> Result<Vec<SelectData>, DatabaseError> {
-        let mut sql = String::from("SELECT ");
-        let mut params: Vec<QueryParam> = Vec::new();
-
-        sql.push_str(select_data);
-        sql.push_str(" FROM fetched_raw_data WHERE 1=1");
-
-        if let Some(rule_type) = query.rule_type {
-            sql.push_str(" AND rule_type = $1");
-            params.push(QueryParam::String(rule_type.to_wrapped_str().unwrap()));
-        }
-
-        if let Some(rule_id) = query.rule_id {
-            sql.push_str(" AND rule_id = $2");
-            params.push(QueryParam::I32(rule_id));
-        }
-
-        // Handle block number filters
-        if let Some(start_block) = query.start_block_number {
-            sql.push_str(" AND block_number >= $3");
-            params.push(QueryParam::I32(start_block as i32));
-        } else {
-            // If start_block is None, get the latest block
-            sql.push_str(" AND block_number = (SELECT MAX(block_number) FROM fetched_raw_data)");
-        }
-
-        if let Some(end_block) = query.end_block_number {
-            sql.push_str(" AND block_number <= $4");
-            params.push(QueryParam::I32(end_block as i32));
-        } else {
-            // If start_block is None, get the latest block
-            sql.push_str(" AND block_number = (SELECT MAX(block_number) FROM fetched_raw_data)");
-        }
-
-        // Handle timestamp filters
-        if let Some(start_time) = query.start_timestamp {
-            sql.push_str(" AND timestamp >= $5");
-            params.push(QueryParam::DateTime(start_time));
-        } else {
-            // If start_timestamp is None, get the latest timestamp
-            sql.push_str(" AND timestamp = (SELECT MAX(timestamp) FROM fetched_raw_data)");
-        }
-
-        if let Some(end_time) = query.end_timestamp {
-            sql.push_str(" AND timestamp <= $6");
-            params.push(QueryParam::DateTime(end_time));
-        } else {
-            // If start_timestamp is None, get the latest timestamp
-            sql.push_str(" AND timestamp = (SELECT MAX(timestamp) FROM fetched_raw_data)");
-        }
-
-        let mut query_builder = sqlx::query(&sql);
-
-        for param in params {
-            match param {
-                QueryParam::I32(val) => query_builder = query_builder.bind(val),
-                QueryParam::String(val) => query_builder = query_builder.bind(val),
-                QueryParam::DateTime(val) => query_builder = query_builder.bind(val),
-            }
-        }
-
-        let rows = query_builder
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|err| DatabaseError::GenericSelectError(err.to_string()))?;
-
-        let mut results = Vec::new();
-        for row in rows {
-            match select_data {
-                "values" => {
-                    if let Ok(json_value) = row.try_get::<serde_json::Value, _>(0) {
-                        let tokens = parse_jsonb_to_tokens(json_value)?;
-                        results.push(SelectData::Values(tokens));
-                    }
-                }
-                "block_number" => {
-                    if let Ok(block_number) = row.try_get::<i32, _>(0) {
-                        results.push(SelectData::BlockNumber(block_number as usize));
-                    }
-                }
-                "timestamp" => {
-                    if let Ok(timestamp) = row.try_get::<DateTime<Utc>, _>(0) {
-                        results.push(SelectData::Timestamp(timestamp));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(results)
-    }
-}
-
-struct PgListenClient {
-    inner: PgListener,
-}
-
-impl PgListenClient {
-    pub async fn new(url: &str) -> Result<Self, DatabaseError> {
-        let inner = PgListener::connect(url)
-            .await
-            .map_err(|e| DatabaseError::GenericAquire(e.to_string()))?;
-        Ok(Self { inner })
-    }
-
-    pub async fn listen_for_rpc_updates(&mut self) -> Result<(), DatabaseError> {
-        self.inner
-            .listen("rpc_updates")
-            .await
-            .map_err(|e| DatabaseError::GenericAquire(e.to_string()))?;
-        Ok(())
-    }
-
-    pub async fn get_next_notification(&mut self) -> Result<String, DatabaseError> {
-        let notification = self
-            .inner
-            .recv()
-            .await
-            .map_err(|e| DatabaseError::GenericAquire(e.to_string()))?;
-        Ok(notification.payload().to_string())
-    }
-
-    // pub async fn listen_and_notify_slack(
-    //     &mut self,
-    //     slack_client: &crate::cli::slack::SlackClient,
-    // ) -> Result<(), DatabaseError> {
-    //     // Start listening for RPC updates
-    //     self.listen_for_rpc_updates().await?;
-
-    //     println!("Started listening for database events...");
-
-    //     // Continuously listen for notifications
-    //     while let Ok(notification) = self.get_next_notification().await {
-    //         let title = "Database Event Notification";
-    //         let message = format!("Received update: {}", notification);
-
-    //         if let Err(e) = slack_client.send_alert(title, &message).await {
-    //             eprintln!("Failed to send Slack notification: {}", e);
-    //         }
-    //     }
-
-    //     Ok(())
-    // }
 }
 
 #[cfg(test)]
@@ -1436,103 +1246,6 @@ mod tests {
         };
 
         client.add_rpc_call_rule(&rule_data).await?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_postgres_client_listen() -> Result<(), DatabaseError> {
-        let mut client = PgListenClient::new(&setup()).await?;
-
-        let result = client.inner.listen_all(["postgres"]).await.unwrap();
-
-        println!("Listening!: {:?}", result);
-
-        // let result = client.inner.recv().await.unwrap();
-        // println!("Listening!: {:?}", result);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_rpc_log_notification() -> Result<(), DatabaseError> {
-        let mut listener = PgListenClient::new(&setup()).await?;
-        let client = PostgresClient::new(&setup()).await?;
-
-        // Start listening for RPC updates
-        listener.listen_for_rpc_updates().await?;
-
-        // Update RPC log (this will trigger a notification)
-        client.update_rpc_call_log("test_value", 1, 1).await?;
-
-        // Receive the notification
-        let notification = listener.get_next_notification().await?;
-        println!("Notification: {:?}", notification);
-        assert!(notification.contains("rpc_call_log_update:1:1"));
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_postgres_client_select_table_by_evaluation_rule_id_with_limit(
-    ) -> Result<(), DatabaseError> {
-        let client = PostgresClient::new(&setup()).await?;
-
-        let result = client
-            .select_table_by_evaluation_rule_id_with_limit(DbRuleType::ContractCallLog, 1, 1)
-            .await?;
-
-        println!("{:?}", result);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_update_assign_data() -> Result<(), DatabaseError> {
-        INIT.call_once(|| {
-            tracing_subscriber::fmt::init();
-        });
-
-        // let client = PostgresClient::new(&setup()).await?;
-
-        // Test data
-        let name = "usdc";
-        // let value = 42;
-        // let rule_id = 1;
-        // let rule_type = DbRuleType::ContractCall;
-
-        // // Update assign data
-        // client
-        //     .update_assign_data(name, value, rule_id, rule_type)
-        //     .await?;
-
-        // let result = select_assign_data_sync(name)?;
-        // println!("result: {:?}", result);
-        // let value = result.get::<usize, i32>(4);
-        // println!("result: {:?}", value);
-
-        let rule_type = "contractcall";
-        let rule_id = 2;
-
-        let data = select_fetched_raw_data_with_filter(rule_type, rule_id as i32).unwrap();
-
-        // if let Ok(json_value) = data.get::<usize, serde_json::Value>(3) {
-        //     let tokens = parse_jsonb_to_tokens(json_value)?;
-        //     println!("tokens: {:?}", tokens);
-        // }
-        // let value = data.try_get::<serde_json::Value, _>(3)?;
-        // println!("value: {:?}", value);
-
-        // // Verify the data was inserted by selecting it
-        // let result = client.select_assign_data_sync(name)?;
-        // println!("result: {:?}", result);
-        // let selected_value: i32 = result.try_get("value")?;
-        // let selected_rule_id: i32 = result.try_get("rule_id")?;
-        // let selected_rule_type: String = result.try_get("rule_type")?;
-
-        // assert_eq!(selected_value, value);
-        // assert_eq!(selected_rule_id, rule_id);
-        // assert_eq!(selected_rule_type, rule_type.to_str());
 
         Ok(())
     }
@@ -1705,19 +1418,4 @@ pub enum QueryParam {
     I32(i32),
     String(String),
     DateTime(DateTime<Utc>),
-}
-
-#[derive(Debug)]
-pub struct Query {
-    pub value_id: Option<usize>,
-    pub start_block_number: Option<usize>,
-    pub end_block_number: Option<usize>,
-    pub start_timestamp: Option<DateTime<Utc>>,
-    pub end_timestamp: Option<DateTime<Utc>>,
-    pub rule_type: Option<DbRuleType>,
-    pub rule_id: Option<i32>,
-}
-
-fn jsonb_to_vec(value: &str) -> Result<Vec<Value>, serde_json::Error> {
-    serde_json::from_str::<Vec<Value>>(value)
 }
