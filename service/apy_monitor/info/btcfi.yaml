@@ -1,7 +1,0 @@
-name: BTCFI Boost Info
-time_interval: 300
-script: |
-  boost_apy = Boost.BoostApy(Boost);
-  boost_tvl = Boost.BoostTvl(Boost);
-
-  when boost_tvl > 0 then Slack.Send(TEST, '*BTCFi Boost 상품 정보* 🚀\n> APY: ' + boost_apy + '% 📈  \n> TVL: $' + boost_tvl + ' 💎') else false;

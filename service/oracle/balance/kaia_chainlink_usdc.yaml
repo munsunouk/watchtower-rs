@@ -7,4 +7,8 @@ script: |
 
   CompareBalance = 10000000000000000000;
 
-  CompareBalance > BalanceUSDC;
+  msg = '*Kaia Chainlink USDC Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceUSDC + '\n> 기준 잔액 : ' + CompareBalance;
+
+  if CompareBalance > BalanceUSDC (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

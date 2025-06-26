@@ -2,6 +2,7 @@ name: Oasys Round Sync Check
 time_interval: 600
 script: |
   active_status = 2;
+  notify_time_interval = 60 * 60 * 3;
 
   bifrostBN = Bifrost.LatestBlock();
   bifrost_round_status = Bifrost.CCCP.LatestRound.Status(bifrostBN);
@@ -10,4 +11,8 @@ script: |
   oasys_round_status = Oasys.CCCP.LatestRound.Status(oasysBN);
   sync_diff = when bifrost_round_status > oasys_round_status then bifrost_round_status - oasys_round_status else oasys_round_status - bifrost_round_status;
 
-  when sync_diff > active_status then Slack.Send(CCCP, '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> Oasys : ' + oasys_round_status) else false;
+  msg = '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> Oasys : ' + oasys_round_status;
+
+  if sync_diff > active_status (
+    Slack.Send(CCCP, notify_time_interval, msg)
+  );

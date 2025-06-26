@@ -9,4 +9,9 @@ script: |
   lastDecision = Bifrost.OracleManager.Info.LastTimestamp(bifrostBN, POL);
 
   secPastSinceLastDecision = currentTimestamp - lastDecision;
-  secPastSinceLastDecision < decisionInterval - 300;
+
+  msg = '*Bifrost OracleManager POL Insufficient 알람* 🚀\n> 마지막 업데이트 시간 : ' + lastDecision + '\n> 현재 시간 : ' + currentTimestamp + '\n> 결정 간격 : ' + decisionInterval;
+
+  if secPastSinceLastDecision < decisionInterval - 300 (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

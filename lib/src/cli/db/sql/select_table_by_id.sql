@@ -1,1 +1,0 @@
-SELECT * FROM %%TABLE_NAME%% WHERE id = $1

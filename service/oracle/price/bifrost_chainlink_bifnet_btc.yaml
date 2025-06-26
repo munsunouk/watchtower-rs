@@ -6,5 +6,10 @@ script: |
   bifrostChainlinkBTC = Bifrost.ChainlinkOracle.BTC.LatestPrice(bifrostBN);
   bifrostBifnetBTC = Bifrost.BifnetOracle.BTC.LatestPrice(bifrostBN);
 
-  diff = (bifrostChainlinkBTC * 100) / bifrostBifnetBTC;
-  diff < 105 && diff > 95;
+  diff = (bifrostChainlinkBTC - bifrostBifnetBTC) / bifrostChainlinkBTC * 100;
+
+  msg = '*Bifrost Chainlink-Bifnet BTC Price Check 알람* 🚀\n> 차이 : ' + diff;
+
+  if diff > 5 || diff < -5 (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

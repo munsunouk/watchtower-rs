@@ -43,9 +43,9 @@ impl<T: JsonRpcClient> EthClient<T> {
         self.metadata.id
     }
 
-    /// Returns `Arc<Provider>`.
-    pub fn get_providers(&self) -> Vec<Arc<Provider<T>>> {
-        self.providers.clone()
+    /// Returns `&[Arc<Provider>]`.
+    pub fn get_providers(&self) -> &[Arc<Provider<T>>] {
+        &self.providers
     }
 
     /// Make a JSON RPC request to the chain provider via the internal connection, and return the
@@ -113,17 +113,16 @@ impl<T: JsonRpcClient> EthClient<T> {
     /// until it last contract fails.
     pub async fn contracts_call(
         &self,
-        contracts: Vec<Contract<Provider<T>>>,
+        contracts: &[Contract<Provider<T>>],
         method: &str,
-        method_params: Token,
+        method_params: &Token,
         block_id: BlockId,
     ) -> Result<Token, ClientError> {
         let mut error_msg = String::default();
 
         for contract in contracts.iter() {
             let raw_call = contract
-                .method::<_, Token>(method, method_params.clone())
-                .map_err(|err| ClientError::InternalProviderError(err.to_string()))?
+                .method::<_, Token>(method, method_params.to_owned())?
                 .block(block_id);
 
             match raw_call.call().await {
@@ -217,40 +216,5 @@ impl<T: JsonRpcClient> EthClient<T> {
     /// Returns an object with data about the sync status or false.
     pub async fn is_syncing(&self) -> Result<SyncingStatus, ClientError> {
         self.rpc_call("eth_syncing", ()).await
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::sync::Arc;
-
-    use ethers::{
-        providers::{Http, Provider},
-        types::U256,
-    };
-
-    use crate::utils::types::ChainID;
-
-    use super::{EthClient, ProviderMetadata};
-
-    #[tokio::test]
-    async fn test() {
-        let client = EthClient::<Http>::new(
-            ProviderMetadata::new(
-                "<YOUR CHAIN NAME>".to_string(),
-                vec!["<YOUR RPC URL>".to_string()],
-                3068 as ChainID,
-            ),
-            vec![Arc::new(Provider::try_from("<YOUR RPC URL>").unwrap())],
-        );
-
-        let balance: U256 = client
-            .rpc_call(
-                "eth_getBalance",
-                ["0x1e1d0be9865afe4a13435bba659e539690841c32", "latest"],
-            )
-            .await
-            .unwrap();
-        println!("balance: {:?}", balance);
     }
 }

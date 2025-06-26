@@ -3,9 +3,14 @@ time_interval: 300
 script: |
 
   notify_rate = 10;
+  notify_time_interval = 60 * 60 * 3;
 
   btcfi_apy = BTCFI.Apy(BTCFI);
   bifi_apy = BIFI.DepositApy(BIFI);
   total_apy = btcfi_apy + bifi_apy;
 
-  when total_apy < notify_rate then Slack.Send(APY, '*btcUSD Pool APY 알람* 🚀\n> APY가 ' + notify_rate + '% 미만입니다.\n> 현재 APY: ' + total_apy + '%') else false;
+  msg = '*btcUSD Pool APY 알람* 🚀\n> APY가 ' + notify_rate + '% 미만입니다.\n> 현재 APY: ' + total_apy + '%';
+
+  if total_apy < notify_rate (
+    Slack.Send(APY, notify_time_interval, msg)
+  );

@@ -1,35 +1,26 @@
-use ethers::utils::hex;
+use ethers::{types::Address, utils::hex};
 use num_bigint::BigInt;
 use serde::Deserialize;
 use std::borrow::Cow;
 use validator::Validate;
 
-use crate::utils::{
-    error::GeneralError,
-    types::{ChainID, GeneralToken},
-};
+use watch_tower_lib::utils::types::{ChainID, GeneralToken};
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct ParamConfig {
     pub pool_config: Vec<PoolConfig>,
-    pub service_config: Vec<ServiceConfig>,
     pub oid_config: Vec<OidConfig>,
     pub balance_config: Vec<BalanceConfig>,
     pub url_config: Vec<UrlConfig>,
     pub channel_config: Vec<ChannelConfig>,
     pub validator_config: Vec<ValidatorConfig>,
+    pub feed_config: Vec<FeedConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct PoolConfig {
     pub name: String,
     pub address: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Validate)]
-pub struct ServiceConfig {
-    pub name: String,
-    pub target_index: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -65,6 +56,15 @@ pub struct ValidatorConfig {
     pub controller_address: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[allow(dead_code)]
+pub struct FeedConfig {
+    pub name: String,
+    pub path: String,
+    pub proxy_address: Address,
+    pub target_index: String,
+}
+
 /// # Description
 /// This struct represents the configuration for the application.
 /// # Arguments
@@ -74,10 +74,9 @@ pub struct ValidatorConfig {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct Configuration {
+    pub path: Option<String>,
     #[validate]
     pub notification_config: Vec<NotificationConfig>,
-    #[validate]
-    pub rpc_config: Vec<RPCConfig>,
     #[validate]
     pub evm_providers: Vec<EVMProvider>,
     #[validate]
@@ -98,28 +97,16 @@ pub struct Configuration {
     pub notification_call_target: Vec<NotificationCallTargetValue>,
 }
 
-#[derive(Debug, Clone, Deserialize, Validate)]
-pub struct Rule {
-    pub name: String,
-    pub time_interval: u64,
-    pub script: String,
-    pub when: Option<String>,
+impl Configuration {
+    pub fn set_path(&mut self, path: &str) {
+        self.path = Some(path.to_string());
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct NotificationConfig {
     pub service: String,
     pub key: String,
-}
-
-/// # Description
-/// This struct represents the configuration for a URL.
-/// # Arguments
-/// * `name` - The name of the URL.
-/// * `url` - The URL.
-#[derive(Debug, Clone, Deserialize, Validate)]
-pub struct RPCConfig {
-    pub service: String,
 }
 
 /// This struct represents the configuration for an EVM provider.
@@ -230,9 +217,9 @@ pub enum ParamValue {
 impl std::fmt::Display for ParamValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParamValue::String(s) => write!(f, "{}", s),
-            ParamValue::Number(n) => write!(f, "{}", n),
-            ParamValue::Boolean(b) => write!(f, "{}", b),
+            ParamValue::String(s) => write!(f, "{s}"),
+            ParamValue::Number(n) => write!(f, "{n}"),
+            ParamValue::Boolean(b) => write!(f, "{b}"),
             ParamValue::Array(arr) => write!(
                 f,
                 "[{}]",
@@ -250,11 +237,11 @@ impl std::fmt::Display for ParamValue {
                     .collect::<Vec<_>>()
                     .join(",")
             ),
-            ParamValue::Address(addr) => write!(f, "{}", addr),
-            ParamValue::Bytes(bytes) => write!(f, "{}", bytes),
-            ParamValue::FixedBytes(bytes) => write!(f, "{}", bytes),
-            ParamValue::Uint(uint) => write!(f, "{}", uint),
-            ParamValue::Int(int) => write!(f, "{}", int),
+            ParamValue::Address(addr) => write!(f, "{addr}"),
+            ParamValue::Bytes(bytes) => write!(f, "{bytes}"),
+            ParamValue::FixedBytes(bytes) => write!(f, "{bytes}"),
+            ParamValue::Uint(uint) => write!(f, "{uint}"),
+            ParamValue::Int(int) => write!(f, "{int}"),
         }
     }
 }
@@ -340,9 +327,7 @@ where
                             _ => None,
                         })
                         .collect();
-                    Some(GeneralToken::Array(
-                        tokens.into_iter().filter_map(|t| t).collect(),
-                    ))
+                    Some(GeneralToken::Array(tokens.into_iter().flatten().collect()))
                 }
                 ParamValue::Tuple(tuple) => {
                     let tokens: Vec<Option<GeneralToken>> = tuple
@@ -366,9 +351,7 @@ where
                             _ => None,
                         })
                         .collect();
-                    Some(GeneralToken::Tuple(
-                        tokens.into_iter().filter_map(|t| t).collect(),
-                    ))
+                    Some(GeneralToken::Tuple(tokens.into_iter().flatten().collect()))
                 }
             }
         })
@@ -395,15 +378,6 @@ pub struct RPCTargetValue {
 }
 
 /// # Description
-/// This struct represents the configuration for Metadata.
-/// # Arguments
-/// * `address` - The address of the Metadata.
-#[derive(Default, Debug, Clone, Deserialize, Validate)]
-pub struct Metadata {
-    pub address: String,
-}
-
-/// # Description
 /// This struct represents the configuration for BlockchainTargetValue.
 /// # Arguments
 /// * `name` - The name of the BlockchainTargetValue.
@@ -412,82 +386,6 @@ pub struct Metadata {
 #[derive(Default, Debug, Clone, Deserialize, Validate)]
 pub struct BlockchainTargetValue {
     pub name: String,
-    pub params: Vec<String>,
-    // pub metadata: Option<Metadata>,
+
     pub param_nessesary: Vec<String>,
-}
-
-/// # Description
-/// This function sets the configuration.
-/// # Arguments
-///
-/// * `spec` - The path to the configuration file.
-///
-/// # Returns
-///
-/// A `Result` containing the `Configuration` instance.
-pub fn set_config(spec: &str) -> Configuration {
-    // Get the project root directory (where Cargo.toml is located)
-    let project_root = std::env::current_dir().unwrap();
-
-    // Resolve the config path relative to the project root
-    let config_path = project_root.join(spec);
-
-    let user_config_file = std::fs::File::open(config_path).unwrap_or_else(|_| {
-        panic!(
-            "{}, {}",
-            GeneralError::InvalidConfigFilePath.to_string(),
-            spec
-        )
-    });
-
-    let user_config: Configuration = serde_yaml::from_reader(user_config_file).unwrap();
-    user_config
-}
-
-pub fn set_rule(spec: &str) -> Rule {
-    let user_config_file = std::fs::File::open(spec).unwrap_or_else(|_| {
-        panic!(
-            "{}, {}",
-            GeneralError::InvalidConfigFilePath.to_string(),
-            spec
-        )
-    });
-    let user_config: Rule = serde_yaml::from_reader(user_config_file).unwrap();
-    user_config
-}
-
-pub fn set_test_config(spec: &str) -> Configuration {
-    println!("spec");
-
-    let user_config_file = std::fs::File::open(spec).unwrap_or_else(|_| {
-        panic!(
-            "{}, {}",
-            GeneralError::InvalidConfigFilePath.to_string(),
-            spec
-        )
-    });
-    // let user_config: Configuration = serde_yaml::from_reader(user_config_file)
-    //     .unwrap_or_else(|_| panic!("{}", GeneralError::InvalidConfigFileStructure.to_string()));
-
-    let user_config: Configuration = serde_yaml::from_reader(user_config_file).unwrap();
-    user_config
-}
-
-pub fn set_param_config(spec: &str) -> ParamConfig {
-    // Get the project root directory (where Cargo.toml is located)
-    let project_root = std::env::current_dir().unwrap();
-
-    // Resolve the param config path relative to the project root
-    let param_config_path = project_root.join(spec);
-
-    let user_config_file = std::fs::File::open(param_config_path).unwrap_or_else(|_| {
-        panic!(
-            "{}, {}",
-            GeneralError::InvalidConfigFilePath.to_string(),
-            spec
-        )
-    });
-    let user_config: ParamConfig = serde_yaml::from_reader(user_config_file).unwrap();
-    user_config
 }

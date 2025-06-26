@@ -6,5 +6,10 @@ script: |
   bifrostChainlinkPOL = Bifrost.ChainlinkOracle.POL.LatestPrice(bifrostBN);
   bifrostBifnetPOL = Bifrost.BifnetOracle.POL.LatestPrice(bifrostBN);
 
-  diff = (bifrostChainlinkPOL * 100) / bifrostBifnetPOL;
-  diff < 105 && diff > 95;
+  diff = (bifrostChainlinkPOL - bifrostBifnetPOL) / bifrostChainlinkPOL * 100;
+
+  msg = '*Bifrost Chainlink-Bifnet POL Price Check 알람* 🚀\n> 차이 : ' + diff;
+
+  if diff > 5 || diff < -5 (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

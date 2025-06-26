@@ -1,1 +1,0 @@
-DELETE FROM %%TABLE_NAME%% WHERE rule_id = $1

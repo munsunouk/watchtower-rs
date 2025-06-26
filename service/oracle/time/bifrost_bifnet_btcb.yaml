@@ -7,4 +7,9 @@ script: |
   bifrostBifnetBTCB = Bifrost.BifnetOracle.BTCB.LatestTimestamp(bifrostBN);
 
   diff = currentTimestamp - bifrostBifnetBTCB;
-  diff > (3600 * 72);
+
+  msg = '*Bifrost Bifnet BTCB Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 비프넷 시간 : ' + bifrostBifnetBTCB;
+
+  if diff > (3600 * 72) (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

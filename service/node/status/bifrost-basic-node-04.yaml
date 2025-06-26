@@ -1,10 +1,23 @@
 name: Bifrost Basic Node 04 Node Status Check
 time_interval: 600
 script: |
-  active_status = 1;
+  notify_time_interval = 60 * 60 * 3;
   node_name = 'bifrost-basic-node-04';
 
   bifrostBN = Bifrost.LatestBlock();
   node_status = Bifrost.Validator.Candidate.Status(bifrostBN, node_name);
-  statue_name = when node_status == 2 then 'kicked out' else 'idle';
-  when node_status != active_status then Slack.Send(CCCP, '*Node Liveness 알람* 🚀\n> Node : ' + node_name + '\n> 상태 :' + statue_name) else false;
+  status_name = if node_status == 1 (
+    'active';
+  ) else if node_status == 2 (
+    'kicked out';
+  ) else if node_status == 0 (
+    'idle';
+  ) else (
+    'leaving';
+  );
+
+  msg = '*Node Liveness 알람* 🚀\n> Node : ' + node_name + '\n> 상태 :' + status_name;
+
+  if node_status != 1 (
+    Slack.Send(CCCP, notify_time_interval, msg)
+  );

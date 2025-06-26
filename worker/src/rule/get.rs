@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use ethers::{
-    abi::{decode, Token},
+    abi::{decode, ParamType, Token},
     providers::Http,
     types::{BlockId, BlockNumber, H256, U256},
 };
@@ -9,28 +9,45 @@ use serde_json::Value;
 use tokio_stream::StreamExt;
 use watch_tower_lib::{
     cli::{eth::EthClient, rpc::RpcClient},
-    config::{Configuration, EVMProvider},
     rule::{
         contract_call::ContractCallRule, contract_event::ContractEventRule, rpc_call::RpcCallRule,
     },
     utils::{
         parse_i32_to_usize, parse_string_to_address, parse_u256_to_u64,
         types::{ChainID, GeneralToken},
-        DbRuleType, RpcCallType,
+        DbTable, RpcCallType,
     },
 };
 
+use std::slice::from_ref;
+
 use crate::{
-    rule::decodes_token,
+    option_or_err,
+    rule::{
+        convert_target_index_to_indices, convert_value_to_param_type, convert_value_to_token,
+        decodes_token,
+    },
     utils::{
+        config::{Configuration, EVMProvider},
         error::WorkerError,
         get_block_token, get_event_logs,
+        log::TraceLog,
         setting::{
             build_contract_call, build_contract_event, build_eth_clients, build_rpc_call,
             build_rpc_client,
         },
     },
 };
+
+pub struct RpcCallParams {
+    pub url: String,
+    pub url_token: Option<String>,
+    pub call_type: String,
+    pub method_type: String,
+    pub api_body: Option<Value>,
+    pub api_query: Option<Value>,
+    pub target_index: String,
+}
 
 // Define parameter types
 pub struct ContractParams {
@@ -40,16 +57,6 @@ pub struct ContractParams {
     pub params: Vec<Option<GeneralToken>>,
     pub target_index: String,
     pub target_block_number: U256,
-}
-
-pub struct RpcParams {
-    pub url: String,
-    pub url_token: Option<String>,
-    pub call_type: String,
-    pub method_type: String,
-    pub api_body: Option<Value>,
-    pub api_query: Option<Value>,
-    pub target_index: String,
 }
 
 pub struct ContractEventParams {
@@ -63,7 +70,7 @@ pub struct ContractEventParams {
 
 pub enum GetRequest {
     Contract(ContractParams),
-    Rpc(RpcParams),
+    Rpc(RpcCallParams),
     ContractEvent(ContractEventParams),
 }
 
@@ -102,15 +109,7 @@ impl
             String,
         ),
     ) -> Self {
-        GetRequest::Rpc(RpcParams {
-            url: tuple.0,
-            url_token: tuple.1,
-            call_type: tuple.2,
-            method_type: tuple.3,
-            api_body: tuple.4,
-            api_query: tuple.5,
-            target_index: tuple.6,
-        })
+        GetRequest::Rpc(RpcCallParams::from(tuple))
     }
 }
 
@@ -133,8 +132,8 @@ pub struct GetContext {
 }
 
 impl GetContext {
-    pub fn new(evm_providers: Vec<EVMProvider>) -> Result<Self, WorkerError> {
-        let eth_clients = build_eth_clients(&evm_providers);
+    pub fn new(evm_providers: &[EVMProvider]) -> Result<Self, WorkerError> {
+        let eth_clients = build_eth_clients(evm_providers);
         let rpc_client = build_rpc_client()?;
 
         Ok(Self {
@@ -143,147 +142,139 @@ impl GetContext {
         })
     }
 
-    pub async fn raw_get<P: Into<GetRequest>>(&self, params: P) -> GeneralToken {
+    pub async fn raw_get<P: Into<GetRequest>>(
+        &self,
+        params: P,
+    ) -> Result<GeneralToken, WorkerError> {
         match params.into() {
-            GetRequest::Contract(params) => self
-                .get_contract_call(
+            GetRequest::Contract(params) => {
+                self.get_contract_call(
                     params.chain_id,
-                    params.address,
+                    &params.address,
                     params.abi,
                     params.params,
                     params.target_index,
-                    params.target_block_number,
+                    &params.target_block_number,
                 )
                 .await
-                .unwrap(),
-            GetRequest::Rpc(params) => self
-                .get_rpc_call(
-                    params.url,
-                    params.url_token,
-                    params.call_type,
-                    params.method_type,
-                    params.api_body,
-                    params.api_query,
-                    params.target_index,
-                )
-                .await
-                .unwrap(),
-            GetRequest::ContractEvent(params) => self
-                .get_contract_event(
+            }
+            GetRequest::Rpc(params) => self.get_rpc_call(params).await,
+            GetRequest::ContractEvent(params) => {
+                self.get_contract_event(
                     params.chain_id,
-                    params.address,
+                    &params.address,
                     params.abi,
                     params.event_index,
                     params.target_index,
-                    params.target_block_number,
+                    &params.target_block_number,
                 )
                 .await
-                .unwrap(),
+            }
         }
     }
 
-    pub async fn get_rpc_call(
-        &self,
-        url: String,
-        url_token: Option<String>,
-        call_type: String,
-        method_type: String,
-        api_body: Option<Value>,
-        api_query: Option<Value>,
-        target_index: String,
-    ) -> Result<GeneralToken, WorkerError> {
+    pub async fn get_rpc_call(&self, params: RpcCallParams) -> Result<GeneralToken, WorkerError> {
         let rule = RpcCallRule::new(
-            url,
-            url_token,
-            call_type,
-            method_type,
-            api_body,
-            api_query,
-            target_index,
-        )
-        .map_err(|_err| WorkerError::InvalidMessage)?;
+            params.url,
+            params.url_token,
+            params.call_type,
+            params.method_type,
+            params.api_body,
+            params.api_query,
+            params.target_index,
+        )?;
 
-        let rpc_call = build_rpc_call(self.rpc_client.clone(), rule.clone());
+        let rpc_call = build_rpc_call(&self.rpc_client, &rule);
 
-        let (raw_token, param_type) = if rpc_call.rule.call_type == RpcCallType::Body {
+        let (status, body) = if rpc_call.rule.call_type == RpcCallType::Body {
             rpc_call.fetch_api_call_with_body().await?
         } else {
             rpc_call.fetch_api_call_with_query().await?
         };
 
-        let token = decodes_token(&raw_token, &param_type, &rule.target_index)
-            .unwrap()
-            .into();
+        let status_token = Token::Uint(U256::from(status.as_u64()));
+        let body_token = convert_value_to_token(&body)?;
+        let body_param_type = convert_value_to_param_type(&body)?;
 
-        Ok(token)
+        let mut param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
+        let mut tokens = Token::Tuple(vec![status_token, body_token]);
+        let mut key_store = Vec::new();
+
+        let (mut indices, mut foreach_positions) =
+            convert_target_index_to_indices(&rule.target_index, Some(&body), Some(&mut key_store))?;
+
+        let token = decodes_token(
+            &mut tokens,
+            &mut param_type,
+            &mut indices,
+            &mut foreach_positions,
+        )?;
+
+        let result: GeneralToken = token.try_into()?;
+        TraceLog::TokenOutput(result.clone()).debug();
+        Ok(result)
     }
 
     pub async fn get_contract_call(
         &self,
         chain_id: i32,
-        address: String,
+        address: &str,
         abi: Value,
         params: Vec<Option<GeneralToken>>,
         target_index: String,
-        target_block_number: U256,
+        target_block_number: &U256,
     ) -> Result<GeneralToken, WorkerError> {
-        let params = params
+        let params: Result<Vec<_>, _> = params
             .into_iter()
-            .map(|p| p.map(|t| t.to_eth_token().unwrap()))
-            .collect::<Vec<_>>();
+            .map(|p| p.map(|t| t.to_eth_token()).transpose())
+            .collect();
+        let params = params?;
 
         let rule = ContractCallRule::new(
             chain_id,
             address,
             abi,
-            params.clone(),
+            &params,
             target_index,
             target_block_number,
-        )
-        .unwrap();
+        )?;
 
-        let target_block_number = rule.target_block_number.clone();
-        let contract_call = build_contract_call(
-            self.eth_clients.get(&rule.chain_id).unwrap().clone(),
-            rule.clone(),
-        );
+        let contract_call =
+            build_contract_call(option_or_err!(self.eth_clients.get(&rule.chain_id)), &rule);
 
-        let output_param_type = match contract_call.get_output_param_type() {
+        let mut output_param_type = match contract_call.get_output_param_type() {
             Ok(param_type) => param_type,
             Err(e) => {
-                WorkerError::InvalidParamType(DbRuleType::ContractCall, e.to_string()).log();
+                WorkerError::InvalidParamType(DbTable::Rule, e.to_string()).log();
                 return Err(e);
             }
         };
 
-        let raw_token = get_block_token(&contract_call, target_block_number)
-            .await
-            .unwrap();
+        let mut raw_token = get_block_token(&contract_call, &rule.target_block_number).await?;
+
+        let (mut indices, mut foreach_positions) =
+            convert_target_index_to_indices(&rule.target_index, None, None)?;
 
         let token = decodes_token(
-            &raw_token,
-            &output_param_type,
-            &contract_call.rule.target_index,
-        )
-        .unwrap()
-        .into();
+            &mut raw_token,
+            &mut output_param_type,
+            &mut indices,
+            &mut foreach_positions,
+        )?;
 
-        println!(
-            "block_number: {:?}, token: {:?}",
-            target_block_number, token
-        );
-
-        Ok(token)
+        let result: GeneralToken = token.try_into()?;
+        TraceLog::TokenOutput(result.clone()).debug();
+        Ok(result)
     }
 
     pub async fn get_contract_event(
         &self,
         chain_id: i32,
-        address: String,
+        address: &str,
         abi: Value,
         event_index: i32,
         target_index: String,
-        target_block_number: U256,
+        target_block_number: &U256,
     ) -> Result<GeneralToken, WorkerError> {
         let rule = ContractEventRule::new(
             chain_id,
@@ -292,31 +283,31 @@ impl GetContext {
             event_index,
             target_index,
             target_block_number,
-        )
-        .map_err(|_| WorkerError::InvalidMessage)?;
+        )?;
 
-        let contract_event = build_contract_event(
-            self.eth_clients.get(&rule.chain_id).unwrap().clone(),
-            rule.clone(),
-        );
+        let contract_event =
+            build_contract_event(option_or_err!(self.eth_clients.get(&rule.chain_id)), &rule);
 
         let input_param_type = match contract_event.get_raw_input_param_type() {
             Ok(param_type) => param_type,
             Err(e) => {
-                WorkerError::InvalidParamType(DbRuleType::ContractEvent, e.to_string()).log();
+                WorkerError::InvalidParamType(DbTable::Rule, e.to_string()).log();
                 return Err(WorkerError::InvalidMessage);
             }
         };
 
-        let parsing_input_param_type = match contract_event.get_input_param_type() {
+        let mut parsing_input_param_type = match contract_event.get_input_param_type() {
             Ok(param_type) => param_type,
             Err(e) => {
-                WorkerError::InvalidParamType(DbRuleType::ContractEvent, e.to_string()).log();
+                WorkerError::InvalidParamType(DbTable::Rule, e.to_string()).log();
                 return Err(WorkerError::InvalidMessage);
             }
         };
 
         let logs = get_event_logs(&contract_event, rule.target_block_number).await?;
+
+        let (mut indices, mut foreach_positions) =
+            convert_target_index_to_indices(&rule.target_index, None, None)?;
 
         let mut stream = tokio_stream::iter(logs);
 
@@ -333,7 +324,7 @@ impl GetContext {
                         continue;
                     }
 
-                    let raw_token = match decode(&[input_param_type.clone()], &log.data) {
+                    let mut raw_token = match decode(from_ref(&input_param_type), &log.data) {
                         Ok(tokens) => Token::Tuple(tokens),
                         Err(_e) => {
                             WorkerError::InvalidMessage.log();
@@ -342,14 +333,13 @@ impl GetContext {
                     };
 
                     let decoded_token = decodes_token(
-                        &raw_token,
-                        &parsing_input_param_type,
-                        &contract_event.rule.target_index,
-                    )
-                    .map_err(|_err| WorkerError::InvalidMessage)?;
+                        &mut raw_token,
+                        &mut parsing_input_param_type,
+                        &mut indices,
+                        &mut foreach_positions,
+                    )?;
 
                     vec_token.push(decoded_token);
-                    // token = decoded_token;
                 }
                 Err(_e) => {
                     WorkerError::InvalidMessage.log();
@@ -358,25 +348,23 @@ impl GetContext {
             }
         }
 
-        println!(
-            "block_number: {:?}, token: {:?}",
-            target_block_number, vec_token
-        );
-
-        Ok(Token::Array(vec_token).into())
+        let result: GeneralToken = Token::Array(vec_token).try_into()?;
+        TraceLog::TokenOutput(result.clone()).debug();
+        Ok(result)
     }
 
     pub async fn get_latest_block_number(
         &self,
         chain_id: i32,
     ) -> Result<GeneralToken, WorkerError> {
-        let chain_id =
-            parse_i32_to_usize(chain_id).map_err(|_e| WorkerError::InvalidMessage)? as ChainID;
+        let chain_id = parse_i32_to_usize(chain_id)? as ChainID;
 
-        let client = self.eth_clients.get(&chain_id).unwrap();
-        let block_number = client.get_latest_block_number().await.unwrap();
+        let client = option_or_err!(self.eth_clients.get(&chain_id));
+        let block_number = client.get_latest_block_number().await?;
 
-        Ok(Token::Uint(U256::from(block_number.as_u64())).into())
+        let result: GeneralToken = Token::Uint(U256::from(block_number.as_u64())).try_into()?;
+        TraceLog::TokenOutput(result.clone()).debug();
+        Ok(result)
     }
 
     pub async fn get_latest_block(
@@ -384,16 +372,24 @@ impl GetContext {
         chain_id: i32,
         target: String,
     ) -> Result<GeneralToken, WorkerError> {
-        let chain_id =
-            parse_i32_to_usize(chain_id).map_err(|_e| WorkerError::InvalidMessage)? as ChainID;
+        let chain_id = parse_i32_to_usize(chain_id)? as ChainID;
 
-        let client = self.eth_clients.get(&chain_id).unwrap();
-        let block = client.get_latest_block().await.unwrap();
+        let client = option_or_err!(self.eth_clients.get(&chain_id));
+        let block = client.get_latest_block().await?;
 
         match target.as_str() {
-            "timestamp" => Ok(Token::Uint(U256::from(block.timestamp)).into()),
-            "number" => Ok(Token::Uint(U256::from(block.number.unwrap().as_u64())).into()),
-            "hash" => Ok(Token::String(block.hash.unwrap().to_string()).into()),
+            "timestamp" => {
+                let result: GeneralToken = Token::Uint(block.timestamp).try_into()?;
+                TraceLog::TokenOutput(result.clone()).debug();
+                Ok(result)
+            }
+            "number" => {
+                let result: GeneralToken =
+                    Token::Uint(U256::from(option_or_err!(block.number).as_u64())).try_into()?;
+                TraceLog::TokenOutput(result.clone()).debug();
+                Ok(result)
+            }
+            "hash" => Ok(Token::String(option_or_err!(block.hash).to_string()).try_into()?),
             _ => Err(WorkerError::InvalidMessage),
         }
     }
@@ -401,63 +397,121 @@ impl GetContext {
     pub async fn get_eth_balance(
         &self,
         chain_id: i32,
-        address: String,
-        block_number: U256,
-    ) -> Result<Token, WorkerError> {
-        let chain_id =
-            parse_i32_to_usize(chain_id).map_err(|_e| WorkerError::InvalidMessage)? as ChainID;
+        address: &str,
+        block_number: &U256,
+    ) -> Result<GeneralToken, WorkerError> {
+        let chain_id = parse_i32_to_usize(chain_id)? as ChainID;
 
         let block_number = BlockId::Number(BlockNumber::Number(parse_u256_to_u64(block_number)));
 
-        let address = parse_string_to_address(address).map_err(|_e| WorkerError::InvalidMessage)?;
+        let address = parse_string_to_address(address)?;
 
-        let client = self.eth_clients.get(&chain_id).unwrap();
-        let balance = client
-            .get_balance(address, block_number)
-            .await
-            .map_err(|_err| WorkerError::InvalidMessage)?;
+        let client = option_or_err!(self.eth_clients.get(&chain_id));
+        let balance = client.get_balance(address, block_number).await?;
 
-        Ok(Token::Uint(balance))
+        let result: GeneralToken = Token::Uint(balance).try_into()?;
+        TraceLog::TokenOutput(result.clone()).debug();
+        Ok(result)
     }
 }
 
-pub async fn get<P>(config: &Configuration, params: P) -> GeneralToken
+pub async fn get<P>(config: &Configuration, params: P) -> Result<GeneralToken, WorkerError>
 where
     P: Into<GetRequest>,
 {
-    let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
+    let get_context = GetContext::new(&config.evm_providers)?;
     get_context.raw_get(params).await
 }
 
-pub async fn get_latest_block_number(config: &Configuration, chain_id: i32) -> GeneralToken {
-    let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
+pub async fn get_latest_block_number(
+    config: &Configuration,
+    chain_id: i32,
+) -> Result<GeneralToken, WorkerError> {
+    let get_context = GetContext::new(&config.evm_providers)?;
 
-    get_context.get_latest_block_number(chain_id).await.unwrap()
+    get_context.get_latest_block_number(chain_id).await
 }
 
 pub async fn get_latest_block(
     config: &Configuration,
     chain_id: i32,
     target: String,
-) -> GeneralToken {
-    let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
-    get_context
-        .get_latest_block(chain_id, target)
-        .await
-        .unwrap()
-        .into()
+) -> Result<GeneralToken, WorkerError> {
+    let get_context = GetContext::new(&config.evm_providers)?;
+    get_context.get_latest_block(chain_id, target).await
 }
 
 pub async fn get_eth_balance(
     config: &Configuration,
     chain_id: i32,
-    address: String,
-    block_number: U256,
-) -> GeneralToken {
-    let get_context = GetContext::new(config.evm_providers.clone()).unwrap();
+    address: &str,
+    block_number: &U256,
+) -> Result<GeneralToken, WorkerError> {
+    let get_context = GetContext::new(&config.evm_providers)?;
     get_context
         .get_eth_balance(chain_id, address, block_number)
         .await
-        .unwrap()
-        .into()
+}
+
+impl
+    From<(
+        String,
+        Option<String>,
+        String,
+        String,
+        Option<Value>,
+        Option<Value>,
+        String,
+    )> for RpcCallParams
+{
+    fn from(
+        tuple: (
+            String,
+            Option<String>,
+            String,
+            String,
+            Option<Value>,
+            Option<Value>,
+            String,
+        ),
+    ) -> Self {
+        let (url, url_token, call_type, method_type, api_body, api_query, target_index) = tuple;
+        Self {
+            url,
+            url_token,
+            call_type,
+            method_type,
+            api_body,
+            api_query,
+            target_index,
+        }
+    }
+}
+
+impl From<(i32, String, Value, Vec<Option<GeneralToken>>, String, U256)> for ContractParams {
+    fn from(tuple: (i32, String, Value, Vec<Option<GeneralToken>>, String, U256)) -> Self {
+        let (chain_id, address, abi, params, target_index, target_block_number) = tuple;
+        Self {
+            chain_id,
+            address,
+            abi,
+            params,
+            target_index,
+            target_block_number,
+        }
+    }
+}
+
+impl From<(i32, String, Value, i32, String, U256)> for ContractEventParams {
+    fn from(tuple: (i32, String, Value, i32, String, U256)) -> Self {
+        let (chain_id, address, abi, event_index, target_index, target_block_number) = tuple;
+        Self {
+            chain_id,
+            address,
+            abi,
+            event_index,
+            target_index,
+            target_block_number,
+        }
+    }
 }

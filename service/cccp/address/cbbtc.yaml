@@ -1,0 +1,14 @@
+name: Chainlink Oracle cbBTC Address Check
+time_interval: 600
+script: |
+  symbol = 'cbBTC';
+  notify_address = '0x2665701293fcbeb223d11a08d826563edcce423a';
+  notify_time_interval = 60 * 60 * 3;
+
+  current_address = ChainlinkOracle.Address(Chainlink, symbol);
+
+  msg = '*Chainlink Oracle USDC Address 알람* 🚀\n <!here>\n> 기존 address : ' + notify_address + '\n> 변경된 address : ' + current_address;
+
+  if current_address != notify_address (
+      Slack.Send(Monitor, notify_time_interval, msg);
+  );

@@ -4,6 +4,8 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
+use crate::option_or_err;
+use crate::rule::parse_int_to_uint;
 use crate::utils::error::GeneralError;
 
 /// The type of EVM chain ID's.
@@ -12,6 +14,7 @@ pub type RuleID = usize;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GeneralToken {
+    None,
     Address(Address),
     FixedBytes(FixedBytes),
     Bytes(Bytes),
@@ -26,68 +29,79 @@ pub enum GeneralToken {
 }
 
 impl GeneralToken {
-    pub fn from_eth_token(token: EthToken) -> Self {
+    pub fn from_eth_token(token: EthToken) -> Result<Self, GeneralError> {
         match token {
-            EthToken::Address(addr) => GeneralToken::Address(addr),
-            EthToken::FixedBytes(bytes) => GeneralToken::FixedBytes(bytes),
-            EthToken::Bytes(bytes) => GeneralToken::Bytes(bytes),
-            EthToken::Int(i) => {
-                GeneralToken::Int(BigInt::parse_bytes(i.to_string().as_bytes(), 10).unwrap())
+            EthToken::Address(addr) => Ok(GeneralToken::Address(addr)),
+            EthToken::FixedBytes(bytes) => Ok(GeneralToken::FixedBytes(bytes)),
+            EthToken::Bytes(bytes) => Ok(GeneralToken::Bytes(bytes)),
+            EthToken::Int(i) => Ok(GeneralToken::Int(option_or_err!(BigInt::parse_bytes(
+                i.to_string().as_bytes(),
+                10,
+            )))),
+            EthToken::Uint(u) => Ok(GeneralToken::Uint(u)),
+            EthToken::Bool(b) => Ok(GeneralToken::Bool(b)),
+            EthToken::String(s) => Ok(GeneralToken::String(s)),
+            EthToken::FixedArray(tokens) => {
+                let general_tokens: Result<Vec<GeneralToken>, GeneralError> = tokens
+                    .into_iter()
+                    .map(GeneralToken::from_eth_token)
+                    .collect();
+                Ok(GeneralToken::FixedArray(general_tokens?))
             }
-            EthToken::Uint(u) => GeneralToken::Uint(u),
-            EthToken::Bool(b) => GeneralToken::Bool(b),
-            EthToken::String(s) => GeneralToken::String(s),
-            EthToken::FixedArray(tokens) => GeneralToken::FixedArray(
-                tokens
+            EthToken::Array(tokens) => {
+                let general_tokens: Result<Vec<GeneralToken>, GeneralError> = tokens
                     .into_iter()
                     .map(GeneralToken::from_eth_token)
-                    .collect(),
-            ),
-            EthToken::Array(tokens) => GeneralToken::Array(
-                tokens
+                    .collect();
+                Ok(GeneralToken::Array(general_tokens?))
+            }
+            EthToken::Tuple(tokens) => {
+                let general_tokens: Result<Vec<GeneralToken>, GeneralError> = tokens
                     .into_iter()
                     .map(GeneralToken::from_eth_token)
-                    .collect(),
-            ),
-            EthToken::Tuple(tokens) => GeneralToken::Tuple(
-                tokens
-                    .into_iter()
-                    .map(GeneralToken::from_eth_token)
-                    .collect(),
-            ),
+                    .collect();
+                Ok(GeneralToken::Tuple(general_tokens?))
+            }
         }
     }
 
-    pub fn to_eth_token(&self) -> Option<EthToken> {
+    pub fn to_eth_token(&self) -> Result<EthToken, GeneralError> {
         match self {
-            GeneralToken::Address(addr) => Some(EthToken::Address(*addr)),
-            GeneralToken::FixedBytes(bytes) => Some(EthToken::FixedBytes(bytes.clone())),
-            GeneralToken::Bytes(bytes) => Some(EthToken::Bytes(bytes.clone())),
+            GeneralToken::Address(addr) => Ok(EthToken::Address(*addr)),
+            GeneralToken::FixedBytes(bytes) => Ok(EthToken::FixedBytes(bytes.to_vec())),
+            GeneralToken::Bytes(bytes) => Ok(EthToken::Bytes(bytes.to_vec())),
             GeneralToken::Int(i) => {
                 if let Some(int) = i.to_i128() {
-                    Some(EthToken::Int(Int::from(int)))
+                    Ok(EthToken::Int(Int::from(int)))
                 } else {
-                    None
+                    Err(GeneralError::InvalidTypeConvertError(format!("{:?}", self)))
                 }
             }
-            GeneralToken::Uint(u) => Some(EthToken::Uint(*u)),
-            GeneralToken::Float(_) => None, // Can't convert float to EthToken
-            GeneralToken::Bool(b) => Some(EthToken::Bool(*b)),
-            GeneralToken::String(s) => Some(EthToken::String(s.clone())),
+            GeneralToken::Uint(u) => Ok(EthToken::Uint(*u)),
+            GeneralToken::Float(_) => Err(GeneralError::InvalidTypeConvertError(
+                "Float cannot be converted to EthToken".to_string(),
+            )),
+            GeneralToken::Bool(b) => Ok(EthToken::Bool(*b)),
+            GeneralToken::String(s) => Ok(EthToken::String(s.to_string())),
             GeneralToken::FixedArray(tokens) => {
-                let eth_tokens: Option<Vec<EthToken>> =
+                let eth_tokens: Result<Vec<EthToken>, GeneralError> =
                     tokens.iter().map(|t| t.to_eth_token()).collect();
-                eth_tokens.map(EthToken::FixedArray)
+                Ok(EthToken::FixedArray(eth_tokens?))
             }
             GeneralToken::Array(tokens) => {
-                let eth_tokens: Option<Vec<EthToken>> =
+                let eth_tokens: Result<Vec<EthToken>, GeneralError> =
                     tokens.iter().map(|t| t.to_eth_token()).collect();
-                eth_tokens.map(EthToken::Array)
+                Ok(EthToken::Array(eth_tokens?))
             }
             GeneralToken::Tuple(tokens) => {
-                let eth_tokens: Option<Vec<EthToken>> =
+                let eth_tokens: Result<Vec<EthToken>, GeneralError> =
                     tokens.iter().map(|t| t.to_eth_token()).collect();
-                eth_tokens.map(EthToken::Tuple)
+                Ok(EthToken::Tuple(eth_tokens?))
+            }
+            GeneralToken::None => {
+                return Err(GeneralError::InvalidTypeConvertError(
+                    "None cannot be converted to EthToken".to_string(),
+                ))
             }
         }
     }
@@ -108,9 +122,9 @@ impl GeneralToken {
         }
     }
 
-    pub fn into_bool(self) -> Option<bool> {
+    pub fn into_bool(&self) -> Option<bool> {
         match self {
-            GeneralToken::Bool(b) => Some(b),
+            GeneralToken::Bool(b) => Some(*b),
             _ => None,
         }
     }
@@ -119,7 +133,7 @@ impl GeneralToken {
         match self {
             GeneralToken::Uint(value) => Ok(value.to_string()),
             GeneralToken::Int(value) => Ok(value.to_string()),
-            GeneralToken::Address(value) => Ok(value.to_string()),
+            GeneralToken::Address(value) => Ok(format!("{:#x}", value)),
             GeneralToken::Bool(value) => Ok(value.to_string()),
             GeneralToken::Bytes(value) => Ok(hex::encode(value)),
             GeneralToken::FixedBytes(value) => Ok(hex::encode(value)),
@@ -164,21 +178,22 @@ impl GeneralToken {
                 .all(|(token, param_type)| token.type_check(param_type))
     }
 
-    pub fn into_uint(self) -> Option<Uint> {
+    pub fn into_uint(&self) -> Result<Uint, GeneralError> {
         match self {
-            GeneralToken::Uint(uint) => Some(uint),
-            GeneralToken::Int(int) => {
-                // Convert BigInt to Uint if possible
-                int.to_string().parse::<Uint>().ok()
-            }
-            _ => None,
+            GeneralToken::Uint(uint) => Ok(*uint),
+            GeneralToken::Int(int) => parse_int_to_uint(&int),
+            _ => Err(GeneralError::InvalidTypeConvertError(
+                "Failed to convert to uint".to_string(),
+            )),
         }
     }
 }
 
 // Implement From traits for common conversions
-impl From<EthToken> for GeneralToken {
-    fn from(token: EthToken) -> Self {
+impl TryFrom<EthToken> for GeneralToken {
+    type Error = GeneralError;
+
+    fn try_from(token: EthToken) -> Result<Self, Self::Error> {
         GeneralToken::from_eth_token(token)
     }
 }

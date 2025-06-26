@@ -16,7 +16,7 @@ impl RpcClient {
 
     pub async fn request_with_query(
         &self,
-        method: Method,
+        method: &Method,
         url: &String,
         url_token: &Option<String>,
         query: &Value,
@@ -24,7 +24,7 @@ impl RpcClient {
         let mut error_msg = String::default();
 
         for provider in &self.providers {
-            let mut request = provider.request(method.clone(), url);
+            let mut request = provider.request(method.to_owned(), url);
 
             // Add bearer token if provided
             if let Some(token) = url_token {
@@ -45,7 +45,7 @@ impl RpcClient {
 
     pub async fn request_with_json(
         &self,
-        method: Method,
+        method: &Method,
         url: &String,
         url_token: &Option<String>,
         body: &Value,
@@ -53,7 +53,7 @@ impl RpcClient {
         let mut error_msg = String::default();
 
         for provider in &self.providers {
-            let mut request = provider.request(method.clone(), url);
+            let mut request = provider.request(method.to_owned(), url);
 
             // Add bearer token if provided
             if let Some(token) = url_token {

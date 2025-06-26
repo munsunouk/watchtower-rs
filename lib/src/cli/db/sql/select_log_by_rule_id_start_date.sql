@@ -1,1 +1,0 @@
-SELECT * FROM %%TABLE_NAME%% WHERE rule_id = $1 AND created_at >= to_timestamp($2)

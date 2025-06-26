@@ -7,4 +7,9 @@ script: |
   bifrostAggregatorPOL = Bifrost.AggregatorOracle.POL.LatestTimestamp(bifrostBN);
 
   diff = currentTimestamp - bifrostAggregatorPOL;
-  diff > (3600 * 72);
+
+  msg = '*Bifrost Aggregator POL Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 어그리게이터 시간 : ' + bifrostAggregatorPOL;
+
+  if diff > (3600 * 72) (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

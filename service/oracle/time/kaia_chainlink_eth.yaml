@@ -7,4 +7,9 @@ script: |
   kaiaChainlinkETH = Kaia.ChainlinkOracle.ETH.LatestTimestamp(kaiaBN);
 
   diff = currentTimestamp - kaiaChainlinkETH;
-  diff > (3600 * 72);
+
+  msg = '*Kaia Chainlink ETH Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 체인링크 시간 : ' + kaiaChainlinkETH;
+
+  if diff > (3600 * 72) (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

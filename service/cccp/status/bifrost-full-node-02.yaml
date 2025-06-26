@@ -1,10 +1,24 @@
 name: Bifrost Full Node 02 Status Check
 time_interval: 600
 script: |
-  active_status = 1;
+  notify_time_interval = 60 * 60 * 3;
   relayer_name = 'bifrost-full-node-02';
 
   bifrostBN = Bifrost.LatestBlock();
   relayer_status = Bifrost.CCCP.State.Status(bifrostBN, relayer_name);
-  statue_name = when relayer_status == 2 then 'kicked out' else 'idle';
-  when relayer_status != active_status then Slack.Send(CCCP, '*Relayer Liveness 알람* 🚀\n> Relayer : ' + relayer_name + '\n> 상태 :' + statue_name) else false;
+
+  status_name = if relayer_status == 1 (
+    'active';
+  ) else if relayer_status == 2 (
+    'kicked out';
+  ) else if relayer_status == 0 (
+    'idle';
+  ) else (
+    'leaving';
+  );
+
+  msg = '*Relayer Liveness 알람* 🚀\n> Relayer : ' + relayer_name + '\n> 상태 :' + status_name;
+
+  if relayer_status != 1 (
+    Slack.Send(CCCP, notify_time_interval, msg)
+  );

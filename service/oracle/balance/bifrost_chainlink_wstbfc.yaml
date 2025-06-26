@@ -1,4 +1,4 @@
-name: Bifrost Chainlink WSTBFC Balance Check
+name: Bifrost Chainlink wstBFC Balance Check
 time_interval: 300
 script: |
   bifrostBN = Bifrost.LatestBlock();
@@ -7,4 +7,8 @@ script: |
 
   CompareBalance = 10000000000000000000;
 
-  CompareBalance > BalanceWSTBFC;
+  msg = '*Bifrost Chainlink wstBFC Balance 알람* 🚀\n> 현재 잔액 : ' + Balance wstBFC + '\n> 기준 잔액 : ' + CompareBalance;
+
+  if CompareBalance > BalanceWSTBFC (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

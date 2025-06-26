@@ -14,9 +14,9 @@ pub struct ProviderMetadata {
 }
 
 impl ProviderMetadata {
-    pub fn new(name: String, urls: Vec<String>, id: ChainID) -> Self {
+    pub fn new(name: &str, urls: &[String], id: &ChainID) -> Self {
         Self {
-            name,
+            name: name.to_string(),
             urls: urls
                 .iter()
                 .map(|url| {
@@ -28,7 +28,7 @@ impl ProviderMetadata {
                     })
                 })
                 .collect(),
-            id,
+            id: *id,
         }
     }
 }

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use watch_tower_lib::utils::types::GeneralToken;
 
+#[derive(Clone)]
 pub struct SymbolTable {
     pub store: HashMap<String, GeneralToken>,
 }
@@ -14,15 +15,15 @@ impl SymbolTable {
         }
     }
 
-    pub fn assign(&mut self, key: String, value: GeneralToken) {
-        self.store.insert(key, value);
+    pub fn assign(&mut self, key: &str, value: &GeneralToken) {
+        self.store.insert(key.to_string(), value.to_owned());
     }
 
     pub fn eval(&self, key: &str) -> GeneralToken {
         self.store
             .get(key)
             .cloned()
-            .unwrap_or_else(|| panic!("Invalid key: {}", key))
+            .unwrap_or_else(|| panic!("Invalid key: {key}"))
     }
 
     pub fn check_store_value(&self, key: &str) -> GeneralToken {
@@ -30,7 +31,7 @@ impl SymbolTable {
     }
 }
 
-pub fn assign(store: &mut SymbolTable, key: String, value: GeneralToken) {
+pub fn assign(store: &mut SymbolTable, key: &str, value: &GeneralToken) {
     store.assign(key, value);
 }
 

@@ -6,5 +6,10 @@ script: |
   bifrostChainlinkETH = Bifrost.ChainlinkOracle.ETH.LatestPrice(bifrostBN);
   bifrostBifnetETH = Bifrost.BifnetOracle.ETH.LatestPrice(bifrostBN);
 
-  diff = (bifrostChainlinkETH * 100) / bifrostBifnetETH;
-  diff < 105 && diff > 95;
+  diff = (bifrostChainlinkETH - bifrostBifnetETH) / bifrostChainlinkETH * 100;
+
+  msg = '*Bifrost Chainlink-Bifnet ETH Price Check 알람* 🚀\n> 차이 : ' + diff;
+
+  if diff > 5 || diff < -5 (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

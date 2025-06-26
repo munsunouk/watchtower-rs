@@ -7,4 +7,8 @@ script: |
 
   CompareBalance = 10000000000000000000;
 
-  CompareBalance > BalanceBTC;
+  msg = '*Bifrost Chainlink BTC Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceBTC + '\n> 기준 잔액 : ' + CompareBalance;
+
+  if CompareBalance > BalanceBTC (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

@@ -4,11 +4,13 @@ multiplicative_operator =  { "*" | "/" }
 logical_operator        =  { "&&" | "||" }
 comparison_operator     =  { ">=" | "<=" | "==" | "!=" | ">" | "<" }
 boolean_literal         =  { "true" | "false" }
+if_liternal             =  { "if" | "else if" }
+else_liternal           =  { "else" }
 
 // Operators
 Expr      = { Condition ~ (logical_operator ~ Condition)* }
-Condition = { When | Operation }
-When      = { "when" ~ Operation ~ "then" ~ Operation ~ "else" ~ Operation }
+Condition = { If | Operation }
+If        = { (if_liternal ~ Operation ~ "(" ~ (Condition ~ ";")* ~ ")")+ ~ (else_liternal ~ "(" ~ (Condition ~ ";")* ~ ")")? }
 Operation = { Term ~ (comparison_operator ~ Term)? }
 Term      = { Factor ~ (arithmetic_operator ~ Factor)* }
 Factor    = { Primary ~ (multiplicative_operator ~ Primary)* }
@@ -77,13 +79,13 @@ ContractMethodName       = {
 }
 EventName                = { "BridgeAmount" | "OID" }
 ChainFunctionName        = { "LatestBlock" | "LatestTimestamp" | "Balance" }
-RpcFunctionName          = { "VaultBalance" | "ApiHeight" | "BTCHeight" | "Apy" | "DepositApy" | "DepositTVL" | "BoostApy" | "BoostTvl" }
+RpcFunctionName          = { "VaultBalance" | "ApiHeight" | "BTCHeight" | "Apy" | "DepositApy" | "DepositTVL" | "BoostApy" | "BoostTvl" | "Address" }
 NotificationFunctionName = { "Send" }
 
 Params = { "(" ~ (Expr ~ ("," ~ Expr)*)? ~ ")" }
 
 Identifier    = @{ ASCII_ALPHANUMERIC ~ (ASCII_ALPHANUMERIC | "_" | "/" | "-")* }
-Number        = @{ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
+Number        = @{ "-"? ~ ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT+)? }
 Address       = @{ "0x" ~ ASCII_HEX_DIGIT+ }
 StringLiteral = @{ "'" ~ ((!"'" ~ ANY)*) ~ "'" }
 

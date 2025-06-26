@@ -25,50 +25,6 @@ pub const EVENT_INDEX_SPLIT_INDEX: usize = 3;
 
 // DB Query PATH
 pub const SCHEMA: &str = include_str!("../cli/db/sql/create_schema.sql");
-pub const INSERT_RPC_LOG: &str = include_str!("../cli/db/sql/insert_rpc_log.sql");
-pub const INSERT_CONTRACT_CALL_LOG: &str =
-    include_str!("../cli/db/sql/insert_contract_call_log.sql");
-pub const INSERT_CONTRACT_EVENT_LOG: &str =
-    include_str!("../cli/db/sql/insert_contract_event_call_log.sql");
-pub const INSERT_CONTRACT_EVENT_BLOCK_LOGS: &str =
-    include_str!("../cli/db/sql/insert_contract_event_block_logs.sql");
-pub const INSERT_CONTRACT_CALL_BLOCK_LOG: &str =
-    include_str!("../cli/db/sql/insert_contract_call_block_log.sql");
-pub const INSERT_ASSIGN_DATA: &str = include_str!("../cli/db/sql/insert_assign_data.sql");
-pub const SELECT_ASSIGN_DATA: &str = include_str!("../cli/db/sql/select_assign_data.sql");
-pub const SELECT_JOIN_EVENT_RULE_CHAIN_ID: &str =
-    include_str!("../cli/db/sql/select_join_event_rule_chain_id.sql");
-pub const SELECT_LOG_BY_RULE_ID: &str = include_str!("../cli/db/sql/select_log_by_rule_id.sql");
-pub const SELECT_BY_START_DATE: &str = include_str!("../cli/db/sql/select_by_start_date.sql");
-pub const SELECT_LOG_BY_RULE_ID_START_DATE: &str =
-    include_str!("../cli/db/sql/select_log_by_rule_id_start_date.sql");
-pub const SELECT_RULE_BY_NAME_START_DATE: &str =
-    include_str!("../cli/db/sql/select_rule_by_name_start_date.sql");
-pub const SELECT_EVALUATION_RULE_BY_NAME_START_DATE: &str =
-    include_str!("../cli/db/sql/select_evaluation_rule_by_name_start_date.sql");
-pub const SELECT_EVALUATION_RULE_BY_NAME: &str =
-    include_str!("../cli/db/sql/select_evaluation_rule_by_name.sql");
-pub const SELECT_RULE_BY_NAME: &str = include_str!("../cli/db/sql/select_rule_by_name.sql");
-pub const UPDATE_RPC_CALL_RULE: &str = include_str!("../cli/db/sql/update_rpc_call_rule.sql");
-pub const UPDATE_CONTRACT_CALL_RULE: &str =
-    include_str!("../cli/db/sql/update_contract_call_rule.sql");
-pub const UPDATE_CONTRACT_EVENT_RULE: &str =
-    include_str!("../cli/db/sql/update_contract_event_rule.sql");
-pub const ADD_RPC_CALL_RULE: &str = include_str!("../cli/db/sql/add_rpc_call_rule.sql");
-pub const ADD_CONTRACT_CALL_RULE: &str = include_str!("../cli/db/sql/add_contract_call_rule.sql");
-pub const ADD_CONTRACT_EVENT_RULE: &str = include_str!("../cli/db/sql/add_contract_event_rule.sql");
-pub const UPDATE_EVALUATION_RULE: &str = include_str!("../cli/db/sql/update_evaluation_rule.sql");
-pub const ADD_EVALUATION_RULE: &str = include_str!("../cli/db/sql/add_evaluation_rule.sql");
-
-pub const DELETE_BY_ID: &str = include_str!("../cli/db/sql/delete_by_id.sql");
-pub const DELETE_BY_RULE_ID: &str = include_str!("../cli/db/sql/delete_by_rule_id.sql");
-
-pub const DELETE_EVALUATION_RULE_NAME: &str =
-    include_str!("../cli/db/sql/delete_evaluation_name.sql");
-pub const SELECT_TABLE_BY_NAME: &str = include_str!("../cli/db/sql/select_table_by_name.sql");
-pub const SELECT_TABLE_BY_ID: &str = include_str!("../cli/db/sql/select_table_by_id.sql");
-pub const SELECT_TABLE_BY_EVALUATION_RULE_ID_WITH_LIMIT: &str =
-    include_str!("../cli/db/sql/select_log_by_evaluation_rule_id_with_limit.sql");
 
 // DB SCHEMA
 pub const DB_SCHEMA_LOAD: &str = "SELECT * FROM %%TABLE_NAME%%";
@@ -79,34 +35,12 @@ pub const DB_SELECT_ID_BY_NAME: &str = "SELECT id FROM %%TABLE_NAME%% WHERE name
 pub const DB_SCHEMA_EXISTS: &str = "SELECT EXISTS (
                 SELECT FROM information_schema.tables 
                 WHERE table_schema = 'public' 
-                AND table_name = 'rpc_call_rule'
+                AND table_name = 'rule'
             )";
 
 // DB Table Name
-pub const RPC_CALL_LOG: &str = "rpc_call_log";
-pub const CONTRACT_CALL_LOG: &str = "contract_call_log";
-pub const CONTRACT_EVENT_LOG: &str = "contract_event_log";
-pub const RPC_CALL_RULE: &str = "rpc_call_rule";
-pub const CONTRACT_CALL_RULE: &str = "contract_call_rule";
-pub const CONTRACT_EVENT_RULE: &str = "contract_event_rule";
-pub const EVALUATION_RULE: &str = "evaluation_rule";
-pub const CONTRACT_CALL_BLOCK_LOG: &str = "contract_call_block_log";
-pub const CONTRACT_EVENT_BLOCK_LOG: &str = "contract_event_block_log";
-pub const RPC_CALL: &str = "rpc_call";
-pub const CONTRACT_CALL: &str = "contract_call";
-pub const CONTRACT_EVENT: &str = "contract_event";
-pub const EVALUATION: &str = "evaluation";
 
-// Rule Type
-pub const RPC_CALL_RULE_TYPE: &str = "rpccall";
-pub const CONTRACT_CALL_RULE_TYPE: &str = "contractcall";
-pub const CONTRACT_EVENT_RULE_TYPE: &str = "contractevent";
-pub const EVALUATION_RULE_TYPE: &str = "evaluation";
-pub const CONTRACT_CALL_LOG_TYPE: &str = "contractcalllog";
-pub const CONTRACT_EVENT_LOG_TYPE: &str = "contracteventlog";
-pub const RPC_CALL_LOG_TYPE: &str = "rpccalllog";
-pub const CONTRACT_CALL_BLOCK_LOG_TYPE: &str = "contractcallblocklog";
-pub const CONTRACT_EVENT_BLOCK_LOG_TYPE: &str = "contracteventblocklog";
+pub const RULE: &str = "rule";
 
 // DB Column Name
 pub const DB_ID_COLUMN: &str = "id";

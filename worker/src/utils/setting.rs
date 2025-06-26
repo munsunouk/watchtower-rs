@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, path::PathBuf, sync::Arc};
 
 use ethers::providers::{Http, JsonRpcClient, Provider};
 use reqwest::Client;
@@ -9,14 +9,18 @@ use watch_tower_lib::{
         rpc::RpcClient,
         sentry::build_sentry_client,
     },
-    config::EVMProvider,
     rule::{
         contract_call::ContractCallRule, contract_event::ContractEventRule, rpc_call::RpcCallRule,
     },
     utils::{error::ClientError, types::ChainID},
 };
 
-use crate::rule::{ContractCall, ContractEvent, RpcCall};
+use crate::{
+    rule::{ContractCall, ContractEvent, RpcCall},
+    utils::config::ParamConfig,
+};
+
+use crate::utils::config::{Configuration, EVMProvider};
 
 use super::error::WorkerError;
 
@@ -35,7 +39,7 @@ pub fn build_eth_clients(providers: &[EVMProvider]) -> HashMap<ChainID, EthClien
     for provider in providers {
         let EVMProvider { name, provider, id } = provider;
 
-        let metadata = set_metadata(name.clone(), provider.clone(), *id);
+        let metadata = set_metadata(name, provider, id);
 
         let arc_providers = set_providers(provider);
 
@@ -73,11 +77,7 @@ fn build_eth_client<T: JsonRpcClient>(
 /// # Returns
 ///
 /// A `ProviderMetadata` instance.
-fn set_metadata(
-    chain_name: String,
-    chain_urls: Vec<String>,
-    chain_id: ChainID,
-) -> ProviderMetadata {
+fn set_metadata(chain_name: &str, chain_urls: &[String], chain_id: &ChainID) -> ProviderMetadata {
     ProviderMetadata::new(chain_name, chain_urls, chain_id)
 }
 
@@ -117,7 +117,7 @@ pub fn build_sentry(
     dsn: &str,
     environment: &Option<Cow<'static, str>>,
 ) -> Result<ClientInitGuard, WorkerError> {
-    build_sentry_client(dsn, environment).map_err(|e| WorkerError::InvalidSentry(e.to_string()))
+    Ok(build_sentry_client(dsn, environment)?)
 }
 
 /// # Description
@@ -130,9 +130,9 @@ pub fn build_sentry(
 /// # Returns
 ///
 /// A `ContractCall` instance.
-pub fn build_contract_call<T: JsonRpcClient>(
-    client: EthClient<T>,
-    rule: ContractCallRule,
+pub fn build_contract_call<T: JsonRpcClient + Clone>(
+    client: &EthClient<T>,
+    rule: &ContractCallRule,
 ) -> ContractCall<T> {
     ContractCall::new(client, rule)
 }
@@ -147,9 +147,9 @@ pub fn build_contract_call<T: JsonRpcClient>(
 /// # Returns
 ///
 /// A `ContractEvent` instance.
-pub fn build_contract_event<T: JsonRpcClient>(
-    client: EthClient<T>,
-    rule: ContractEventRule,
+pub fn build_contract_event<T: JsonRpcClient + Clone>(
+    client: &EthClient<T>,
+    rule: &ContractEventRule,
 ) -> ContractEvent<T> {
     ContractEvent::new(client, rule)
 }
@@ -164,7 +164,7 @@ pub fn build_contract_event<T: JsonRpcClient>(
 /// # Returns
 ///
 /// An `RpcCall` instance.
-pub fn build_rpc_call(client: RpcClient, rule: RpcCallRule) -> RpcCall {
+pub fn build_rpc_call(client: &RpcClient, rule: &RpcCallRule) -> RpcCall {
     RpcCall::new(client, rule)
 }
 
@@ -181,8 +181,30 @@ pub fn build_rpc_client() -> Result<RpcClient, WorkerError> {
         .pool_idle_timeout(None)
         .user_agent("watch-tower-worker")
         .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|_| WorkerError::InvalidClient)?;
+        .build()?;
 
     Ok(RpcClient::new(vec![Arc::new(client)]))
+}
+
+/// # Description
+/// This function sets the configuration.
+/// # Arguments
+///
+/// * `spec` - The path to the configuration file.
+///
+/// # Returns
+///
+/// A `Result` containing the `Configuration` instance.
+pub fn set_config(pathbuf: &PathBuf) -> Result<Configuration, WorkerError> {
+    let user_config_file = std::fs::File::open(pathbuf)?;
+
+    let user_config: Configuration = serde_yaml::from_reader(user_config_file)?;
+    
+    Ok(user_config)
+}
+
+pub fn set_param_config(pathbuf: &PathBuf) -> Result<ParamConfig, WorkerError> {
+    let user_config_file = std::fs::File::open(pathbuf)?;
+    let user_config: ParamConfig = serde_yaml::from_reader(user_config_file)?;
+    Ok(user_config)
 }

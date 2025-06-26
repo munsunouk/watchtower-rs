@@ -3,8 +3,12 @@ time_interval: 300
 script: |
   bifrostBN = Bifrost.LatestBlock();
 
-  BalanceLP = Bifrost.Balance(bifrostBN, Lp_BtcUSD);
+  BalanceLPBTCUSD = Bifrost.Balance(bifrostBN, Lp_BtcUSD);
 
   CompareBalance = 10000000000000000000;
 
-  CompareBalance > BalanceLP;
+  msg = '*Bifrost Chainlink LP BTCUSD Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceLPBTCUSD + '\n> 기준 잔액 : ' + CompareBalance;
+
+  if CompareBalance > BalanceLPBTCUSD (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

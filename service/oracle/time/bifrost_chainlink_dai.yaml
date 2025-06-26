@@ -7,4 +7,9 @@ script: |
   bifrostChainlinkDAI = Bifrost.ChainlinkOracle.DAI.LatestTimestamp(bifrostBN);
 
   diff = currentTimestamp - bifrostChainlinkDAI;
-  diff > (3600 * 48);
+
+  msg = '*Bifrost Chainlink DAI Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 체인링크 시간 : ' + bifrostChainlinkDAI;
+
+  if diff > (3600 * 72) (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

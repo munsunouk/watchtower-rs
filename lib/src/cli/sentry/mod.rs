@@ -14,7 +14,7 @@ pub fn build_sentry_client(
             release: sentry::release_name!(),
 
             // https://docs.sentry.io/platforms/rust/configuration/environments/
-            environment: environment.clone(),
+            environment: environment.to_owned(),
 
             // Enable debug mode when needed
             debug: false,

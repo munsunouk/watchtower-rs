@@ -1,8 +1,10 @@
 use crate::*;
 
+pub mod config;
 pub mod constants;
 pub mod error;
 pub mod log;
+pub mod macros;
 pub mod setting;
 
 use ethers::{
@@ -13,7 +15,6 @@ use ethers::{
 
 use std::sync::atomic::Ordering::SeqCst;
 use tokio::runtime::Runtime;
-use watch_tower_lib::utils::error::ClientError;
 
 use crate::rule::{ContractCall, ContractEvent};
 
@@ -22,12 +23,11 @@ use error::WorkerError;
 
 pub async fn get_block_token(
     contract_call: &ContractCall<Http>,
-    block_number: U64,
-) -> Result<Token, ClientError> {
-    let token = contract_call
-        .get_method_call(BlockId::Number(BlockNumber::Number(block_number)))
-        .await?;
-    Ok(token)
+    block_number: &U64,
+) -> Result<Token, WorkerError> {
+    contract_call
+        .get_method_call(BlockId::Number(BlockNumber::Number(*block_number)))
+        .await
 }
 
 /// # Description
@@ -46,13 +46,7 @@ pub async fn get_event_logs(
         .to_block(BlockNumber::from(block_number))
         .address(contract_event.rule.address);
 
-    let logs = contract_event
-        .client
-        .get_logs(&filter)
-        .await
-        .map_err(|_| WorkerError::InvalidClient)?;
-
-    Ok(logs)
+    Ok(contract_event.client.get_logs(&filter).await?)
 }
 
 use once_cell::sync::Lazy;
@@ -65,7 +59,7 @@ static TOKIO_THREADS_ALIVE: Lazy<AtomicU64> =
 
 /// Builds the runtime for the application.
 fn build_runtime() -> Result<Runtime, WorkerError> {
-    tokio::runtime::Builder::new_multi_thread()
+    Ok(tokio::runtime::Builder::new_multi_thread()
         .on_thread_start(|| {
             TOKIO_THREADS_ALIVE.fetch_add(ADD_MEMORY_VALUE_ORDER, SeqCst);
             TOKIO_THREADS_TOTAL.fetch_add(ADD_MEMORY_VALUE_ORDER, SeqCst);
@@ -74,18 +68,16 @@ fn build_runtime() -> Result<Runtime, WorkerError> {
             TOKIO_THREADS_ALIVE.fetch_sub(ADD_MEMORY_VALUE_ORDER, SeqCst);
         })
         .enable_all()
-        .build()
-        .map_err(|_| WorkerError::InvalidRuntime)
+        .build()?)
 }
 
 /// Runs the application with the runtime.
-pub fn run_with_runtime(rule_path: &str) -> Result<(), WorkerError> {
+pub fn run_with_runtime() -> Result<(), WorkerError> {
     let runtime = build_runtime()?;
 
     let result = runtime.block_on(async {
-        let runner = Runner::new(rule_path).await?;
+        let runner = Runner::new().await?;
         runner.run().await
-        // get_result(rule_path).await
     });
 
     drop(runtime);
@@ -99,27 +91,3 @@ pub fn run_with_runtime(rule_path: &str) -> Result<(), WorkerError> {
         }
     }
 }
-
-// async fn get_result(rule_path: &str) -> Result<(), WorkerError> {
-//     let config = set_config(CONFIG_PATH);
-//     let rule = set_rule(rule_path);
-
-//     let result = parse_result(&config, &rule.script).await.unwrap();
-
-//     let btc_height_msg = "the Difference in the Block Height of BTC is more than 10";
-
-//     if Token::Bool(false) == result {
-//         let slack_msg = format!("```{}```", btc_height_msg.to_string());
-//         let hashtag = Some("<!here>");
-
-//         let slack_client =
-//             SlackClient::new(&config.slack_config.token, &config.slack_config.channel);
-//         slack_client
-//             .send_alert("Scheduled BTC Height Notification", &slack_msg, hashtag)
-//             .await
-//             .unwrap();
-//     }
-
-//     println!("result: {:?}", result);
-//     Ok(())
-// }

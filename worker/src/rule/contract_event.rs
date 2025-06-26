@@ -3,15 +3,11 @@ use ethers::{
     prelude::*,
 };
 
-use watch_tower_lib::{
-    cli::eth::EthClient,
-    rule::contract_event::ContractEventRule,
-    utils::{constants::DEFAULT_INDEX, error::IndexType},
-};
+use watch_tower_lib::{cli::eth::EthClient, rule::contract_event::ContractEventRule};
 
 use super::create_contracts;
 
-use crate::utils::error::WorkerError;
+use crate::{option_or_err, utils::error::WorkerError};
 
 /// # Description
 /// This struct represents a contract event.
@@ -25,7 +21,7 @@ pub struct ContractEvent<T> {
     contracts: Vec<Contract<Provider<T>>>,
 }
 
-impl<T: JsonRpcClient> ContractEvent<T> {
+impl<T: JsonRpcClient + Clone> ContractEvent<T> {
     /// # Description
     /// This function creates a new `ContractEvent` instance.
     ///
@@ -37,12 +33,12 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     /// # Returns
     ///
     /// A new instance of `ContractEvent`.
-    pub fn new(client: EthClient<T>, rule: ContractEventRule) -> Self {
+    pub fn new(client: &EthClient<T>, rule: &ContractEventRule) -> Self {
         let contracts: Vec<Contract<Provider<T>>> =
             create_contracts(&rule.address, &rule.abi, client.get_providers());
         Self {
-            rule,
-            client,
+            rule: rule.to_owned(),
+            client: client.to_owned(),
             contracts,
         }
     }
@@ -54,34 +50,10 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     ///
     /// A result containing a reference to the event.
     pub fn get_event(&self) -> Result<&Event, WorkerError> {
-        tracing::debug!(
-            "Getting event for contract at address: {:?}",
-            self.rule.address
-        );
+        let abi = option_or_err!(self.contracts.first()).abi();
 
-        let abi = self
-            .contracts
-            .first()
-            .ok_or_else(|| {
-                tracing::error!(
-                    "No contracts available for address: {:?}",
-                    self.rule.address
-                );
-                WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX))
-            })?
-            .abi();
+        let event = option_or_err!(abi.events().next());
 
-        tracing::debug!("ABI loaded, checking events");
-
-        let event = abi.events().next().ok_or_else(|| {
-            tracing::error!(
-                "No events found in ABI for contract: {:?}",
-                self.rule.address
-            );
-            WorkerError::InvalidIndex(IndexType::USize(DEFAULT_INDEX))
-        })?;
-
-        tracing::debug!("Event found: {:?}", event.name);
         Ok(event)
     }
 
@@ -94,11 +66,7 @@ impl<T: JsonRpcClient> ContractEvent<T> {
     pub fn get_event_signature(&self) -> Result<H256, WorkerError> {
         let event = self.get_event()?;
 
-        tracing::info!("event: {:?}", event);
-
         let signature = event.signature();
-
-        tracing::info!("signature: {:?}", signature);
 
         Ok(signature)
     }
@@ -117,14 +85,9 @@ impl<T: JsonRpcClient> ContractEvent<T> {
         let input_param_types: Vec<ParamType> =
             event_input.iter().map(|param| param.kind.clone()).collect();
 
-        let input_param_type =
-            input_param_types
-                .get(self.rule.event_index)
-                .ok_or(WorkerError::InvalidIndex(IndexType::USize(
-                    self.rule.event_index,
-                )))?;
+        let input_param_type = option_or_err!(input_param_types.get(self.rule.event_index));
 
-        Ok(input_param_type.clone())
+        Ok(input_param_type.to_owned())
     }
 
     /// # Description
@@ -160,32 +123,5 @@ impl<T: JsonRpcClient> ContractEvent<T> {
         let target_signature = self.get_event_signature()?;
 
         Ok(*signature == target_signature)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tracing_subscriber;
-
-    use watch_tower_lib::{
-        cli::db::postgres::PostgresClient,
-        utils::{error::DatabaseError, DbRuleType},
-    };
-
-    #[tokio::test]
-    async fn test_postgres_client() -> Result<(), DatabaseError> {
-        tracing_subscriber::fmt::init();
-
-        let client = PostgresClient::new("<YOUR_DATABASE_URL>").await?;
-
-        // client.initiate().await?;
-        let db_result = client.select_table(DbRuleType::ContractEvent).await?;
-
-        let raw_rule = ContractEventRule::try_from(&db_result[0]).unwrap();
-
-        println!("{:?}", raw_rule);
-
-        Ok(())
     }
 }

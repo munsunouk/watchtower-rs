@@ -1,1 +1,0 @@
-select * from assign_data where name = $1;

@@ -34,12 +34,8 @@ impl TryFrom<&PgRow> for ContractCallBlockLog {
 
     fn try_from(row: &PgRow) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: parse_i32_to_usize(row.get(DB_ID_COLUMN))
-                .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))?,
-            block_number: U64::from(
-                parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN))
-                    .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))?,
-            ),
+            id: parse_i32_to_usize(row.get(DB_ID_COLUMN))?,
+            block_number: U64::from(parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN))?),
         })
     }
 }
@@ -67,32 +63,17 @@ impl TryFrom<&PgRow> for ContractCallRule {
     type Error = GeneralError;
 
     fn try_from(row: &PgRow) -> Result<Self, Self::Error> {
-        let chain_id = parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse chain ID: {}", e))
-        })? as ChainID;
+        let chain_id = parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN))? as ChainID;
 
-        let target_block_number = parse_string_to_u64(row.get(DB_TARGET_BLOCK_NUMBER_COLUMN))
-            .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))?;
+        let target_block_number = parse_string_to_u64(row.get(DB_TARGET_BLOCK_NUMBER_COLUMN))?;
 
-        let target_index =
-            parse_string_to_target_index(row.get(DB_VALUES_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?;
+        let target_index = parse_string_to_target_index(row.get(DB_VALUES_COLUMN))?;
 
         Ok(Self {
             chain_id,
-            address: parse_to_address(row.get(DB_ADDRESS_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
-            abi: parse_to_abi(row.get(DB_ABI_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
-            method_params: serde_json::from_str(row.get(DB_METHOD_PARAMS_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!(
-                    "Failed to parse method params: {}",
-                    e
-                ))
-            })?,
+            address: parse_to_address(row.get(DB_ADDRESS_COLUMN))?,
+            abi: parse_to_abi(row.get(DB_ABI_COLUMN))?,
+            method_params: serde_json::from_str(row.get(DB_METHOD_PARAMS_COLUMN))?,
             target_index,
             target_block_number: target_block_number,
         })
@@ -102,31 +83,23 @@ impl TryFrom<&PgRow> for ContractCallRule {
 impl ContractCallRule {
     pub fn new(
         chain_id: i32,
-        address: String,
+        address: &str,
         abi: Value,
-        params: Vec<Option<Token>>,
+        params: &[Option<Token>],
         target_index: String,
-        target_block_number: U256,
+        target_block_number: &U256,
     ) -> Result<Self, GeneralError> {
-        let chain_id = parse_i32_to_usize(chain_id).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse chain ID: {}", e))
-        })? as ChainID;
+        let chain_id = parse_i32_to_usize(chain_id)? as ChainID;
 
         let target_block_number = parse_u256_to_u64(target_block_number);
 
-        let target_index = parse_string_to_target_index(target_index).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let target_index = parse_string_to_target_index(target_index)?;
 
         Ok(Self {
             chain_id,
-            address: parse_to_address(address).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
-            abi: parse_to_abi(abi).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
-            method_params: params,
+            address: parse_to_address(address)?,
+            abi: parse_to_abi(abi)?,
+            method_params: params.to_vec(),
             target_index,
             target_block_number: target_block_number,
         })

@@ -1,6 +1,10 @@
 name: BRP Balance Check
 time_interval: 300
 script: |
+
+  notify_rate = 1000000;
+  notify_time_interval = 60 * 60 * 3;
+
   bifrost_BlockNumber = Bifrost.LatestBlock();
 
   currentRound_MethodParams = Bifrost.BRP.CurrentRound.CurrentRound(bifrost_BlockNumber);
@@ -13,4 +17,10 @@ script: |
 
   totalSupply = Bifrost.BRP.TotalSupply.TotalSupply(bifrost_BlockNumber);
   unifiedBTCLiq = totalSupply - 1110100;
-  unifiedBTCLiq - btcLiq > 1000000;
+  btcDiff = unifiedBTCLiq - btcLiq;
+
+  msg = '*BRP BTC Balance 알람* 🚀\n <!here>\n> BTC 차이: ' + btcDiff + '\n> BTC(Vault) : ' + btcLiq + '\n> Bifrost(UnifiedBTC) : ' + unifiedBTCLiq;
+
+  if btcDiff > notify_rate (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

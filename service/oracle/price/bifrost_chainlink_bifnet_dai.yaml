@@ -6,5 +6,10 @@ script: |
   bifrostChainlinkDAI = Bifrost.ChainlinkOracle.DAI.LatestPrice(bifrostBN);
   bifrostBifnetDAI = Bifrost.BifnetOracle.DAI.LatestPrice(bifrostBN);
 
-  diff = (bifrostChainlinkDAI * 100) / bifrostBifnetDAI;
-  diff < 105 && diff > 95;
+  diff = (bifrostChainlinkDAI - bifrostBifnetDAI) / bifrostChainlinkDAI * 100;
+
+  msg = '*Bifrost Chainlink-Bifnet DAI Price Check 알람* 🚀\n> 차이 : ' + diff;
+
+  if diff > 5 || diff < -5 (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

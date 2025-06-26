@@ -7,4 +7,9 @@ script: |
   bifrostChainlinkBNB = Bifrost.ChainlinkOracle.BNB.LatestTimestamp(bifrostBN);
 
   diff = currentTimestamp - bifrostChainlinkBNB;
-  diff > (3600 * 72);
+
+  msg = '*Bifrost Chainlink BNB Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 체인링크 시간 : ' + bifrostChainlinkBNB;
+
+  if diff > (3600 * 72) (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

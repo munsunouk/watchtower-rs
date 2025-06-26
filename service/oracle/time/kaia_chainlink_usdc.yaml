@@ -7,4 +7,9 @@ script: |
   kaiaChainlinkUSDC = Kaia.ChainlinkOracle.USDC.LatestTimestamp(kaiaBN);
 
   diff = currentTimestamp - kaiaChainlinkUSDC;
-  diff > (3600 * 48);
+
+  msg = '*Kaia Chainlink USDC Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 체인링크 시간 : ' + kaiaChainlinkUSDC;
+
+  if diff > (3600 * 72) (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

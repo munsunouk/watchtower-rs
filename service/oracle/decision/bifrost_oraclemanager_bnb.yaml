@@ -10,4 +10,8 @@ script: |
 
   nextUpdateAt = lastTimestamp + decisionInterval;
 
-  nextUpdateAt + 300 < currentTimestamp;
+  msg = '*Bifrost OracleManager BNB Decision 알람* 🚀\n> 다음 업데이트 시간 : ' + nextUpdateAt + '\n> 현재 시간 : ' + currentTimestamp;
+
+  if nextUpdateAt + 300 < currentTimestamp (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

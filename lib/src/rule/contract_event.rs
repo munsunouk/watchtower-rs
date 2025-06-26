@@ -31,16 +31,11 @@ impl TryFrom<&PgRow> for ContractEventBlockLog {
     type Error = GeneralError;
 
     fn try_from(row: &PgRow) -> Result<Self, Self::Error> {
-        let id = parse_i32_to_usize(row.get(DB_ID_COLUMN))
-            .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))?;
+        let id = parse_i32_to_usize(row.get(DB_ID_COLUMN))?;
 
-        let block_number = parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse block number: {}", e))
-        })?;
+        let block_number = parse_i32_to_usize(row.get(DB_BLOCK_NUMBER_COLUMN))?;
 
-        let chain_id = parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse chain ID: {}", e))
-        })?;
+        let chain_id = parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN))?;
 
         Ok(Self {
             id,
@@ -83,22 +78,14 @@ impl TryFrom<&PgRow> for ContractEventRule {
     ///
     /// A new instance of `ContractEventRule`.
     fn try_from(row: &PgRow) -> Result<Self, Self::Error> {
-        let chain_id = parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse chain ID: {}", e))
-        })?;
+        let chain_id = parse_i32_to_usize(row.get(DB_CHAIN_ID_COLUMN))?;
 
-        let event_index = parse_i32_to_usize(row.get(DB_EVENT_INDEX_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse event index: {}", e))
-        })?;
+        let event_index = parse_i32_to_usize(row.get(DB_EVENT_INDEX_COLUMN))?;
 
         Ok(ContractEventRule {
             chain_id: chain_id as ChainID,
-            address: parse_to_address(row.get(DB_ADDRESS_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
-            abi: parse_to_abi(row.get(DB_ABI_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
+            address: parse_to_address(row.get(DB_ADDRESS_COLUMN))?,
+            abi: parse_to_abi(row.get(DB_ABI_COLUMN))?,
             event_index,
             target_index: parse_string_to_target_index(row.get(DB_VALUES_COLUMN))?,
             target_block_number: parse_i64_to_u64(row.get(DB_BLOCK_NUMBER_COLUMN)),
@@ -109,34 +96,24 @@ impl TryFrom<&PgRow> for ContractEventRule {
 impl ContractEventRule {
     pub fn new(
         chain_id: i32,
-        address: String,
+        address: &str,
         abi: Value,
         event_index: i32,
         target_index: String,
-        target_block_number: U256,
+        target_block_number: &U256,
     ) -> Result<Self, GeneralError> {
         let target_block_number = parse_u256_to_u64(target_block_number);
 
-        let chain_id = parse_i32_to_usize(chain_id).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse chain ID: {}", e))
-        })? as ChainID;
+        let chain_id = parse_i32_to_usize(chain_id)? as ChainID;
 
-        let target_index = parse_string_to_target_index(target_index).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let target_index = parse_string_to_target_index(target_index)?;
 
-        let event_index = parse_i32_to_usize(event_index).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse event index: {}", e))
-        })?;
+        let event_index = parse_i32_to_usize(event_index)?;
 
         Ok(Self {
             chain_id,
-            address: parse_to_address(address).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
-            abi: parse_to_abi(abi).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?,
+            address: parse_to_address(address)?,
+            abi: parse_to_abi(abi)?,
             event_index,
             target_index,
             target_block_number,

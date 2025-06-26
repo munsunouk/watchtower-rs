@@ -1,0 +1,1 @@
+SELECT * FROM rule WHERE name = $1 

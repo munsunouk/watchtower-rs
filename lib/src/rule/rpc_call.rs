@@ -42,23 +42,13 @@ impl TryFrom<&PgRow> for RpcCallRule {
     ///
     /// A new instance of `RpcCallRule`.
     fn try_from(row: &PgRow) -> Result<Self, Self::Error> {
-        let call_type =
-            parse_string_to_rpc_call_type(row.get(DB_CALL_TYPE_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?;
+        let call_type = parse_string_to_rpc_call_type(row.get(DB_CALL_TYPE_COLUMN))?;
         let method_type = parse_string_to_method(row.get(DB_METHOD_TYPE_COLUMN));
-        let api_body = parse_json_to_value(row.get(DB_API_BODY_TYPE_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let api_body = parse_json_to_value(row.get(DB_API_BODY_TYPE_COLUMN))?;
 
-        let api_query = parse_json_to_value(row.get(DB_API_BODY_TYPE_COLUMN)).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let api_query = parse_json_to_value(row.get(DB_API_BODY_TYPE_COLUMN))?;
 
-        let target_index =
-            parse_string_to_target_index(row.get(DB_VALUES_COLUMN)).map_err(|e| {
-                GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-            })?;
+        let target_index = parse_string_to_target_index(row.get(DB_VALUES_COLUMN))?;
 
         Ok(RpcCallRule {
             url: row.get(DB_URL_COLUMN),
@@ -82,15 +72,11 @@ impl RpcCallRule {
         api_query: Option<Value>,
         target_index: String,
     ) -> Result<Self, GeneralError> {
-        let call_type = parse_string_to_rpc_call_type(call_type).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let call_type = parse_string_to_rpc_call_type(call_type)?;
 
         let method_type = parse_string_to_method(method_type);
 
-        let target_index = parse_string_to_target_index(target_index).map_err(|e| {
-            GeneralError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-        })?;
+        let target_index = parse_string_to_target_index(target_index)?;
 
         Ok(Self {
             url,

@@ -1,16 +1,10 @@
-use ethers::{
-    abi::{ParamType, Token},
-    types::{U256, U64},
-};
+use ethers::types::U64;
 use serde_json::{json, Value};
 use watch_tower_lib::{
     cli::rpc::RpcClient, rule::rpc_call::RpcCallRule, utils::parse_json_to_value,
 };
 
-use crate::{
-    rule::{convert_value_to_param_type, convert_value_to_token},
-    utils::error::WorkerError,
-};
+use crate::utils::error::WorkerError;
 
 /// # Description
 /// This struct represents an RPC call.
@@ -33,39 +27,31 @@ impl RpcCall {
     /// # Returns
     ///
     /// A new instance of `RpcCall`.
-    pub fn new(client: RpcClient, rule: RpcCallRule) -> Self {
-        Self { rule, client }
+    pub fn new(client: &RpcClient, rule: &RpcCallRule) -> Self {
+        Self {
+            rule: rule.to_owned(),
+            client: client.to_owned(),
+        }
     }
 
-    pub async fn fetch_api_call_with_query(&self) -> Result<(Token, ParamType), WorkerError> {
+    pub async fn fetch_api_call_with_query(&self) -> Result<(U64, Value), WorkerError> {
         let empty_json = json!({});
-        let query = self.rule.api_query.as_ref().unwrap_or_else(|| &empty_json);
+        let query = self.rule.api_query.as_ref().unwrap_or(&empty_json);
 
         let response = self
             .client
             .request_with_query(
-                self.rule.method_type.clone(),
+                &self.rule.method_type,
                 &self.rule.url,
                 &self.rule.url_token,
-                &query,
+                query,
             )
-            .await
-            .map_err(|e| WorkerError::InternalProviderError(e.to_string()))?;
+            .await?;
 
         let status: U64 = response.status().as_u16().into();
-        let body = response
-            .json::<Value>()
-            .await
-            .map_err(|e| WorkerError::InternalProviderError(e.to_string()))?;
+        let body = response.json::<Value>().await?;
 
-        let status_token = Token::Uint(U256::from(status.as_u64()));
-        let body_token = convert_value_to_token(&body)?;
-        let body_param_type = convert_value_to_param_type(&body)?;
-
-        let param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
-        let tokens = Token::Tuple(vec![status_token, body_token]);
-
-        Ok((tokens, param_type))
+        Ok((status, body))
     }
 
     /// # Description
@@ -73,17 +59,17 @@ impl RpcCall {
     /// # Returns
     ///
     /// A result containing the status as `U64`.
-    pub async fn fetch_api_call_with_body(&self) -> Result<(Token, ParamType), WorkerError> {
+    pub async fn fetch_api_call_with_body(&self) -> Result<(U64, Value), WorkerError> {
         let empty_json = json!({});
-        let api_body = self.rule.api_body.as_ref().unwrap_or_else(|| &empty_json);
+        let api_body = self.rule.api_body.as_ref().unwrap_or(&empty_json);
 
         let response = self
             .client
             .request_with_json(
-                self.rule.method_type.clone(),
+                &self.rule.method_type,
                 &self.rule.url,
                 &self.rule.url_token,
-                &api_body,
+                api_body,
             )
             .await;
 
@@ -91,24 +77,9 @@ impl RpcCall {
             Ok(resp) => {
                 let status: U64 = resp.status().as_u16().into();
 
-                let body = parse_json_to_value(resp.json().await.map_err(|_| {
-                    WorkerError::InternalProviderError("Failed to parse JSON response".to_string())
-                })?)
-                .map_err(|e| {
-                    WorkerError::InvalidTypeConvertError(format!("Failed to parse values: {}", e))
-                })?;
+                let body = parse_json_to_value(resp.json().await?)?;
 
-                let status_token = Token::Uint(U256::from(status.as_u64()));
-
-                let body_token = convert_value_to_token(&body)?;
-
-                let body_param_type = convert_value_to_param_type(&body)?;
-
-                let param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
-
-                let tokens = Token::Tuple(vec![status_token, body_token]);
-
-                Ok((tokens, param_type))
+                Ok((status, body))
             }
             Err(error) => Err(WorkerError::InternalProviderError(error.to_string())),
         }
@@ -118,14 +89,21 @@ impl RpcCall {
 #[cfg(test)]
 mod test {
 
+    use std::str::FromStr;
     use std::sync::Arc;
 
-    use ethers::abi::ParamType;
+    use ethers::{
+        abi::{ParamType, Token},
+        types::{Address, U256},
+    };
     use reqwest::{Client, Method};
     use serde_json::json;
-    use watch_tower_lib::rule::TargetIndex;
+    use watch_tower_lib::rule::parse_string_to_target_index;
 
-    use crate::rule::{convert_value_to_param_type, decodes_token};
+    use crate::rule::{
+        convert_target_index_to_indices, convert_value_to_param_type, convert_value_to_token,
+        decodes_token,
+    };
 
     use super::*;
 
@@ -133,9 +111,13 @@ mod test {
     async fn test_fetch_api_call_with_query() {
         let client = Arc::new(Client::new());
         let method_type = Method::GET;
-        let url = "<URL>".to_string();
+        let url = "https://reference-data-directory.vercel.app/feeds-mainnet.json".to_string();
         let url_token: Option<String> = Some("<TOKEN>".to_string());
         let query = json!({});
+        let raw_target_index =
+            "1.{proxyAddress: 0x2665701293fCbEB223D11A08D826563EDcCE423A}".to_string();
+
+        let target_index = parse_string_to_target_index(raw_target_index).unwrap();
 
         let res = client
             .request(method_type, url)
@@ -149,29 +131,32 @@ mod test {
             .unwrap();
 
         let status: U64 = res.status().as_u16().into();
-
         let status_token = Token::Uint(U256::from(status.as_u64()));
-
         let body = res.json::<Value>().await.unwrap();
-
         let body_token = convert_value_to_token(&body).unwrap();
         let body_param_type = convert_value_to_param_type(&body).unwrap();
 
-        let param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
-        let tokens = Token::Tuple(vec![status_token, body_token]);
+        let mut param_type = ParamType::Tuple(vec![ParamType::Uint(256), body_param_type]);
+        let mut tokens = Token::Tuple(vec![status_token, body_token]);
+        let mut key_store = Vec::new();
 
-        let result = decodes_token(
-            &tokens,
-            &param_type,
-            &vec![
-                TargetIndex::Index(1),  // value
-                TargetIndex::Index(1),  // data
-                TargetIndex::Index(0),  // first item
-                TargetIndex::Index(12), // tvl
-            ],
+        let (mut indices, mut foreach_positions) =
+            convert_target_index_to_indices(&target_index, Some(&body), Some(&mut key_store))
+                .unwrap();
+
+        println!("indices: {indices:?}");
+
+        // Test extraction using found indices
+        let usdc_path_result = decodes_token(
+            &mut tokens,
+            &mut param_type,
+            &mut indices,
+            &mut foreach_positions,
         )
         .unwrap();
 
-        println!("result: {:?}", result);
+        assert!(
+            matches!(usdc_path_result, Token::Address(s) if s == Address::from_str("0x2665701293fCbEB223D11A08D826563EDcCE423A").unwrap())
+        );
     }
 }

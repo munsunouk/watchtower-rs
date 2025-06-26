@@ -7,4 +7,8 @@ script: |
 
   CompareBalance = 10000000000000000000;
 
-  CompareBalance > BalancePOL;
+  msg = '*Bifrost Chainlink POL Balance 알람* 🚀\n> 현재 잔액 : ' + BalancePOL + '\n> 기준 잔액 : ' + CompareBalance;
+
+  if CompareBalance > BalancePOL (
+    Slack.Send(Monitor, notify_time_interval, msg)
+  );

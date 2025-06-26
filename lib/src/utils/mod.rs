@@ -2,32 +2,25 @@ pub mod constants;
 pub mod error;
 pub mod types;
 
-use crate::{
-    cli::db::postgres::PostgresClient,
-    rule::{
-        contract_call::ContractCallRule, contract_event::ContractEventRule, rpc_call::RpcCallRule,
-    },
-    utils::error::GeneralError,
-};
+use crate::cli::db::data::YamlRule;
+use crate::utils::error::{DatabaseError, GeneralError};
+use crate::{cli::db::data::RuleData, option_or_err};
 
 use abi::ParamType;
 use constants::{
     ADDRESS_COMPARATOR_TYPE, BOOL_COMPARATOR_TYPE, BYTES_COMPARATOR_TYPE, COMPARATOR_EQUAL,
     COMPARATOR_GREATER, COMPARATOR_GREATER_EQUAL, COMPARATOR_LESS, COMPARATOR_LESS_EQUAL,
-    COMPARATOR_NOT_EQUAL, CONTRACT_CALL, CONTRACT_CALL_BLOCK_LOG, CONTRACT_CALL_BLOCK_LOG_TYPE,
-    CONTRACT_CALL_LOG, CONTRACT_CALL_LOG_TYPE, CONTRACT_CALL_RULE, CONTRACT_CALL_RULE_TYPE,
-    CONTRACT_EVENT, CONTRACT_EVENT_BLOCK_LOG, CONTRACT_EVENT_BLOCK_LOG_TYPE, CONTRACT_EVENT_LOG,
-    CONTRACT_EVENT_LOG_TYPE, CONTRACT_EVENT_RULE, CONTRACT_EVENT_RULE_TYPE, EVALUATION_RULE,
-    EVALUATION_RULE_TYPE, FIXED_BYTES_COMPARATOR_TYPE, FLOAT_ARITHMETIC_TYPE,
+    COMPARATOR_NOT_EQUAL, FIXED_BYTES_COMPARATOR_TYPE, FLOAT_ARITHMETIC_TYPE,
     FLOAT_COMPARATOR_TYPE, INT_ARITHMETIC_TYPE, INT_COMPARATOR_TYPE, OPERATOR_ADD, OPERATOR_DIV,
-    OPERATOR_MUL, OPERATOR_SUB, RPC_CALL, RPC_CALL_LOG, RPC_CALL_LOG_TYPE, RPC_CALL_RULE,
-    RPC_CALL_RULE_TYPE, STRING_ARITHMETIC_TYPE, STRING_COMPARATOR_TYPE, UINT_ARITHMETIC_TYPE,
-    UINT_COMPARATOR_TYPE,
+    OPERATOR_MUL, OPERATOR_SUB, RULE, STRING_ARITHMETIC_TYPE, STRING_COMPARATOR_TYPE,
+    UINT_ARITHMETIC_TYPE, UINT_COMPARATOR_TYPE,
 };
 use reqwest::Method;
 use serde_json::{from_str, Value};
 use sqlx::types::Json;
 
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use ethers::{
@@ -38,6 +31,7 @@ use ethers::{
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
+use crate::rule::parse_token_to_string;
 use crate::utils::types::GeneralToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,38 +41,16 @@ pub enum RpcCallType {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum DbRuleType {
-    ContractCall,
-    ContractEvent,
-    RpcCall,
-    Evaluation,
-    ContractCallLog,
-    ContractEventLog,
-    RpcCallLog,
-    ContractCallBlockLog,
-    ContractEventBlockLog,
+pub enum DbTable {
+    Rule,
 }
 
-impl FromStr for DbRuleType {
+impl FromStr for DbTable {
     type Err = GeneralError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            CONTRACT_CALL_RULE_TYPE | CONTRACT_CALL | CONTRACT_CALL_RULE => Ok(Self::ContractCall),
-            CONTRACT_EVENT_RULE_TYPE | CONTRACT_EVENT | CONTRACT_EVENT_RULE => {
-                Ok(Self::ContractEvent)
-            }
-            RPC_CALL_RULE_TYPE | RPC_CALL | RPC_CALL_RULE => Ok(Self::RpcCall),
-            EVALUATION_RULE_TYPE | EVALUATION_RULE => Ok(Self::Evaluation),
-            CONTRACT_CALL_LOG_TYPE | CONTRACT_CALL_LOG => Ok(Self::ContractCallLog),
-            CONTRACT_EVENT_LOG_TYPE | CONTRACT_EVENT_LOG => Ok(Self::ContractEventLog),
-            RPC_CALL_LOG_TYPE | RPC_CALL_LOG => Ok(Self::RpcCallLog),
-            CONTRACT_CALL_BLOCK_LOG_TYPE | CONTRACT_CALL_BLOCK_LOG => {
-                Ok(Self::ContractCallBlockLog)
-            }
-            CONTRACT_EVENT_BLOCK_LOG_TYPE | CONTRACT_EVENT_BLOCK_LOG => {
-                Ok(Self::ContractEventBlockLog)
-            }
+            RULE => Ok(Self::Rule),
             _ => Err(GeneralError::InvalidRuleDecode(
                 "Invalid rule type".to_string(),
             )),
@@ -86,30 +58,16 @@ impl FromStr for DbRuleType {
     }
 }
 
-impl DbRuleType {
+impl DbTable {
     pub fn to_str(&self) -> &str {
         match self {
-            Self::ContractCall => CONTRACT_CALL_RULE,
-            Self::ContractEvent => CONTRACT_EVENT_RULE,
-            Self::RpcCall => RPC_CALL_RULE,
-            Self::Evaluation => EVALUATION_RULE,
-            Self::ContractCallLog => CONTRACT_CALL_LOG,
-            Self::ContractEventLog => CONTRACT_EVENT_LOG,
-            Self::RpcCallLog => RPC_CALL_LOG,
-            Self::ContractCallBlockLog => CONTRACT_CALL_BLOCK_LOG,
-            Self::ContractEventBlockLog => CONTRACT_EVENT_BLOCK_LOG,
+            Self::Rule => RULE,
         }
     }
 
     pub fn to_wrapped_str(&self) -> Result<String, GeneralError> {
         match self {
-            Self::ContractCall => Ok("contractcall".to_string()),
-            Self::ContractEvent => Ok("contractevent".to_string()),
-            Self::RpcCall => Ok("rpccall".to_string()),
-            _ => Err(GeneralError::InvalidRuleDecode(format!(
-                "Invalid rule type: {:?}",
-                self
-            ))),
+            Self::Rule => Ok(RULE.to_string()),
         }
     }
 }
@@ -124,19 +82,15 @@ impl DbRuleType {
 ///
 /// A usize value.
 pub fn parse_i32_to_usize(input: i32) -> Result<usize, GeneralError> {
-    input
-        .try_into()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input.to_string()))
+    Ok(input.try_into()?)
 }
 
-pub fn parse_u256_to_u64(input: U256) -> U64 {
+pub fn parse_u256_to_u64(input: &U256) -> U64 {
     U64::from(input.as_u64())
 }
 
 pub fn parse_string_to_u64(input: String) -> Result<U64, GeneralError> {
-    input
-        .parse::<U64>()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
+    Ok(input.parse::<U64>()?)
 }
 
 pub fn parse_i64_to_u64(input: i64) -> U64 {
@@ -156,8 +110,7 @@ pub fn parse_string_to_rpc_call_type(input: String) -> Result<RpcCallType, Gener
 }
 
 pub fn parse_json_to_value(input: Json<Value>) -> Result<Value, GeneralError> {
-    serde_json::to_value(input)
-        .map_err(|_| GeneralError::InvalidTypeConvertError("JSON conversion failed".to_string()))
+    Ok(serde_json::to_value(input)?)
 }
 
 /// Parses a JSON value into an ABI.
@@ -170,7 +123,7 @@ pub fn parse_json_to_value(input: Json<Value>) -> Result<Value, GeneralError> {
 ///
 /// A Result containing either an `Abi` instance or a `GeneralError`.
 pub fn parse_to_abi(input: Value) -> Result<Abi, GeneralError> {
-    from_str(&input.to_string()).map_err(|_| GeneralError::InvalidTypeABI)
+    Ok(from_str(&input.to_string())?)
 }
 
 /// Parses a string into a uint.
@@ -183,12 +136,11 @@ pub fn parse_to_abi(input: Value) -> Result<Abi, GeneralError> {
 ///
 /// A `Uint` instance.
 pub fn parse_string_to_uint(input: String) -> Result<Uint, GeneralError> {
-    U256::from_dec_str(&input).map_err(|_| GeneralError::InvalidTypeConvertError(input))
+    Ok(U256::from_dec_str(&input)?)
 }
 
 pub fn parse_f64_to_uint(input: f64) -> Result<Uint, GeneralError> {
-    U256::from_dec_str(&input.to_string())
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input.to_string()))
+    Ok(U256::from_dec_str(&input.to_string())?)
 }
 
 pub fn parse_token_to_i64(token: Token) -> Result<i64, GeneralError> {
@@ -202,10 +154,8 @@ pub fn parse_token_to_i64(token: Token) -> Result<i64, GeneralError> {
     }
 }
 
-pub fn parse_string_to_address(input: String) -> Result<Address, GeneralError> {
-    input
-        .parse::<Address>()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
+pub fn parse_string_to_address(input: &str) -> Result<Address, GeneralError> {
+    Ok(input.parse::<Address>()?)
 }
 
 /// Parses a string into an int.
@@ -218,15 +168,11 @@ pub fn parse_string_to_address(input: String) -> Result<Address, GeneralError> {
 ///
 /// An `Int` instance.
 pub fn parse_string_to_int(input: String) -> Result<Int, GeneralError> {
-    input
-        .parse::<Int>()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
+    Ok(input.parse::<Int>()?)
 }
 
-pub fn parse_string_to_float(input: String) -> Result<f64, GeneralError> {
-    input
-        .parse::<f64>()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
+pub fn parse_string_to_float(input: &str) -> Result<f64, GeneralError> {
+    Ok(input.parse::<f64>()?)
 }
 
 /// Parses a string into a bool.
@@ -239,9 +185,7 @@ pub fn parse_string_to_float(input: String) -> Result<f64, GeneralError> {
 ///
 /// A `bool` instance.
 pub fn parse_string_to_bool(input: String) -> Result<bool, GeneralError> {
-    input
-        .parse::<bool>()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
+    Ok(input.parse::<bool>()?)
 }
 
 /// Parses a string into an i32.
@@ -254,9 +198,7 @@ pub fn parse_string_to_bool(input: String) -> Result<bool, GeneralError> {
 ///
 /// An `i32` instance.
 pub fn parse_string_to_i32(input: String) -> Result<i32, GeneralError> {
-    input
-        .parse::<i32>()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
+    Ok(input.parse::<i32>()?)
 }
 
 /// Parses a string into an Ethereum address.
@@ -268,10 +210,8 @@ pub fn parse_string_to_i32(input: String) -> Result<i32, GeneralError> {
 /// # Returns
 ///
 /// A Result containing either an `Address` or a `GeneralError`.
-pub fn parse_to_address(input: String) -> Result<Address, GeneralError> {
-    input
-        .parse::<Address>()
-        .map_err(|_| GeneralError::InvalidTypeConvertError(input))
+pub fn parse_to_address(input: &str) -> Result<Address, GeneralError> {
+    Ok(input.parse::<Address>()?)
 }
 
 /// # Description
@@ -289,42 +229,43 @@ pub fn compare_token(
     left: &GeneralToken,
     right: &GeneralToken,
     comparator: &str,
-) -> Option<GeneralToken> {
+) -> Result<GeneralToken, GeneralError> {
     if !check_type_comparator(left, right, comparator) {
-        return None;
+        let error_msg = format!("{:?} {} {:?}", left, comparator, right);
+        return Err(GeneralError::InvalidOperator(error_msg));
     }
     match (left, right) {
         (GeneralToken::Uint(value), GeneralToken::Uint(expected_value)) => {
             parse_compare(value, expected_value, comparator)
         }
         (GeneralToken::Uint(value), GeneralToken::Int(expected_value)) => {
-            let left_big = BigInt::from_str(&value.to_string()).ok()?;
+            let left_big = BigInt::from_str(&value.to_string())?;
             parse_compare(&left_big, expected_value, comparator)
         }
         (GeneralToken::Int(value), GeneralToken::Int(expected_value)) => {
             parse_compare(value, expected_value, comparator)
         }
         (GeneralToken::Int(value), GeneralToken::Uint(expected_value)) => {
-            let right_big = BigInt::from_str(&expected_value.to_string()).ok()?;
+            let right_big = BigInt::from_str(&expected_value.to_string())?;
             parse_compare(value, &right_big, comparator)
         }
         (GeneralToken::Float(value), GeneralToken::Float(expected_value)) => {
-            parse_compare(value, expected_value, comparator)
+            Ok(parse_compare(value, expected_value, comparator)?)
         }
         (GeneralToken::Float(value), GeneralToken::Int(expected_value)) => {
-            let right_float = expected_value.to_f64().unwrap_or(0.0);
-            parse_compare(value, &right_float, comparator)
+            let right_float = option_or_err!(expected_value.to_f64());
+            Ok(parse_compare(value, &right_float, comparator)?)
         }
         (GeneralToken::Int(value), GeneralToken::Float(expected_value)) => {
-            let left_float = value.to_f64().unwrap_or(0.0);
-            parse_compare(&left_float, expected_value, comparator)
+            let left_float = option_or_err!(value.to_f64());
+            parse_float_arithmetic(&left_float, expected_value, comparator)
         }
         (GeneralToken::Float(value), GeneralToken::Uint(expected_value)) => {
-            let right_float = expected_value.to_string().parse::<f64>().unwrap_or(0.0);
+            let right_float = expected_value.to_string().parse::<f64>()?;
             parse_compare(value, &right_float, comparator)
         }
         (GeneralToken::Uint(value), GeneralToken::Float(expected_value)) => {
-            let left_float = value.to_string().parse::<f64>().unwrap_or(0.0);
+            let left_float = value.to_string().parse::<f64>()?;
             parse_compare(&left_float, expected_value, comparator)
         }
         (GeneralToken::Bool(value), GeneralToken::Bool(expected_value)) => {
@@ -336,13 +277,21 @@ pub fn compare_token(
         (GeneralToken::Address(value), GeneralToken::Address(expected_value)) => {
             parse_compare(value, expected_value, comparator)
         }
+        (GeneralToken::Address(value), GeneralToken::String(expected_value)) => {
+            let expected_address = parse_to_address(expected_value)?;
+            parse_compare(value, &expected_address, comparator)
+        }
+        (GeneralToken::String(value), GeneralToken::Address(expected_value)) => {
+            let value_address = parse_to_address(value)?;
+            parse_compare(&value_address, expected_value, comparator)
+        }
         (GeneralToken::Bytes(value), GeneralToken::Bytes(expected_value))
         | (GeneralToken::FixedBytes(value), GeneralToken::FixedBytes(expected_value)) => {
             let parsing_value = hex::encode(value);
             let parsing_expected_value = hex::encode(expected_value);
             parse_compare(&parsing_value, &parsing_expected_value, comparator)
         }
-        _ => None,
+        _ => Err(GeneralError::InvalidOperator(comparator.to_string())),
     }
 }
 
@@ -361,15 +310,15 @@ pub fn parse_compare<T: PartialOrd>(
     value: &T,
     expected_value: &T,
     comparator: &str,
-) -> Option<GeneralToken> {
+) -> Result<GeneralToken, GeneralError> {
     match comparator {
-        COMPARATOR_EQUAL => Some(GeneralToken::Bool(value == expected_value)),
-        COMPARATOR_GREATER => Some(GeneralToken::Bool(value > expected_value)),
-        COMPARATOR_GREATER_EQUAL => Some(GeneralToken::Bool(value >= expected_value)),
-        COMPARATOR_LESS => Some(GeneralToken::Bool(value < expected_value)),
-        COMPARATOR_LESS_EQUAL => Some(GeneralToken::Bool(value <= expected_value)),
-        COMPARATOR_NOT_EQUAL => Some(GeneralToken::Bool(value != expected_value)),
-        _ => None,
+        COMPARATOR_EQUAL => Ok(GeneralToken::Bool(value == expected_value)),
+        COMPARATOR_GREATER => Ok(GeneralToken::Bool(value > expected_value)),
+        COMPARATOR_GREATER_EQUAL => Ok(GeneralToken::Bool(value >= expected_value)),
+        COMPARATOR_LESS => Ok(GeneralToken::Bool(value < expected_value)),
+        COMPARATOR_LESS_EQUAL => Ok(GeneralToken::Bool(value <= expected_value)),
+        COMPARATOR_NOT_EQUAL => Ok(GeneralToken::Bool(value != expected_value)),
+        _ => Err(GeneralError::InvalidOperator(comparator.to_string())),
     }
 }
 
@@ -400,7 +349,9 @@ pub fn check_type_comparator(left: &GeneralToken, right: &GeneralToken, comparat
         | (GeneralToken::Uint(_), GeneralToken::Float(_)) => {
             FLOAT_COMPARATOR_TYPE.contains(&comparator)
         }
-        (GeneralToken::Address(_), GeneralToken::Address(_)) => {
+        (GeneralToken::Address(_), GeneralToken::Address(_))
+        | (GeneralToken::Address(_), GeneralToken::String(_))
+        | (GeneralToken::String(_), GeneralToken::Address(_)) => {
             ADDRESS_COMPARATOR_TYPE.contains(&comparator)
         }
         (GeneralToken::Bool(_), GeneralToken::Bool(_)) => {
@@ -431,52 +382,61 @@ pub fn arithmetic_token(
     left: &GeneralToken,
     right: &GeneralToken,
     operator: &str,
-) -> Option<GeneralToken> {
+) -> Result<GeneralToken, GeneralError> {
     if !check_type_arithmetic(left, right, operator) {
-        return None;
+        return Err(GeneralError::InvalidOperator(operator.to_string()));
     }
     match (left, right) {
         (GeneralToken::Uint(value), GeneralToken::Uint(expected_value)) => {
-            parse_u256_arithmetic(value, expected_value, operator)
+            if value < expected_value {
+                let left_big = BigInt::from_str(&value.to_string())?;
+                let right_big = BigInt::from_str(&expected_value.to_string())?;
+                parse_bigint_arithmetic(&left_big, &right_big, operator)
+            } else {
+                parse_u256_arithmetic(value, expected_value, operator)
+            }
         }
         (GeneralToken::Uint(value), GeneralToken::Int(expected_value)) => {
-            let left_big = BigInt::from_str(&value.to_string()).ok()?;
+            let left_big = BigInt::from_str(&value.to_string())?;
             parse_bigint_arithmetic(&left_big, expected_value, operator)
         }
         (GeneralToken::Int(value), GeneralToken::Int(expected_value)) => {
             parse_bigint_arithmetic(value, expected_value, operator)
         }
         (GeneralToken::Int(value), GeneralToken::Uint(expected_value)) => {
-            let right_big = BigInt::from_str(&expected_value.to_string()).ok()?;
+            let right_big = BigInt::from_str(&expected_value.to_string())?;
             parse_bigint_arithmetic(value, &right_big, operator)
         }
         (GeneralToken::Float(value), GeneralToken::Float(expected_value)) => {
             parse_float_arithmetic(value, expected_value, operator)
         }
         (GeneralToken::Float(value), GeneralToken::Int(expected_value)) => {
-            let right_float = expected_value.to_f64().unwrap_or(0.0);
+            let right_float = option_or_err!(expected_value.to_f64());
             parse_float_arithmetic(value, &right_float, operator)
         }
         (GeneralToken::Float(value), GeneralToken::Uint(expected_value)) => {
-            let right_float = expected_value.to_string().parse::<f64>().unwrap_or(0.0);
+            let right_float = expected_value.to_string().parse::<f64>()?;
             parse_float_arithmetic(value, &right_float, operator)
         }
         (GeneralToken::Int(value), GeneralToken::Float(expected_value)) => {
-            let left_float = value.to_f64().unwrap_or(0.0);
+            let left_float = option_or_err!(value.to_f64());
             parse_float_arithmetic(&left_float, expected_value, operator)
         }
         (GeneralToken::Uint(value), GeneralToken::Float(expected_value)) => {
-            let left_float = value.to_string().parse::<f64>().unwrap_or(0.0);
+            let left_float = value.to_string().parse::<f64>()?;
             parse_float_arithmetic(&left_float, expected_value, operator)
         }
         (GeneralToken::String(value), GeneralToken::String(expected_value)) => {
             parse_string_arithmetic(value, expected_value, operator)
         }
         (GeneralToken::String(value), other) | (other, GeneralToken::String(value)) => {
-            let other_str = other.clone().into_string().unwrap_or_default();
+            let other_str = parse_token_to_string(other)?;
             parse_string_arithmetic(value, &other_str, operator)
         }
-        _ => None,
+        _ => Err(GeneralError::InvalidOperator(format!(
+            "{:?} {} {:?}",
+            left, operator, right
+        ))),
     }
 }
 
@@ -488,13 +448,13 @@ fn parse_float_arithmetic(
     value: &f64,
     expected_value: &f64,
     operator: &str,
-) -> Option<GeneralToken> {
+) -> Result<GeneralToken, GeneralError> {
     match operator {
-        OPERATOR_ADD => Some(GeneralToken::Float(value + expected_value)),
-        OPERATOR_SUB => Some(GeneralToken::Float(value - expected_value)),
-        OPERATOR_MUL => Some(GeneralToken::Float(value * expected_value)),
-        OPERATOR_DIV => Some(GeneralToken::Float(value / expected_value)),
-        _ => None,
+        OPERATOR_ADD => Ok(GeneralToken::Float(value + expected_value)),
+        OPERATOR_SUB => Ok(GeneralToken::Float(value - expected_value)),
+        OPERATOR_MUL => Ok(GeneralToken::Float(value * expected_value)),
+        OPERATOR_DIV => Ok(GeneralToken::Float(value / expected_value)),
+        _ => Err(GeneralError::InvalidOperator(operator.to_string())),
     }
 }
 
@@ -542,16 +502,16 @@ pub fn parse_bigint_arithmetic(
     value: &BigInt,
     expected_value: &BigInt,
     operator: &str,
-) -> Option<GeneralToken> {
+) -> Result<GeneralToken, GeneralError> {
     match operator {
-        OPERATOR_ADD => Some(GeneralToken::Int(value + expected_value)),
-        OPERATOR_SUB => Some(GeneralToken::Int(value - expected_value)),
-        OPERATOR_MUL => Some(GeneralToken::Int(value * expected_value)),
+        OPERATOR_ADD => Ok(GeneralToken::Int(value + expected_value)),
+        OPERATOR_SUB => Ok(GeneralToken::Int(value - expected_value)),
+        OPERATOR_MUL => Ok(GeneralToken::Int(value * expected_value)),
         OPERATOR_DIV => {
-            let result = value.to_f64().unwrap_or(0.0) / expected_value.to_f64().unwrap_or(1.0);
-            Some(GeneralToken::Float(result))
+            let result = option_or_err!(value.to_f64()) / option_or_err!(expected_value.to_f64());
+            Ok(GeneralToken::Float(result))
         }
-        _ => None,
+        _ => Err(GeneralError::InvalidOperator(operator.to_string())),
     }
 }
 
@@ -559,13 +519,21 @@ pub fn parse_u256_arithmetic(
     value: &U256,
     expected_value: &U256,
     operator: &str,
-) -> Option<GeneralToken> {
+) -> Result<GeneralToken, GeneralError> {
     match operator {
-        OPERATOR_ADD => value.checked_add(*expected_value).map(GeneralToken::Uint),
-        OPERATOR_SUB => value.checked_sub(*expected_value).map(GeneralToken::Uint),
-        OPERATOR_MUL => value.checked_mul(*expected_value).map(GeneralToken::Uint),
-        OPERATOR_DIV => value.checked_div(*expected_value).map(GeneralToken::Uint),
-        _ => None,
+        OPERATOR_ADD => Ok(GeneralToken::Uint(option_or_err!(
+            value.checked_add(*expected_value)
+        ))),
+        OPERATOR_SUB => Ok(GeneralToken::Uint(option_or_err!(
+            value.checked_sub(*expected_value)
+        ))),
+        OPERATOR_MUL => Ok(GeneralToken::Uint(option_or_err!(
+            value.checked_mul(*expected_value)
+        ))),
+        OPERATOR_DIV => Ok(GeneralToken::Uint(option_or_err!(
+            value.checked_div(*expected_value)
+        ))),
+        _ => Err(GeneralError::InvalidOperator(operator.to_string())),
     }
 }
 
@@ -584,10 +552,10 @@ pub fn parse_string_arithmetic(
     value: &str,
     expected_value: &str,
     operator: &str,
-) -> Option<GeneralToken> {
+) -> Result<GeneralToken, GeneralError> {
     match operator {
-        OPERATOR_ADD => Some(GeneralToken::String(value.to_string() + expected_value)),
-        _ => None,
+        OPERATOR_ADD => Ok(GeneralToken::String(value.to_string() + expected_value)),
+        _ => Err(GeneralError::InvalidOperator(operator.to_string())),
     }
 }
 
@@ -595,9 +563,7 @@ pub fn convert_hex_token(str_param: &str) -> Result<Token, GeneralError> {
     if str_param.starts_with("0x") {
         let trimmed_hex = str_param.strip_prefix("0x").unwrap_or(str_param);
         match trimmed_hex.len() {
-            40 => Ok(Token::Address(Address::from_str(str_param).map_err(
-                |_| GeneralError::InvalidTypeConvertError(str_param.to_string()),
-            )?)),
+            40 => Ok(Token::Address(Address::from_str(str_param)?)),
             _ => Ok(Token::Uint(hex_to_eth_amount(str_param)?)),
         }
     } else {
@@ -614,100 +580,90 @@ pub fn convert_hex_param(str_param: &str) -> Result<ParamType, GeneralError> {
 }
 
 pub fn hex_to_eth_amount(hex: &str) -> Result<U256, GeneralError> {
-    U256::from_str_radix(&hex[2..], 16)
-        .map_err(|_| GeneralError::InvalidTypeConvertError(hex.to_string()))
+    Ok(U256::from_str_radix(&hex[2..], 16)?)
 }
 
-/// # Description
-/// This function loads RPC call rules from the database.
-/// # Arguments
-/// * `db_client` - A reference to the Postgres client.
-/// # Returns
+// Read and parse service files
 ///
-/// A vector of `RpcCallRule`.
-pub async fn load_rpc_call_rules(
-    db_client: &PostgresClient,
-) -> Result<Vec<RpcCallRule>, GeneralError> {
-    let result = db_client
-        .select_table(DbRuleType::RpcCall)
-        .await
-        .map_err(|e| GeneralError::InvalidDatabase(e.to_string()))?;
-
-    let rpc_calls: Vec<RpcCallRule> = result
-        .iter()
-        .map(|row| row.try_into())
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rpc_calls)
-}
-
 /// # Description
-/// This function loads contract call rules from the database.
-/// # Arguments
-/// * `db_client` - A reference to the Postgres client.
-/// # Returns
+/// This function reads and parses service files from the service directory.
+/// It recursively traverses all subdirectories to find YAML files.
+/// The category is constructed from the directory structure (e.g., "apy_monitor/info").
 ///
-/// A vector of `ContractCallRule`.
-pub async fn load_contract_call_rules(
-    db_client: &PostgresClient,
-) -> Result<Vec<ContractCallRule>, GeneralError> {
-    let result = db_client
-        .select_table(DbRuleType::ContractCall)
-        .await
-        .map_err(|e| GeneralError::InvalidDatabase(e.to_string()))?;
+/// # Returns
+/// A Result<Vec<RuleData>, DatabaseError> containing the parsed rule data.
+pub async fn read_service_files(project_root: &PathBuf) -> Result<Vec<RuleData>, DatabaseError> {
+    // Construct the path to the service directory
+    let service_dir = project_root.join("service");
 
-    let contract_calls: Vec<ContractCallRule> = result
-        .iter()
-        .map(|row| row.try_into())
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(contract_calls)
+    // Check if the service directory exists
+    if !service_dir.exists() {
+        return Err(DatabaseError::GenericInitError(format!(
+            "Service directory not found at: {:?}",
+            service_dir
+        )));
+    }
+
+    let mut rules = Vec::new();
+    let mut category_parts = Vec::new();
+    read_directory_recursive(&service_dir, &mut rules, &mut category_parts)?;
+    Ok(rules)
 }
 
-/// # Description
-/// This function loads contract event rules from the database.
-/// # Arguments
-/// * `db_client` - A reference to the Postgres client.
-/// # Returns
+/// Recursively read directory and parse YAML files
 ///
-/// A vector of `ContractEventRule`.
-pub async fn load_contract_event_rules(
-    db_client: &PostgresClient,
-) -> Result<Vec<ContractEventRule>, GeneralError> {
-    let result = db_client
-        .select_table(DbRuleType::ContractEvent)
-        .await
-        .map_err(|e| GeneralError::InvalidDatabase(e.to_string()))?;
+/// # Arguments
+/// * `dir` - The directory to read
+/// * `rules` - Vector to store parsed rules
+/// * `category_parts` - Vector of category parts for building the full category path
+fn read_directory_recursive(
+    dir: &Path,
+    rules: &mut Vec<RuleData>,
+    category_parts: &mut Vec<String>,
+) -> Result<(), DatabaseError> {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
 
-    let contract_events: Vec<ContractEventRule> = result
-        .iter()
-        .map(|row| row.try_into())
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(contract_events)
+            if path.is_dir() {
+                if let Some(dir_name) = path.file_name().and_then(|name| name.to_str()) {
+                    category_parts.push(dir_name.to_string());
+
+                    read_directory_recursive(&path, rules, category_parts)?;
+                    category_parts.pop();
+                }
+            } else if path.is_file() && path.extension().map_or(false, |ext| ext == "yaml") {
+                let category = category_parts.join("/");
+
+                if let Ok(contents) = fs::read_to_string(&path) {
+                    match serde_yaml::from_str::<YamlRule>(&contents) {
+                        Ok(yaml_rule) => {
+                            let rule_data = RuleData {
+                                category: category.clone(),
+                                name: yaml_rule.name,
+                                time_interval: yaml_rule.time_interval,
+                                script: yaml_rule.script,
+                            };
+                            rules.push(rule_data);
+                        }
+                        Err(e) => {
+                            return Err(DatabaseError::GenericInitError(format!(
+                                "Failed to parse YAML file {:?}: {}",
+                                path, e
+                            )));
+                        }
+                    }
+                } else {
+                    return Err(DatabaseError::GenericInitError(format!(
+                        "Failed to read file: {:?}",
+                        path
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
 }
-
-// /// # Description
-// /// This function loads evaluations from the database.
-// /// # Arguments
-// /// * `db_client` - A reference to the Postgres client.
-// ///
-// /// # Returns
-// ///
-// /// A vector of `EvaluationRule`.
-// pub async fn load_evaluations(
-//     db_client: &PostgresClient,
-// ) -> Result<Vec<EvaluationRule>, GeneralError> {
-//     let result = db_client
-//         .select_table(DbRuleType::Evaluation)
-//         .await
-//         .map_err(|e| GeneralError::InvalidDatabase(e.to_string()))?;
-
-//     result
-//         .iter()
-//         .map(|row| {
-//             EvaluationRule::try_from(row)
-//                 .map_err(|e| GeneralError::InvalidTypeConvertError(e.to_string()))
-//         })
-//         .collect::<Result<Vec<_>, _>>()
-// }
 
 #[cfg(test)]
 mod test {
