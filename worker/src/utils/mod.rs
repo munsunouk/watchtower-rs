@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{runner::Runner, *};
 
 pub mod config;
 pub mod constants;
@@ -72,11 +72,11 @@ fn build_runtime() -> Result<Runtime, WorkerError> {
 }
 
 /// Runs the application with the runtime.
-pub fn run_with_runtime() -> Result<(), WorkerError> {
+pub fn run_with_runtime(args: Args) -> Result<(), WorkerError> {
     let runtime = build_runtime()?;
 
     let result = runtime.block_on(async {
-        let runner = Runner::new().await?;
+        let runner = Runner::new(args).await?;
         runner.run().await
     });
 
