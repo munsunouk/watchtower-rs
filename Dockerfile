@@ -30,8 +30,8 @@ run mkdir -p /app/service
 copy --from=builder /usr/src/watchtower/target/release/watch_tower_worker .
 
 # Copy configuration files
-copy --from=builder /usr/src/watchtower/worker/config.yaml /app/worker/
-copy --from=builder /usr/src/watchtower/worker/param.yaml /app/worker/
+copy worker/config.yaml /app/worker/
+copy worker/param.yaml /app/worker/
 
 # Copy ABI files
 copy --from=builder /usr/src/watchtower/lib/src/cli/abi /app/lib/src/cli/abi

@@ -12,5 +12,5 @@ script: |
   msg = '*Base Bundler Native Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceBundler + '\n> 기준 잔액 : ' + CompareBalance;
 
   if CompareBalance > BalanceBundler (
-    Slack.Send(Monitor, notify_time_interval, msg);
+    Slack.Send(Boost, notify_time_interval, msg);
   );
