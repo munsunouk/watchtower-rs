@@ -29,9 +29,9 @@ run mkdir -p /app/service
 # Copy the built binary
 copy --from=builder /usr/src/watchtower/target/release/watch_tower_worker .
 
-# Copy configuration files
-copy worker/config.yaml /app/worker/
-copy worker/param.yaml /app/worker/
+# # Copy configuration files
+# copy worker/config.yaml /app/worker/
+# copy worker/param.yaml /app/worker/
 
 # Copy ABI files
 copy --from=builder /usr/src/watchtower/lib/src/cli/abi /app/lib/src/cli/abi
