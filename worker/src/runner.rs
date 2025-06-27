@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use sentry::ClientInitGuard;
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time};
 use tracing::Level;
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -14,10 +14,11 @@ use crate::{
     parse::evaluation::Evaluator,
     utils::{
         config::{Configuration, ParamConfig},
-        constants::{CONFIG_PATH, PARAM_CONFIG_PATH, SQLX_QUERY_WARN, TIME_FORMAT},
+        constants::{SQLX_QUERY_WARN, TIME_FORMAT},
         error::WorkerError,
         setting::{build_sentry, set_config, set_param_config},
     },
+    Args,
 };
 
 pub struct Runner {
@@ -34,15 +35,15 @@ impl Runner {
     /// # Returns
     ///
     /// A new instance of `Runner`.
-    pub async fn new() -> Result<Self, WorkerError> {
+    pub async fn new(args: Args) -> Result<Self, WorkerError> {
         Self::set_log()?;
 
         let project_root = std::env::current_dir()?;
-        let config_path = project_root.join(CONFIG_PATH);
-        let param_config_path = project_root.join(PARAM_CONFIG_PATH);
+        let config_path = project_root.join(&args.config_path);
+        let param_config_path = project_root.join(&args.param_path);
 
         let mut config = set_config(&config_path)?;
-        config.set_path(CONFIG_PATH);
+        config.set_path(&args.config_path);
 
         let param_config = set_param_config(&param_config_path)?;
 
@@ -70,7 +71,11 @@ impl Runner {
     /// Runs the get_result function periodically based on the rule's time_interval
     pub async fn run(&self) -> Result<(), WorkerError> {
         self.spawn_evaluator_tasks().await?;
-        Ok(())
+
+        // Keep the main thread alive indefinitely
+        loop {
+            time::sleep(time::Duration::from_millis(100)).await;
+        }
     }
 
     /// # Description
@@ -155,19 +160,23 @@ impl Runner {
     /// # Returns
     ///
     /// A `Result` that is `Ok(())` if the evaluator tasks are spawned successfully, and `Err(WorkerError)` otherwise.
+    /// # Description
+    /// This function spawns the evaluator tasks.
+    /// # Arguments
+    ///
+    /// * `evaluators` - A vector of evaluators.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` that is `Ok(())` if the evaluator tasks are spawned successfully, and `Err(WorkerError)` otherwise.
     pub async fn spawn_evaluator_tasks(&self) -> Result<(), WorkerError> {
-        let mut handles = Vec::new();
-
+        // Spawn tasks independently
         for evaluator in &self.evaluators {
             let evaluator = Arc::clone(evaluator);
-            let handle = tokio::task::spawn(async move {
+            tokio::task::spawn(async move {
                 evaluator.lock().await.run().await;
             });
-            handles.push(handle);
         }
-
-        futures::future::join_all(handles).await;
-
         Ok(())
     }
 }

@@ -7,10 +7,6 @@ pub const DEFAULT_FN_INPUT_INDEX: usize = 0;
 /// Add Memory Value Order
 pub const ADD_MEMORY_VALUE_ORDER: u64 = 1;
 
-/// Config Path
-pub const CONFIG_PATH: &str = "./worker/config.yaml";
-pub const PARAM_CONFIG_PATH: &str = "./worker/param.yaml";
-
 /// Health Check Time Interval (1 Minute)
 pub const HEALETH_CHECK_INTERVAL: u64 = 60;
 

@@ -1,0 +1,16 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./worker/config.yaml:/app/worker/config.mainnet.yaml
+      - ./worker/param.yaml:/app/worker/param.mainnet.yaml
+    command:
+      [
+        "./watch_tower_worker",
+        "--config-path",
+        "/app/worker/config.mainnet.yaml",
+        "--param-path",
+        "/app/worker/param.mainnet.yaml",
+      ]
