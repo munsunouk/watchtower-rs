@@ -31,6 +31,9 @@ use watch_tower_lib::{
     },
 };
 
+use crate::utils::constants::{
+    JSON_RPC_RESULT, META_DATA_APY, META_DATA_FLOAT, META_DATA_VAULT_ADDRESS,
+};
 use crate::{option_or_err, parse::evaluation::ParseResultType, utils::error::WorkerError};
 
 /// # Description
@@ -145,8 +148,8 @@ fn convert_value_to_param_type(value: &Value) -> Result<ParamType, WorkerError> 
         }
         Value::Object(obj) => {
             // Handle JSON-RPC response by extracting the result field
-            if obj.contains_key("result") {
-                if let Some(result) = obj.get("result") {
+            if obj.contains_key(JSON_RPC_RESULT) {
+                if let Some(result) = obj.get(JSON_RPC_RESULT) {
                     return convert_value_to_param_type(result);
                 }
             }
@@ -180,8 +183,8 @@ fn convert_value_to_token(value: &Value) -> Result<Token, WorkerError> {
         }
         Value::Object(obj) => {
             // Handle JSON-RPC response by extracting the result field
-            if obj.contains_key("result") {
-                if let Some(result) = obj.get("result") {
+            if obj.contains_key(JSON_RPC_RESULT) {
+                if let Some(result) = obj.get(JSON_RPC_RESULT) {
                     return convert_value_to_token(result);
                 }
             }
@@ -522,7 +525,7 @@ pub fn decode_meta_data(
 ) -> Result<GeneralToken, WorkerError> {
     let meta_data = option_or_err!(variables.get("meta_data"));
     match meta_data {
-        ParseResultType::String(meta_data) if meta_data == "VaultAddress" => {
+        ParseResultType::String(meta_data) if meta_data == META_DATA_VAULT_ADDRESS => {
             if let GeneralToken::Tuple(arr) = token {
                 let sum = arr.iter().fold(U256::zero(), |acc, token| {
                     if let GeneralToken::Uint(value) = token {
@@ -539,7 +542,7 @@ pub fn decode_meta_data(
             }
         }
 
-        ParseResultType::String(meta_data) if meta_data == "APY" => {
+        ParseResultType::String(meta_data) if meta_data == META_DATA_APY => {
             if let GeneralToken::String(apy) = token {
                 let mut apy_float = parse_string_to_float(apy)? * 100.0;
                 apy_float = format_float_to_4_decimal(apy_float);
@@ -552,7 +555,7 @@ pub fn decode_meta_data(
             }
         }
 
-        ParseResultType::String(meta_data) if meta_data == "Float" => {
+        ParseResultType::String(meta_data) if meta_data == META_DATA_FLOAT => {
             if let GeneralToken::String(apy) = token {
                 let mut apy_float = parse_string_to_float(apy)?;
                 apy_float = format_float_to_4_decimal(apy_float);

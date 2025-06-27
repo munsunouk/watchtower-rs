@@ -22,5 +22,5 @@ script: |
   msg = '*BRP BTC Balance 알람* 🚀\n <!here>\n> BTC 차이: ' + btcDiff + '\n> BTC(Vault) : ' + btcLiq + '\n> Bifrost(UnifiedBTC) : ' + unifiedBTCLiq;
 
   if btcDiff > notify_rate (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(CORE, notify_time_interval, msg);
   );

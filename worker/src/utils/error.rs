@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use crate::parse::evaluation::Rule;
+use crate::utils::constants::TASK_SPAWN_BLOCKING;
 use std::fmt::Debug;
 use watch_tower_lib::utils::error::{ClientError, DatabaseError, GeneralError, SentryError};
 use watch_tower_lib::utils::{error::IndexType, DbTable};
@@ -26,8 +27,6 @@ pub enum WorkerError {
     FailedSpawn(String, String) = 2018,
     #[error("[Error Type : Worker], [Issue : Invalid index depth]")]
     InvalidIndexDepth = 2021,
-    #[error("[Error Type : Worker], [Issue : Invalid contract], [Error : {0}]")]
-    InvalidContract(String) = 2022,
 
     #[error(
         "[Error Type : General], [Issue : Invalid file open error. Please check your file. {0}]"
@@ -94,6 +93,13 @@ impl From<ClientError> for WorkerError {
                 WorkerError::InvalidTypeConvertError(format!("Invalid Slack connection: {msg}"))
             }
             ClientError::InvalidTypeConvertError(msg) => WorkerError::InvalidTypeConvertError(msg),
+            ClientError::HttpRequestError(msg) => WorkerError::InternalProviderError(msg),
+            ClientError::HttpResponseError(msg) => WorkerError::InternalProviderError(msg),
+            ClientError::HttpTimeoutError(msg) => WorkerError::InternalProviderError(msg),
+            ClientError::HttpRedirectError(msg) => WorkerError::InternalProviderError(msg),
+            ClientError::HttpConnectionError(msg) => WorkerError::InternalProviderError(msg),
+            ClientError::HttpBodyError(msg) => WorkerError::InternalProviderError(msg),
+            ClientError::HttpDecodeError(msg) => WorkerError::InternalProviderError(msg),
         }
     }
 }
@@ -123,7 +129,7 @@ impl From<pest::error::Error<Rule>> for WorkerError {
 }
 impl From<tokio::task::JoinError> for WorkerError {
     fn from(err: tokio::task::JoinError) -> Self {
-        WorkerError::FailedTask("spawn_blocking".to_string(), err.to_string())
+        WorkerError::FailedTask(TASK_SPAWN_BLOCKING.to_string(), err.to_string())
     }
 }
 

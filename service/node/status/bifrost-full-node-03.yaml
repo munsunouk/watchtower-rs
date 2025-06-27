@@ -19,5 +19,5 @@ script: |
   msg = '*Node Liveness 알람* 🚀\n> Node : ' + node_name + '\n> 상태 :' + status_name;
 
   if node_status != 1 (
-    Slack.Send(CCCP, notify_time_interval, msg)
+    Slack.Send(CCCP, notify_time_interval, msg);
   );

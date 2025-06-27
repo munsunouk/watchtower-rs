@@ -12,7 +12,7 @@ use constants::{
     COMPARATOR_GREATER, COMPARATOR_GREATER_EQUAL, COMPARATOR_LESS, COMPARATOR_LESS_EQUAL,
     COMPARATOR_NOT_EQUAL, FIXED_BYTES_COMPARATOR_TYPE, FLOAT_ARITHMETIC_TYPE,
     FLOAT_COMPARATOR_TYPE, INT_ARITHMETIC_TYPE, INT_COMPARATOR_TYPE, OPERATOR_ADD, OPERATOR_DIV,
-    OPERATOR_MUL, OPERATOR_SUB, RULE, STRING_ARITHMETIC_TYPE, STRING_COMPARATOR_TYPE,
+    OPERATOR_MUL, OPERATOR_POW, OPERATOR_SUB, RULE, STRING_ARITHMETIC_TYPE, STRING_COMPARATOR_TYPE,
     UINT_ARITHMETIC_TYPE, UINT_COMPARATOR_TYPE,
 };
 use reqwest::Method;
@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use ethers::{
-    abi::{Abi, Int, Token, Uint},
+    abi::{Abi, Token, Uint},
     prelude::*,
     utils::hex,
 };
@@ -32,6 +32,9 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
 use crate::rule::parse_token_to_string;
+use crate::utils::constants::{
+    RPC_CALL_TYPE_BODY, RPC_CALL_TYPE_QUERY, SERVICE_DIR, YAML_EXTENSION,
+};
 use crate::utils::types::GeneralToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,8 +106,8 @@ pub fn parse_string_to_method(input: String) -> Method {
 
 pub fn parse_string_to_rpc_call_type(input: String) -> Result<RpcCallType, GeneralError> {
     match input.as_str() {
-        "body" => Ok(RpcCallType::Body),
-        "query" => Ok(RpcCallType::Query),
+        RPC_CALL_TYPE_BODY => Ok(RpcCallType::Body),
+        RPC_CALL_TYPE_QUERY => Ok(RpcCallType::Query),
         _ => Err(GeneralError::InvalidTypeConvertError(input)),
     }
 }
@@ -126,6 +129,16 @@ pub fn parse_to_abi(input: Value) -> Result<Abi, GeneralError> {
     Ok(from_str(&input.to_string())?)
 }
 
+pub fn parse_string_to_number(input: &str) -> Result<GeneralToken, GeneralError> {
+    if input.contains('-') {
+        Ok(GeneralToken::Int(parse_string_to_int(input)?))
+    } else if input.contains('.') {
+        Ok(GeneralToken::Float(parse_string_to_float(input)?))
+    } else {
+        Ok(GeneralToken::Uint(parse_string_to_uint(input)?))
+    }
+}
+
 /// Parses a string into a uint.
 ///
 /// # Arguments
@@ -135,8 +148,8 @@ pub fn parse_to_abi(input: Value) -> Result<Abi, GeneralError> {
 /// # Returns
 ///
 /// A `Uint` instance.
-pub fn parse_string_to_uint(input: String) -> Result<Uint, GeneralError> {
-    Ok(U256::from_dec_str(&input)?)
+pub fn parse_string_to_uint(input: &str) -> Result<Uint, GeneralError> {
+    Ok(U256::from_dec_str(input)?)
 }
 
 pub fn parse_f64_to_uint(input: f64) -> Result<Uint, GeneralError> {
@@ -167,8 +180,8 @@ pub fn parse_string_to_address(input: &str) -> Result<Address, GeneralError> {
 /// # Returns
 ///
 /// An `Int` instance.
-pub fn parse_string_to_int(input: String) -> Result<Int, GeneralError> {
-    Ok(input.parse::<Int>()?)
+pub fn parse_string_to_int(input: &str) -> Result<BigInt, GeneralError> {
+    Ok(input.parse::<BigInt>()?)
 }
 
 pub fn parse_string_to_float(input: &str) -> Result<f64, GeneralError> {
@@ -454,6 +467,7 @@ fn parse_float_arithmetic(
         OPERATOR_SUB => Ok(GeneralToken::Float(value - expected_value)),
         OPERATOR_MUL => Ok(GeneralToken::Float(value * expected_value)),
         OPERATOR_DIV => Ok(GeneralToken::Float(value / expected_value)),
+        OPERATOR_POW => Ok(GeneralToken::Float(value.powf(*expected_value))),
         _ => Err(GeneralError::InvalidOperator(operator.to_string())),
     }
 }
@@ -511,6 +525,9 @@ pub fn parse_bigint_arithmetic(
             let result = option_or_err!(value.to_f64()) / option_or_err!(expected_value.to_f64());
             Ok(GeneralToken::Float(result))
         }
+        OPERATOR_POW => Ok(GeneralToken::Int(
+            value.pow(option_or_err!(expected_value.to_u32())),
+        )),
         _ => Err(GeneralError::InvalidOperator(operator.to_string())),
     }
 }
@@ -533,6 +550,7 @@ pub fn parse_u256_arithmetic(
         OPERATOR_DIV => Ok(GeneralToken::Uint(option_or_err!(
             value.checked_div(*expected_value)
         ))),
+        OPERATOR_POW => Ok(GeneralToken::Uint(value.pow(*expected_value))),
         _ => Err(GeneralError::InvalidOperator(operator.to_string())),
     }
 }
@@ -559,12 +577,57 @@ pub fn parse_string_arithmetic(
     }
 }
 
+/// Validates if a string is a properly formatted hex string
+pub fn is_valid_hex_string(hex: &str) -> bool {
+    if !hex.starts_with("0x") {
+        return false;
+    }
+    let hex_content = &hex[2..];
+    !hex_content.is_empty() && hex_content.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Validates if a string is a properly formatted Ethereum address
+pub fn is_valid_ethereum_address(addr: &str) -> bool {
+    if !addr.starts_with("0x") {
+        return false;
+    }
+    let addr_content = &addr[2..];
+    addr_content.len() == 40 && addr_content.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 pub fn convert_hex_token(str_param: &str) -> Result<Token, GeneralError> {
     if str_param.starts_with("0x") {
         let trimmed_hex = str_param.strip_prefix("0x").unwrap_or(str_param);
+
+        // Validate hex string format
+        if !trimmed_hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(GeneralError::InvalidTypeConvertError(format!(
+                "Invalid hex string format: '{}' contains non-hex characters",
+                str_param
+            )));
+        }
+
         match trimmed_hex.len() {
-            40 => Ok(Token::Address(Address::from_str(str_param)?)),
-            _ => Ok(Token::Uint(hex_to_eth_amount(str_param)?)),
+            40 => {
+                // Validate Ethereum address format
+                if is_valid_ethereum_address(str_param) {
+                    Ok(Token::Address(Address::from_str(str_param)?))
+                } else {
+                    Err(GeneralError::InvalidTypeConvertError(format!(
+                        "Invalid Ethereum address format: '{}'",
+                        str_param
+                    )))
+                }
+            }
+            _ => {
+                // For other hex values, ensure they're valid
+                if trimmed_hex.is_empty() {
+                    return Err(GeneralError::InvalidTypeConvertError(
+                        "Empty hex string after '0x' prefix".to_string(),
+                    ));
+                }
+                Ok(Token::Uint(hex_to_eth_amount(str_param)?))
+            }
         }
     } else {
         Ok(Token::String(str_param.to_string()))
@@ -573,14 +636,55 @@ pub fn convert_hex_token(str_param: &str) -> Result<Token, GeneralError> {
 
 pub fn convert_hex_param(str_param: &str) -> Result<ParamType, GeneralError> {
     if str_param.starts_with("0x") {
-        Ok(ParamType::Address)
+        // Validate hex format before determining type
+        if !is_valid_hex_string(str_param) {
+            return Err(GeneralError::InvalidTypeConvertError(format!(
+                "Invalid hex string format: '{}'",
+                str_param
+            )));
+        }
+
+        if is_valid_ethereum_address(str_param) {
+            Ok(ParamType::Address)
+        } else {
+            Ok(ParamType::String)
+        }
     } else {
         Ok(ParamType::String)
     }
 }
 
 pub fn hex_to_eth_amount(hex: &str) -> Result<U256, GeneralError> {
-    Ok(U256::from_str_radix(&hex[2..], 16)?)
+    // Validate hex string format before parsing
+    if !hex.starts_with("0x") {
+        return Err(GeneralError::InvalidTypeConvertError(format!(
+            "Hex string must start with '0x': '{}'",
+            hex
+        )));
+    }
+
+    let hex_content = &hex[2..];
+    if hex_content.is_empty() {
+        return Err(GeneralError::InvalidTypeConvertError(
+            "Hex string is empty after '0x' prefix".to_string(),
+        ));
+    }
+
+    // Validate that all characters are valid hex digits
+    if !hex_content.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(GeneralError::InvalidTypeConvertError(format!(
+            "Invalid hex characters in '{}'",
+            hex
+        )));
+    }
+
+    // Parse the hex string
+    U256::from_str_radix(hex_content, 16).map_err(|e| {
+        GeneralError::InvalidTypeConvertError(format!(
+            "Failed to parse hex string '{}': {}",
+            hex, e
+        ))
+    })
 }
 
 // Read and parse service files
@@ -594,7 +698,7 @@ pub fn hex_to_eth_amount(hex: &str) -> Result<U256, GeneralError> {
 /// A Result<Vec<RuleData>, DatabaseError> containing the parsed rule data.
 pub async fn read_service_files(project_root: &PathBuf) -> Result<Vec<RuleData>, DatabaseError> {
     // Construct the path to the service directory
-    let service_dir = project_root.join("service");
+    let service_dir = project_root.join(SERVICE_DIR);
 
     // Check if the service directory exists
     if !service_dir.exists() {
@@ -607,6 +711,7 @@ pub async fn read_service_files(project_root: &PathBuf) -> Result<Vec<RuleData>,
     let mut rules = Vec::new();
     let mut category_parts = Vec::new();
     read_directory_recursive(&service_dir, &mut rules, &mut category_parts)?;
+
     Ok(rules)
 }
 
@@ -626,13 +731,15 @@ fn read_directory_recursive(
             let path = entry.path();
 
             if path.is_dir() {
-                if let Some(dir_name) = path.file_name().and_then(|name| name.to_str()) {
-                    category_parts.push(dir_name.to_string());
-
-                    read_directory_recursive(&path, rules, category_parts)?;
-                    category_parts.pop();
-                }
-            } else if path.is_file() && path.extension().map_or(false, |ext| ext == "yaml") {
+                category_parts.push(
+                    option_or_err!(path.file_name())
+                        .to_string_lossy()
+                        .to_string(),
+                );
+                read_directory_recursive(&path, rules, category_parts)?;
+                category_parts.pop();
+            } else if path.is_file() && path.extension().map_or(false, |ext| ext == YAML_EXTENSION)
+            {
                 let category = category_parts.join("/");
 
                 if let Ok(contents) = fs::read_to_string(&path) {

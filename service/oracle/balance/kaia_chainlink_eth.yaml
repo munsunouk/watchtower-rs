@@ -1,14 +1,16 @@
 name: Kaia Chainlink ETH Balance Check
 time_interval: 300
 script: |
+  decimal = 10 ** 18;
+  notify_time_interval = 60 * 60 * 3;
   kaiaBN = Kaia.LatestBlock();
 
-  BalanceETH = Kaia.Balance(kaiaBN, ETH);
+  BalanceETH = Kaia.Balance(kaiaBN, ETH) / decimal;
 
-  CompareBalance = 10000000000000000000;
+  CompareBalance = 10;
 
   msg = '*Kaia Chainlink ETH Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceETH + '\n> 기준 잔액 : ' + CompareBalance;
 
   if CompareBalance > BalanceETH (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

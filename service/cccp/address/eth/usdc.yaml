@@ -1,0 +1,16 @@
+name: Chainlink Oracle USDC Address Check
+time_interval: 600
+script: |
+  chain = 'ETH';
+  symbol = 'USDC';
+  notify_address = '0xc9e1a09622afdb659913fefe800feae5dbbfe9d7';
+  notify_time_interval = 60 * 60 * 3;
+
+  ETHBN = ETH.LatestBlock();
+  current_address = ETH.ChainlinkOracle.USDC.Address(ETHBN);
+
+  msg = '*Chainlink Oracle USDC Address 알람* 🚀\n <!here>\n> 체인 : ' + chain + '\n> 기존 address : ' + notify_address + '\n> 변경된 address : ' + current_address;
+
+  if current_address != notify_address (
+      Slack.Send(Monitor, notify_time_interval, msg);
+  );

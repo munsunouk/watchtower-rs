@@ -5,7 +5,7 @@ use ethers::types::U256;
 use serde_json::{json, Value};
 
 use tokio::runtime::Handle;
-use watch_tower_lib::utils::parse_to_address;
+use watch_tower_lib::utils::{parse_string_to_number, parse_to_address};
 
 use tokio::time::sleep;
 use watch_tower_lib::cli::db::data::RuleData;
@@ -15,7 +15,7 @@ use watch_tower_lib::utils::{
     constants::{
         BOOLEAN_LITERAL_FALSE, BOOLEAN_LITERAL_TRUE, LOGIC_OPERATOR_AND, LOGIC_OPERATOR_OR,
     },
-    parse_string_to_uint, parse_to_abi,
+    parse_to_abi,
 };
 
 use pest::iterators::Pair;
@@ -35,7 +35,14 @@ use crate::utils::config::{
     ContractEventTargetValue, EVMProvider, FeedConfig, NotificationCallTargetValue,
     NotificationConfig, ParamConfig, RPCTargetValue,
 };
-use crate::utils::constants::{CONFIG_PATH, HEALETH_CHECK_INTERVAL};
+use crate::utils::constants::{
+    BLOCK_TARGET_NUMBER, BLOCK_TARGET_TIMESTAMP, CALL_BALANCE, CALL_LATEST_BLOCK,
+    CALL_LATEST_TIMESTAMP, HEALETH_CHECK_INTERVAL, PARAM_BLOCK_NUMBER, VAR_ABI, VAR_ADDRESS,
+    VAR_API_BODY, VAR_API_QUERY, VAR_AVAILABLE_CONTRACT, VAR_BLOCKCHAIN, VAR_CALL_TYPE,
+    VAR_CHAIN_ID, VAR_CONTRACT, VAR_EVENT_INDEX, VAR_FUNCTION_PARAMS, VAR_IDENTIFIER, VAR_KEY,
+    VAR_META_DATA, VAR_METHOD_PARAMS, VAR_METHOD_TYPE, VAR_NAME, VAR_NOTIFICATION,
+    VAR_PARAM_NECESSARY, VAR_SERVICE, VAR_TARGET_INDEX,
+};
 use crate::utils::error::WorkerError;
 use crate::utils::log::TraceLog;
 use watch_tower_lib::utils::types::GeneralToken;
@@ -84,7 +91,6 @@ impl Evaluator {
     pub async fn run(&mut self) {
         loop {
             if let Err(e) = self.wait_until_next_time().await {
-                tracing::error!("Failed to wait until next time: {}", e);
                 WorkerError::FailedSpawn(self.context.rule.name.to_owned(), e.to_string()).log();
             }
 
@@ -96,7 +102,6 @@ impl Evaluator {
                 }
                 process_result = self.process() => {
                     if let Err(e) = process_result {
-                        tracing::error!("Process failed for rule {}: {}", self.context.rule.name, e);
                         WorkerError::FailedTask(self.context.rule.name.to_owned(), e.to_string()).log();
                     } else {
                         tracing::debug!("Process completed successfully for rule: {}", self.context.rule.name);
@@ -122,6 +127,7 @@ impl Evaluator {
 
             TraceLog::TokenOutput(result).debug();
 
+            context.variables.clear();
             Ok::<_, WorkerError>(context)
         })
         .await??;
@@ -311,8 +317,6 @@ fn parse_pair<'a>(
 
             // Process all if/else if/else conditions in sequence
             while let Some(token) = inner.next() {
-                let literal_text = token.as_str();
-
                 if token.as_rule() == Rule::if_liternal {
                     // This is an if or else if clause - parse the condition
                     let condition_pair = option_or_err!(inner.next());
@@ -387,7 +391,7 @@ fn parse_pair<'a>(
             }
 
             context.variables.insert(
-                "function_params".to_string(),
+                VAR_FUNCTION_PARAMS.to_string(),
                 ParseResultType::ArrayParam(params_vec),
             );
 
@@ -404,8 +408,8 @@ fn parse_pair<'a>(
             _ => Err(WorkerError::InvalidOperator(pair.as_str().to_string())),
         },
         Rule::Number => {
-            let result = parse_string_to_uint(pair.as_str().to_string())?;
-            Ok(GeneralToken::Uint(result))
+            let result = parse_string_to_number(pair.as_str())?;
+            Ok(result)
         }
         Rule::StringLiteral => {
             let string = pair.as_str();
@@ -435,7 +439,7 @@ fn parse_pair<'a>(
                 result = parse_pair(unwrapped_pair, context)?;
             }
 
-            if let Some(_meta_data) = context.variables.get("meta_data") {
+            if let Some(_meta_data) = context.variables.get(VAR_META_DATA) {
                 result = decode_meta_data(&result, &mut context.variables)?;
             }
 
@@ -452,13 +456,13 @@ fn parse_pair<'a>(
             }
 
             let notification: String =
-                option_or_err!(context.variables.get("notification")).decode()?;
+                option_or_err!(context.variables.get(VAR_NOTIFICATION)).decode()?;
 
             let param_nessesary: Vec<String> =
-                option_or_err!(context.variables.get("param_nessesary")).decode()?;
+                option_or_err!(context.variables.get(VAR_PARAM_NECESSARY)).decode()?;
 
             let function_params: Vec<Option<GeneralToken>> =
-                option_or_err!(context.variables.get("function_params")).decode()?;
+                option_or_err!(context.variables.get(VAR_FUNCTION_PARAMS)).decode()?;
 
             // Use process_notification_params macro for the cleanest code
             process_notification_params!(
@@ -478,10 +482,10 @@ fn parse_pair<'a>(
                 parse_pair(unwrapped_pair, context)?;
             }
 
-            let chain_id: i32 = option_or_err!(context.variables.get("chain_id")).decode()?;
+            let chain_id: i32 = option_or_err!(context.variables.get(VAR_CHAIN_ID)).decode()?;
 
             let blockchain: String =
-                option_or_err!(context.variables.get("blockchain")).decode()?;
+                option_or_err!(context.variables.get(VAR_BLOCKCHAIN)).decode()?;
 
             for provider in context.config.evm_providers.iter() {
                 let EVMProvider {
@@ -493,19 +497,19 @@ fn parse_pair<'a>(
                 if *name == blockchain {
                     context
                         .variables
-                        .insert("chain_id".to_string(), ParseResultType::ChainID(*id));
+                        .insert(VAR_CHAIN_ID.to_string(), ParseResultType::ChainID(*id));
                     context.variables.insert(
-                        "blockchain".to_string(),
+                        VAR_BLOCKCHAIN.to_string(),
                         ParseResultType::String(name.to_string()),
                     );
                 }
             }
 
             let param_nessesary: Vec<String> =
-                option_or_err!(context.variables.get("param_nessesary")).decode()?;
+                option_or_err!(context.variables.get(VAR_PARAM_NECESSARY)).decode()?;
 
             let function_params: Vec<Option<GeneralToken>> =
-                option_or_err!(context.variables.get("function_params")).decode()?;
+                option_or_err!(context.variables.get(VAR_FUNCTION_PARAMS)).decode()?;
 
             let mut target_block_number = runtime.block_on(async {
                 Ok::<U256, WorkerError>(
@@ -526,16 +530,22 @@ fn parse_pair<'a>(
                 &mut address
             );
 
-            let name: String = option_or_err!(context.variables.get("name")).decode()?;
+            let name: String = option_or_err!(context.variables.get(VAR_NAME)).decode()?;
 
             let result: Result<GeneralToken, WorkerError> = match name.as_str() {
-                "LatestBlock" => runtime.block_on(async {
-                    get_latest_block(&context.config, chain_id, "number".to_string()).await
+                CALL_LATEST_BLOCK => runtime.block_on(async {
+                    get_latest_block(&context.config, chain_id, BLOCK_TARGET_NUMBER.to_string())
+                        .await
                 }),
-                "LatestTimestamp" => runtime.block_on(async {
-                    get_latest_block(&context.config, chain_id, "timestamp".to_string()).await
+                CALL_LATEST_TIMESTAMP => runtime.block_on(async {
+                    get_latest_block(
+                        &context.config,
+                        chain_id,
+                        BLOCK_TARGET_TIMESTAMP.to_string(),
+                    )
+                    .await
                 }),
-                "Balance" => runtime.block_on(async {
+                CALL_BALANCE => runtime.block_on(async {
                     get_eth_balance(
                         &context.config,
                         chain_id,
@@ -556,29 +566,31 @@ fn parse_pair<'a>(
                 parse_pair(unwrapped_pair, context)?;
             }
 
-            let call_type: String = option_or_err!(context.variables.get("call_type")).decode()?;
+            let call_type: String =
+                option_or_err!(context.variables.get(VAR_CALL_TYPE)).decode()?;
 
             let method_type: String =
-                option_or_err!(context.variables.get("method_type")).decode()?;
+                option_or_err!(context.variables.get(VAR_METHOD_TYPE)).decode()?;
 
             let param_nessesary: Vec<String> =
-                option_or_err!(context.variables.get("param_nessesary")).decode()?;
+                option_or_err!(context.variables.get(VAR_PARAM_NECESSARY)).decode()?;
 
             let function_params: Vec<Option<GeneralToken>> =
-                option_or_err!(context.variables.get("function_params")).decode()?;
+                option_or_err!(context.variables.get(VAR_FUNCTION_PARAMS)).decode()?;
 
             let mut url: Option<&str> = None;
             let mut url_token: Option<&str> = None;
 
-            let api_body =
-                if let Some(ParseResultType::Json(api_body)) = context.variables.get("api_body") {
-                    Some(api_body.clone())
-                } else {
-                    None
-                };
+            let api_body = if let Some(ParseResultType::Json(api_body)) =
+                context.variables.get(VAR_API_BODY)
+            {
+                Some(api_body.clone())
+            } else {
+                None
+            };
 
             let mut api_query = if let Some(ParseResultType::Json(api_query)) =
-                context.variables.get("api_query")
+                context.variables.get(VAR_API_QUERY)
             {
                 Some(api_query.clone())
             } else {
@@ -586,7 +598,7 @@ fn parse_pair<'a>(
             };
 
             let mut target_index: String =
-                option_or_err!(context.variables.get("target_index")).decode()?;
+                option_or_err!(context.variables.get(VAR_TARGET_INDEX)).decode()?;
 
             process_rpc_function_params!(
                 param_nessesary,
@@ -626,11 +638,11 @@ fn parse_pair<'a>(
                 parse_pair(unwrapped_pair, context)?;
             }
 
-            let chain_id: i32 = option_or_err!(context.variables.get("chain_id")).decode()?;
-            let address: String = option_or_err!(context.variables.get("address")).decode()?;
-            let abi: Value = option_or_err!(context.variables.get("abi")).decode()?;
+            let chain_id: i32 = option_or_err!(context.variables.get(VAR_CHAIN_ID)).decode()?;
+            let address: String = option_or_err!(context.variables.get(VAR_ADDRESS)).decode()?;
+            let abi: Value = option_or_err!(context.variables.get(VAR_ABI)).decode()?;
             let target_index: String =
-                option_or_err!(context.variables.get("target_index")).decode()?;
+                option_or_err!(context.variables.get(VAR_TARGET_INDEX)).decode()?;
 
             let mut target_block_number = runtime.block_on(async {
                 Ok::<U256, WorkerError>(
@@ -641,16 +653,16 @@ fn parse_pair<'a>(
             })?;
 
             let param_nessesary: Vec<String> =
-                option_or_err!(context.variables.get("param_nessesary")).decode()?;
+                option_or_err!(context.variables.get(VAR_PARAM_NECESSARY)).decode()?;
 
             let function_params: Vec<Option<GeneralToken>> =
-                option_or_err!(context.variables.get("function_params")).decode()?;
+                option_or_err!(context.variables.get(VAR_FUNCTION_PARAMS)).decode()?;
 
             let mut params: Vec<Option<GeneralToken>> =
-                option_or_err!(context.variables.get("method_params")).decode()?;
+                option_or_err!(context.variables.get(VAR_METHOD_PARAMS)).decode()?;
 
             let available_contract = if let Some(ParseResultType::String(available_contract)) =
-                context.variables.get("available_contract")
+                context.variables.get(VAR_AVAILABLE_CONTRACT)
             {
                 Some(available_contract)
             } else {
@@ -690,12 +702,13 @@ fn parse_pair<'a>(
                 parse_pair(unwrapped_pair, context)?;
             }
 
-            let chain_id: i32 = option_or_err!(context.variables.get("chain_id")).decode()?;
-            let address: String = option_or_err!(context.variables.get("address")).decode()?;
-            let abi: Value = option_or_err!(context.variables.get("abi")).decode()?;
-            let event_index: i32 = option_or_err!(context.variables.get("event_index")).decode()?;
+            let chain_id: i32 = option_or_err!(context.variables.get(VAR_CHAIN_ID)).decode()?;
+            let address: String = option_or_err!(context.variables.get(VAR_ADDRESS)).decode()?;
+            let abi: Value = option_or_err!(context.variables.get(VAR_ABI)).decode()?;
+            let event_index: i32 =
+                option_or_err!(context.variables.get(VAR_EVENT_INDEX)).decode()?;
             let target_index: String =
-                option_or_err!(context.variables.get("target_index")).decode()?;
+                option_or_err!(context.variables.get(VAR_TARGET_INDEX)).decode()?;
 
             let mut target_block_number = runtime.block_on(async {
                 Ok::<U256, WorkerError>(
@@ -705,10 +718,11 @@ fn parse_pair<'a>(
                 )
             })?;
 
-            if let Some(ParseResultType::HashMap(identifier)) = context.variables.get("identifier")
+            if let Some(ParseResultType::HashMap(identifier)) =
+                context.variables.get(VAR_IDENTIFIER)
             {
                 for (key, value) in identifier.iter() {
-                    if key.contains("BlockNumber") {
+                    if key.contains(PARAM_BLOCK_NUMBER) {
                         if let ParseResultType::Token(token) = value {
                             if token.type_check(&ParamType::Uint(256)) {
                                 target_block_number = option_or_err!(token.clone().into_uint());
@@ -748,9 +762,9 @@ fn parse_pair<'a>(
                 if name == blockchain {
                     context
                         .variables
-                        .insert("chain_id".to_string(), ParseResultType::ChainID(*id));
+                        .insert(VAR_CHAIN_ID.to_string(), ParseResultType::ChainID(*id));
                     context.variables.insert(
-                        "blockchain".to_string(),
+                        VAR_BLOCKCHAIN.to_string(),
                         ParseResultType::String(name.to_string()),
                     );
                 }
@@ -761,7 +775,7 @@ fn parse_pair<'a>(
         Rule::Service => {
             let service = pair.as_str();
 
-            if context.variables.contains_key("chain_id") {
+            if context.variables.contains_key(VAR_CHAIN_ID) {
                 for contract_config in context.config.contract_config.iter() {
                     let ContractConfig {
                         service: parsed_service,
@@ -771,11 +785,11 @@ fn parse_pair<'a>(
 
                     if service == parsed_service
                         && *blockchain
-                            == *option_or_err!(context.variables.get("blockchain"))
+                            == *option_or_err!(context.variables.get(VAR_BLOCKCHAIN))
                                 .decode::<String>()?
                     {
                         context.variables.insert(
-                            "service".to_string(),
+                            VAR_SERVICE.to_string(),
                             ParseResultType::String(service.to_string()),
                         );
                     }
@@ -792,13 +806,14 @@ fn parse_pair<'a>(
 
                 if notification == service {
                     context.variables.insert(
-                        "notification".to_string(),
+                        VAR_NOTIFICATION.to_string(),
                         ParseResultType::String(service.to_string()),
                     );
 
-                    context
-                        .variables
-                        .insert("key".to_string(), ParseResultType::String(key.to_string()));
+                    context.variables.insert(
+                        VAR_KEY.to_string(),
+                        ParseResultType::String(key.to_string()),
+                    );
                 }
             }
 
@@ -822,8 +837,8 @@ fn parse_pair<'a>(
                     Some(ParseResultType::String(service)),
                     Some(ParseResultType::String(blockchain)),
                 ) = (
-                    context.variables.get("service"),
-                    context.variables.get("blockchain"),
+                    context.variables.get(VAR_SERVICE),
+                    context.variables.get(VAR_BLOCKCHAIN),
                 ) {
                     if service == parsed_service
                         && contract_str == contract
@@ -846,16 +861,16 @@ fn parse_pair<'a>(
                         let abi = parse_abi_text(&abi_content)?;
 
                         context.variables.insert(
-                            "contract".to_string(),
+                            VAR_CONTRACT.to_string(),
                             ParseResultType::String(contract.to_string()),
                         );
 
                         context
                             .variables
-                            .insert("abi".to_string(), ParseResultType::Json(abi));
+                            .insert(VAR_ABI.to_string(), ParseResultType::Json(abi));
 
                         context.variables.insert(
-                            "address".to_string(),
+                            VAR_ADDRESS.to_string(),
                             ParseResultType::String(address.to_string()),
                         );
 
@@ -881,15 +896,16 @@ fn parse_pair<'a>(
             let result_for_hashmap = ParseResultType::GeneralToken(result.clone());
 
             if let Some(ParseResultType::HashMap(existing)) =
-                context.variables.get_mut("identifier")
+                context.variables.get_mut(VAR_IDENTIFIER)
             {
                 existing.insert(identifier.to_string(), result_for_hashmap);
             } else {
-                let mut existing = HashMap::new();
-                existing.insert(identifier.to_string(), result_for_hashmap);
-                context
-                    .variables
-                    .insert("identifier".to_string(), ParseResultType::HashMap(existing));
+                let mut new_identifier = HashMap::new();
+                new_identifier.insert(identifier.to_string(), result_for_hashmap);
+                context.variables.insert(
+                    VAR_IDENTIFIER.to_string(),
+                    ParseResultType::HashMap(new_identifier),
+                );
             }
 
             Ok(result)
@@ -922,40 +938,40 @@ fn parse_pair<'a>(
                     }
 
                     context.variables.insert(
-                        "call_type".to_string(),
+                        VAR_CALL_TYPE.to_string(),
                         ParseResultType::String(call_type.to_string()),
                     );
                     context.variables.insert(
-                        "method_type".to_string(),
+                        VAR_METHOD_TYPE.to_string(),
                         ParseResultType::String(method_type.to_string()),
                     );
 
                     if let Some(value_api_body) = value_api_body {
                         context.variables.insert(
-                            "api_body".to_string(),
+                            VAR_API_BODY.to_string(),
                             ParseResultType::Json(value_api_body),
                         );
                     }
 
                     if let Some(value_api_query) = value_api_query {
                         context.variables.insert(
-                            "api_query".to_string(),
+                            VAR_API_QUERY.to_string(),
                             ParseResultType::Json(value_api_query),
                         );
                     }
 
                     context.variables.insert(
-                        "target_index".to_string(),
+                        VAR_TARGET_INDEX.to_string(),
                         ParseResultType::String(target_index.to_string()),
                     );
 
                     context.variables.insert(
-                        "meta_data".to_string(),
+                        VAR_META_DATA.to_string(),
                         ParseResultType::String(meta_data.to_string()),
                     );
 
                     context.variables.insert(
-                        "param_nessesary".to_string(),
+                        VAR_PARAM_NECESSARY.to_string(),
                         ParseResultType::Array(param_nessesary.to_vec()),
                     );
                 }
@@ -978,11 +994,11 @@ fn parse_pair<'a>(
                 if contract_call_target_str == name {
                     let should_insert = if let Some(available_contract) = available_contract {
                         if let Some(ParseResultType::String(contract)) =
-                            context.variables.get("contract")
+                            context.variables.get(VAR_CONTRACT)
                         {
                             if available_contract == contract {
                                 context.variables.insert(
-                                    "available_contract".to_string(),
+                                    VAR_AVAILABLE_CONTRACT.to_string(),
                                     ParseResultType::String(available_contract.to_string()),
                                 );
                                 true
@@ -998,15 +1014,15 @@ fn parse_pair<'a>(
 
                     if should_insert {
                         context.variables.insert(
-                            "method_params".to_string(),
+                            VAR_METHOD_PARAMS.to_string(),
                             ParseResultType::ArrayParam(params.to_vec()),
                         );
                         context.variables.insert(
-                            "target_index".to_string(),
+                            VAR_TARGET_INDEX.to_string(),
                             ParseResultType::String(target_index.to_string()),
                         );
                         context.variables.insert(
-                            "param_nessesary".to_string(),
+                            VAR_PARAM_NECESSARY.to_string(),
                             ParseResultType::Array(param_nessesary.to_vec()),
                         );
 
@@ -1029,11 +1045,11 @@ fn parse_pair<'a>(
 
                 if contract_event_target_str == name {
                     context.variables.insert(
-                        "event_index".to_string(),
+                        VAR_EVENT_INDEX.to_string(),
                         ParseResultType::EventIndex(*event_index),
                     );
                     context.variables.insert(
-                        "target_index".to_string(),
+                        VAR_TARGET_INDEX.to_string(),
                         ParseResultType::String(target_index.to_string()),
                     );
                 }
@@ -1053,12 +1069,12 @@ fn parse_pair<'a>(
 
                 if notification_call_target_str == name {
                     context.variables.insert(
-                        "name".to_string(),
+                        VAR_NAME.to_string(),
                         ParseResultType::ArrayParam(params.to_vec()),
                     );
 
                     context.variables.insert(
-                        "param_nessesary".to_string(),
+                        VAR_PARAM_NECESSARY.to_string(),
                         ParseResultType::Array(param_nessesary.to_vec()),
                     );
                 }
@@ -1078,12 +1094,12 @@ fn parse_pair<'a>(
 
                 if blockchain_call_target_str == name {
                     context.variables.insert(
-                        "name".to_string(),
+                        VAR_NAME.to_string(),
                         ParseResultType::String(name.to_string()),
                     );
 
                     context.variables.insert(
-                        "param_nessesary".to_string(),
+                        VAR_PARAM_NECESSARY.to_string(),
                         ParseResultType::Array(param_nessesary.to_vec()),
                     );
                 }
@@ -1259,27 +1275,19 @@ mod tests {
         init_tracing();
 
         let test_input = "
-        kicked_out_status = 2;
+
+    symbol = 'cbBTC';
+  notify_address = 'ADDRESS';
   notify_time_interval = 60 * 60 * 3;
-  node_name = 'Theori';
-  kiked_out_str = 'kicked out';
-  idle_str = 'idle';
 
-  bifrostBN = Bifrost.LatestBlock();
-  node_status = Bifrost.Validator.Candidate.Status(bifrostBN, node_name);
+  ETHBN = ETH.LatestBlock();
+  current_address = ETH.ChainlinkOracle.cbBTC.Address(ETHBN);
 
-  msg = '*Node Liveness 알람* 🚀\n> Node : ' + node_name + '\n> 상태 :' + idle_str;
+  msg = '*Chainlink Oracle BTC Address 알람* 🚀\n <!here>\n> 기존 address : ' + notify_address + '\n> 변경된 address : ' + current_address;
 
-          kicked_out_status;
-
-        a = if node_status != kicked_out_status (
-    msg;
-) else if node_status != kicked_out_status (
-    kiked_out_str;
-) else (
-    idle_str;
-);
-        a;
+  if current_address != notify_address (
+      msg
+  );
         ";
 
         let pairs = RuleEvaluationParser::parse(Rule::Program, &test_input).unwrap();
@@ -1292,28 +1300,22 @@ mod tests {
 
         let test_input = "
 
+    notify_rate = 3;
   notify_time_interval = 60 * 60 * 3;
-  relayer_name = 'Theori';
 
-  bifrostBN = Bifrost.LatestBlock();
-  relayer_status = Bifrost.CCCP.State.Status(bifrostBN, relayer_name);
+  key = Boost.ApiKey(BoostKey);
+  boost_apy = Boost.BoostApy(Boost, key);
 
-  status_name = if relayer_status == 1 (
-    'active';
-  ) else if relayer_status == 2 (
-    'kicked out';
-  ) else if relayer_status == 0 (
-    'idle';
-  ) else (
-    'leaving';
-  );
+  msg = '*BTCFI Boost APY 알람* 🚀\n <!here>\n> 현재 APY: ' + boost_apy + '\n> APY 확인 필요합니다.';
 
-  msg = '*Relayer Liveness 알람* 🚀\n> Relayer : ' + relayer_name + '\n> 상태 :' + status_name;
-
-  if relayer_status == 1 (
+  if boost_apy > notify_rate (
     msg;
   );
         ";
+
+        // if current_address != notify_address (
+        //     Slack.Send(Monitor, notify_time_interval, msg);
+        // );
 
         let config_path_str = "/Users/munseon-ug/rust/watchtower/worker/config.yaml";
         let param_config_path_str = "/Users/munseon-ug/rust/watchtower/worker/param.yaml";
@@ -1335,7 +1337,7 @@ mod tests {
 
         let mut evaluator = Evaluator::new(&config, &param_config, rule);
 
-        let result = evaluator.process().await;
+        let result = evaluator.run().await;
 
         tracing::debug!("Evaluation result: {:?}", result);
     }

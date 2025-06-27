@@ -1,6 +1,7 @@
 name: Bifrost Chainlink BTC Time Check
 time_interval: 300
 script: |
+  notify_time_interval = 60 * 60 * 3;
   bifrostBN = Bifrost.LatestBlock();
   currentTimestamp = Bifrost.LatestTimestamp();
 
@@ -11,5 +12,5 @@ script: |
   msg = '*Bifrost Chainlink BTC Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 체인링크 시간 : ' + bifrostChainlinkBTC;
 
   if diff > (3600 * 72) (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

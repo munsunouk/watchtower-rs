@@ -199,7 +199,7 @@ pub fn set_config(pathbuf: &PathBuf) -> Result<Configuration, WorkerError> {
     let user_config_file = std::fs::File::open(pathbuf)?;
 
     let user_config: Configuration = serde_yaml::from_reader(user_config_file)?;
-    
+
     Ok(user_config)
 }
 

@@ -1,0 +1,16 @@
+name: Chainlink Oracle USDT Address Check
+time_interval: 600
+script: |
+  chain = 'BSC';
+  symbol = 'USDT';
+  notify_address = '0xcf7a2efb24ddd3e0cfd19a1a4e0233dfbd7c354b';
+  notify_time_interval = 60 * 60 * 3;
+
+  BNBBN = BNB.LatestBlock();
+  current_address = BNB.ChainlinkOracle.USDT.Address(BNBBN);
+
+  msg = '*Chainlink Oracle USDT Address 알람* 🚀\n <!here>\n> 체인 : ' + chain + '\n> 기존 address : ' + notify_address + '\n> 변경된 address : ' + current_address;
+
+  if current_address != notify_address (
+      Slack.Send(Monitor, notify_time_interval, msg);
+  );

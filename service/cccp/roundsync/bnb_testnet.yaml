@@ -9,7 +9,7 @@ script: |
 
   bnbBN = BNB_Testnet.LatestBlock();
   bnb_round_status = BNB_Testnet.CCCP.LatestRound.Status(bnbBN);
-  sync_diff = when bifrost_round_status > bnb_round_status then bifrost_round_status - bnb_round_status else bnb_round_status - bifrost_round_status;
+  sync_diff = bifrost_round_status - bnb_round_status;
 
   msg = '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost Testnet: ' + bifrost_round_status + '\n> BNB Testnet : ' + bsc_round_status;
 

@@ -5,10 +5,12 @@ macro_rules! process_notification_params {
         for (param_nessery, function_param) in $param_nessesary.iter().zip($function_params.iter())
         {
             match param_nessery.as_str() {
-                "Channel" => {
+                $crate::utils::constants::PARAM_CHANNEL => {
                     if let Some(GeneralToken::String(channel)) = function_param {
                         for channel_config in $param_config.channel_config.iter() {
-                            if (channel_config.name == *channel) && ($notification == "Slack") {
+                            if (channel_config.name == *channel)
+                                && ($notification == $crate::utils::constants::NOTIFICATION_SLACK)
+                            {
                                 if let Some(client) = &mut $context.slack_client {
                                     client.set_channel(&channel_config.id);
                                 }
@@ -16,18 +18,18 @@ macro_rules! process_notification_params {
                         }
                     }
                 }
-                "TimeInterval" => {
+                $crate::utils::constants::PARAM_TIME_INTERVAL => {
                     if let Some(GeneralToken::Uint(time_interval)) = function_param {
-                        if $notification == "Slack" {
+                        if $notification == $crate::utils::constants::NOTIFICATION_SLACK {
                             if let Some(client) = &mut $context.slack_client {
                                 client.set_time_interval(time_interval);
                             }
                         }
                     }
                 }
-                "Message" => {
+                $crate::utils::constants::PARAM_MESSAGE => {
                     if let Some(GeneralToken::String(message)) = function_param {
-                        if $notification == "Slack" {
+                        if $notification == $crate::utils::constants::NOTIFICATION_SLACK {
                             if let Some(client) = &mut $context.slack_client {
                                 let runtime = tokio::runtime::Runtime::new()?;
                                 runtime.block_on(async { client.send_message(&message).await })?;
@@ -54,14 +56,14 @@ macro_rules! process_chain_function_params {
         for (param_nessery, function_param) in $param_nessesary.iter().zip($function_params.iter())
         {
             match param_nessery.as_str() {
-                "BlockNumber" => {
+                $crate::utils::constants::PARAM_BLOCK_NUMBER => {
                     if let Some(token) = function_param {
                         if token.type_check(&ParamType::Uint(256)) {
                             *$target_block_number = token.into_uint()?;
                         }
                     }
                 }
-                "Balance" => {
+                $crate::utils::constants::PARAM_BALANCE => {
                     if let Some(GeneralToken::String(balance_name)) = function_param {
                         for balance in $context.param_config.balance_config.iter() {
                             if (balance.name == *balance_name)
@@ -88,12 +90,20 @@ macro_rules! process_chain_function_params {
 #[macro_export]
 macro_rules! process_rpc_function_params {
     ($param_nessesary:expr, $function_params:expr, $context:expr, $url:expr, $url_token:expr, $api_query:expr, $target_index:expr) => {
+
+
         for (param_nessery, function_param) in $param_nessesary.iter().zip($function_params.iter()) {
+
+
             match param_nessery.as_str() {
-                "Url" => {
+                $crate::utils::constants::PARAM_URL => {
+
                     if let Some(GeneralToken::String(url_name)) = function_param {
+
                         for url_config in $context.param_config.url_config.iter() {
+
                             if url_config.name == *url_name {
+
                                 *$url = Some(&url_config.url);
                                 if let Some(token_str) = &url_config.token {
                                     *$url_token = Some(token_str);
@@ -101,9 +111,17 @@ macro_rules! process_rpc_function_params {
                                 break;
                             }
                         }
+                    } else {
+                        return Err(WorkerError::InvalidTypeConvertError(format!("PARAM_URL function_param is not a String: {:?}", function_param)));
                     }
                 },
-                "Feed" => {
+                $crate::utils::constants::PARAM_KEY => {
+                    if let Some(GeneralToken::String(key)) = function_param {
+                        *$url_token = Some(key);
+                    }
+                },
+
+                $crate::utils::constants::PARAM_FEED => {
                     if let Some(GeneralToken::String(target_str)) = function_param {
                         for feed_config in $context.param_config.feed_config.iter() {
                             let FeedConfig {
@@ -118,7 +136,7 @@ macro_rules! process_rpc_function_params {
                         }
                     }
                 },
-                "VaultAddress" => {
+                $crate::utils::constants::PARAM_VAULT_ADDRESS => {
                     if let Some(token) = function_param {
                         if token.type_check(&ParamType::Array(Box::new(ParamType::String))) {
                             if let GeneralToken::Array(tokens) = token {
@@ -133,19 +151,33 @@ macro_rules! process_rpc_function_params {
                                     .collect();
                                 let joined_string = strings?.join("|");
                                 *$api_query = Some(json!({
-                                    "active": joined_string
+                                    $crate::utils::constants::API_QUERY_ACTIVE: joined_string
                                 }));
                             }
                         } else if token.type_check(&ParamType::String) {
                             if let GeneralToken::String(single_string) = token {
                                 *$api_query = Some(json!({
-                                    "active": single_string
+                                    $crate::utils::constants::API_QUERY_ACTIVE: single_string
                                 }));
                             }
+                        } else if token.type_check(&ParamType::Address) {
+                            if let GeneralToken::Address(address) = token {
+                                let address_str = format!("{:#x}", address);
+                                *$api_query = Some(json!({
+                                    $crate::utils::constants::API_QUERY_ACTIVE: address_str
+                                }));
+                            }
+                        } else {
+                            return Err(WorkerError::InvalidTypeConvertError(
+                                format!("VaultAddress parameter expects String, Array<String>, or Address, got {:?}", token),
+                            ));
                         }
+                    } else {
+                        return Err(WorkerError::InvalidTypeConvertError(
+                            "VaultAddress parameter is None".to_string(),
+                        ));
                     }
                 },
-
                 _ => {
                     return Err(WorkerError::InvalidTypeConvertError(
                         format!("rpc_function parameter, {}", param_nessery.to_string()),
@@ -163,14 +195,14 @@ macro_rules! process_contract_method_params {
         for (param_nessery, function_param) in $param_nessesary.iter().zip($function_params.iter())
         {
             match param_nessery.as_str() {
-                "BlockNumber" => {
+                $crate::utils::constants::PARAM_BLOCK_NUMBER => {
                     if let Some(token) = function_param {
                         if token.type_check(&ParamType::Uint(256)) {
                             *$target_block_number = token.into_uint()?;
                         }
                     }
                 }
-                "Pool" => {
+                $crate::utils::constants::PARAM_POOL => {
                     if let Some(GeneralToken::String(pool_name)) = function_param {
                         for pool in $context.param_config.pool_config.iter() {
                             if pool.name == *pool_name {
@@ -182,7 +214,7 @@ macro_rules! process_contract_method_params {
                         }
                     }
                 }
-                "OID" => {
+                $crate::utils::constants::PARAM_OID => {
                     if let Some(GeneralToken::String(oid_name)) = function_param {
                         for oid in $context.param_config.oid_config.iter() {
                             if oid.name == *oid_name {
@@ -194,17 +226,18 @@ macro_rules! process_contract_method_params {
                         }
                     }
                 }
-                "Validator" => {
+                $crate::utils::constants::PARAM_VALIDATOR => {
                     if let Some(GeneralToken::String(validator_name)) = function_param {
                         for validator in $context.param_config.validator_config.iter() {
                             if validator.name == *validator_name {
-                                if $available_contract.as_ref().map(|s| s.as_str()) == Some("State")
+                                if $available_contract.as_ref().map(|s| s.as_str())
+                                    == Some($crate::utils::constants::CONTRACT_STATE)
                                 {
                                     $params.push(Some(GeneralToken::Address(parse_to_address(
                                         &validator.address,
                                     )?)));
                                 } else if $available_contract.as_ref().map(|s| s.as_str())
-                                    == Some("Candidate")
+                                    == Some($crate::utils::constants::CONTRACT_CANDIDATE)
                                 {
                                     $params.push(Some(GeneralToken::Address(parse_to_address(
                                         &validator.controller_address,

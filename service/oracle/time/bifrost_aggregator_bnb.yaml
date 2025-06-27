@@ -1,6 +1,9 @@
 name: Bifrost Aggregator BNB Time Check
 time_interval: 300
 script: |
+
+  notify_time_interval = 60 * 60 * 3;
+
   bifrostBN = Bifrost.LatestBlock();
   currentTimestamp = Bifrost.LatestTimestamp();
 
@@ -11,5 +14,5 @@ script: |
   msg = '*Bifrost Aggregator BNB Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 어그리게이터 시간 : ' + bifrostAggregatorBNB;
 
   if diff > (3600 * 72) (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

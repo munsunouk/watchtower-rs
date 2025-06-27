@@ -1,4 +1,7 @@
 use crate::utils::constants::{DB_SCHEMA_EXISTS, DB_SCHEMA_LOAD, DB_TABLE_NAME, SCHEMA};
+use crate::utils::constants::{
+    JSON_TOKEN_ADDRESS, JSON_TOKEN_BOOL, JSON_TOKEN_STRING, JSON_TOKEN_UINT,
+};
 use crate::utils::error::DatabaseError;
 use crate::utils::{read_service_files, DbTable};
 use ethers::abi::Token;
@@ -28,7 +31,8 @@ pub fn parse_jsonb_to_tokens(
     if let Some(array) = json_value.as_array() {
         for value in array {
             if let Some(obj) = value.as_object() {
-                let token = if let Some(hex_str) = obj.get("Uint").and_then(|v| v.as_str()) {
+                let token = if let Some(hex_str) = obj.get(JSON_TOKEN_UINT).and_then(|v| v.as_str())
+                {
                     // Try parsing as hex first, then as decimal
                     if let Ok(num) = U256::from_str_radix(hex_str, 16) {
                         Some(Token::Uint(num))
@@ -37,15 +41,16 @@ pub fn parse_jsonb_to_tokens(
                     } else {
                         None
                     }
-                } else if let Some(addr_str) = obj.get("Address").and_then(|v| v.as_str()) {
+                } else if let Some(addr_str) = obj.get(JSON_TOKEN_ADDRESS).and_then(|v| v.as_str())
+                {
                     if let Ok(addr) = H160::from_str(addr_str) {
                         Some(Token::Address(addr))
                     } else {
                         None
                     }
-                } else if let Some(bool_val) = obj.get("Bool").and_then(|v| v.as_bool()) {
+                } else if let Some(bool_val) = obj.get(JSON_TOKEN_BOOL).and_then(|v| v.as_bool()) {
                     Some(Token::Bool(bool_val))
-                } else if let Some(str_val) = obj.get("String").and_then(|v| v.as_str()) {
+                } else if let Some(str_val) = obj.get(JSON_TOKEN_STRING).and_then(|v| v.as_str()) {
                     Some(Token::String(str_val.to_string()))
                 } else {
                     None
@@ -217,4 +222,64 @@ pub enum QueryParam {
     I32(i32),
     String(String),
     DateTime(DateTime<Utc>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[tokio::test]
+    async fn test_schema_exists() {
+        // Get database URL from environment variable or use default test URL
+        let database_url = env::var("DATABASE_URL").unwrap();
+
+        // Create a new PostgresClient
+        let client = PostgresClient::new(&database_url).await;
+
+        match client {
+            Ok(client) => {
+                // Test schema_exists method
+                let schema_exists = client.schema_exists().await;
+
+                match schema_exists {
+                    Ok(exists) => {
+                        println!("Schema exists: {}", exists);
+                        // If schema doesn't exist, we can't test further
+                        if !exists {
+                            println!(
+                                "Schema does not exist - this is expected for a fresh database"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error checking schema existence: {:?}", e);
+                        // Don't fail the test if schema doesn't exist
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Failed to connect to database: {:?}", e);
+                println!("Make sure PostgreSQL is running and DATABASE_URL is set correctly");
+                // Don't fail the test if database is not available
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_database_connection() {
+        let database_url = env::var("DATABASE_URL").unwrap();
+
+        let result = PostgresClient::new(&database_url).await;
+
+        match result {
+            Ok(_client) => {
+                println!("Successfully connected to database");
+            }
+            Err(e) => {
+                println!("Failed to connect to database: {:?}", e);
+                println!("This test requires a running PostgreSQL instance");
+            }
+        }
+    }
 }

@@ -21,26 +21,33 @@ impl RpcClient {
         url_token: &Option<String>,
         query: &Value,
     ) -> Result<Response, ClientError> {
-        let mut error_msg = String::default();
-
-        for provider in &self.providers {
+        for (index, provider) in self.providers.iter().enumerate() {
             let mut request = provider.request(method.to_owned(), url);
 
             // Add bearer token if provided
             if let Some(token) = url_token {
-                request = request.header("Authorization", format!("Bearer {}", token.trim()));
+                request = request.bearer_auth(token.trim());
             }
 
             match request.query(query).send().await {
                 Ok(response) => return Ok(response),
-                Err(error) => {
-                    error_msg = format!("❗️ [method: {:?}] [Error: {}]", method, error.to_string());
+                Err(e) => {
+                    // If this is not the last provider, sleep and try the next one
+                    if index < self.providers.len() - 1 {
+                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+                        continue;
+                    } else {
+                        // This was the last provider, return the error
+                        return Err(ClientError::from(e));
+                    }
                 }
             }
-            sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
         }
 
-        Err(ClientError::InternalProviderError(error_msg))
+        Err(ClientError::InternalProviderError(format!(
+            "All providers failed for URL: {}, query: {:?}",
+            url, query
+        )))
     }
 
     pub async fn request_with_json(
@@ -50,30 +57,32 @@ impl RpcClient {
         url_token: &Option<String>,
         body: &Value,
     ) -> Result<Response, ClientError> {
-        let mut error_msg = String::default();
-
-        for provider in &self.providers {
+        for (index, provider) in self.providers.iter().enumerate() {
             let mut request = provider.request(method.to_owned(), url);
 
             // Add bearer token if provided
             if let Some(token) = url_token {
-                request = request.header("Authorization", format!("Bearer {}", token.trim()));
+                request = request.bearer_auth(token.trim());
             }
 
             match request.json(body).send().await {
                 Ok(response) => return Ok(response),
-                Err(error) => {
-                    error_msg = format!(
-                        "❗️ [method: {:?}] [url: {}] [Error: {}]",
-                        method,
-                        url,
-                        error.to_string()
-                    );
+                Err(e) => {
+                    // If this is not the last provider, sleep and try the next one
+                    if index < self.providers.len() - 1 {
+                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+                        continue;
+                    } else {
+                        // This was the last provider, return the error
+                        return Err(ClientError::from(e));
+                    }
                 }
             }
-            sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
         }
 
-        Err(ClientError::InternalProviderError(error_msg))
+        Err(ClientError::InternalProviderError(format!(
+            "All providers failed for URL: {}, body: {:?}",
+            url, body
+        )))
     }
 }

@@ -1,6 +1,7 @@
 name: Bifrost OracleManager BIFI Decision Check
 time_interval: 300
 script: |
+  notify_time_interval = 60 * 60 * 3;
   bifrostBN = Bifrost.LatestBlock();
   currentTimestamp = Bifrost.LatestTimestamp();
 
@@ -13,5 +14,5 @@ script: |
   msg = '*Bifrost OracleManager BIFI Decision 알람* 🚀\n> 다음 업데이트 시간 : ' + nextUpdateAt + '\n> 현재 시간 : ' + currentTimestamp;
 
   if nextUpdateAt + 300 < currentTimestamp (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

@@ -2,6 +2,11 @@ pub mod metadata;
 
 pub use metadata::ProviderMetadata;
 
+use crate::utils::constants::{
+    RPC_ETH_BLOCK_NUMBER, RPC_ETH_CHAIN_ID, RPC_ETH_GET_BALANCE, RPC_ETH_GET_BLOCK_BY_NUMBER,
+    RPC_ETH_GET_LOGS, RPC_ETH_GET_TRANSACTION_BY_HASH, RPC_ETH_GET_TRANSACTION_RECEIPT,
+    RPC_ETH_SYNCING, RPC_PARAM_LATEST, RPC_TXPOOL_CONTENT,
+};
 use crate::utils::{constants::DEFAULT_CALL_RETRY_INTERVAL_MS, error::ClientError, types::ChainID};
 use ethers::{
     abi::Token,
@@ -56,55 +61,49 @@ impl<T: JsonRpcClient> EthClient<T> {
         P: Debug + Serialize + Send + Sync + Copy,
         R: Serialize + DeserializeOwned + Debug + Send,
     {
-        const MAX_RETRIES: u32 = 3;
         const TIMEOUT_DURATION: Duration = Duration::from_secs(300);
-        let mut retry_count = 0;
-        let mut last_error = None;
 
-        for provider in self.providers.iter() {
-            while retry_count < MAX_RETRIES {
-                match timeout(TIMEOUT_DURATION, provider.request(method, params)).await {
-                    Ok(Ok(result)) => return Ok(result),
-                    Ok(Err(error)) => {
-                        last_error = Some(error);
-                        retry_count += 1;
-                        if retry_count < MAX_RETRIES {
-                            // Exponential backoff
-                            let backoff = Duration::from_millis(
-                                DEFAULT_CALL_RETRY_INTERVAL_MS * (1 << (retry_count - 1)),
-                            );
-                            sleep(backoff).await;
-                        }
+        for (index, provider) in self.providers.iter().enumerate() {
+            match timeout(TIMEOUT_DURATION, provider.request(method, params)).await {
+                Ok(Ok(result)) => return Ok(result),
+                Ok(Err(error)) => {
+                    // If this is not the last provider, sleep and try the next one
+                    if index < self.providers.len() - 1 {
+                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+                        continue;
                     }
-                    Err(_) => {
-                        last_error = Some(ethers::providers::ProviderError::CustomError(
-                            "Request timed out".to_string(),
-                        ));
-                        retry_count += 1;
-                        if retry_count < MAX_RETRIES {
-                            sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
-                        }
+                    // If this is the last provider, return the error
+                    let error_msg = format!(
+                        "[{}] ❗️ [method: {}] [Error: {}]",
+                        self.get_chain_name(),
+                        method,
+                        error.to_string()
+                    );
+                    return Err(ClientError::InternalProviderError(error_msg));
+                }
+                Err(_) => {
+                    // If this is not the last provider, sleep and try the next one
+                    if index < self.providers.len() - 1 {
+                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+                        continue;
                     }
+                    // If this is the last provider, return the error
+                    let error_msg = format!(
+                        "[{}] ❗️ [method: {}] [Error: Request timed out]",
+                        self.get_chain_name(),
+                        method
+                    );
+                    return Err(ClientError::InternalProviderError(error_msg));
                 }
             }
-            retry_count = 0; // Reset retry count for next provider
         }
 
-        let error_msg = match last_error {
-            Some(error) => format!(
-                "[{}] ❗️ [method: {}] [Error: {}] [Retries: {}]",
-                self.get_chain_name(),
-                method,
-                error.to_string(),
-                MAX_RETRIES
-            ),
-            None => format!(
-                "[{}] ❗️ [method: {}] [Error: No providers available]",
-                self.get_chain_name(),
-                method
-            ),
-        };
-
+        // This should never be reached, but just in case
+        let error_msg = format!(
+            "[{}] ❗️ [method: {}] [Error: No providers available]",
+            self.get_chain_name(),
+            method
+        );
         Err(ClientError::InternalProviderError(error_msg))
     }
 
@@ -118,8 +117,6 @@ impl<T: JsonRpcClient> EthClient<T> {
         method_params: &Token,
         block_id: BlockId,
     ) -> Result<Token, ClientError> {
-        let mut error_msg = String::default();
-
         for contract in contracts.iter() {
             let raw_call = contract
                 .method::<_, Token>(method, method_params.to_owned())?
@@ -130,25 +127,29 @@ impl<T: JsonRpcClient> EthClient<T> {
                     return Ok(result);
                 }
                 Err(error) => {
-                    error_msg = format!(
+                    let error_msg = format!(
                         "[{}] ❗️ [method: {}] [Error: {}]",
                         self.get_chain_name(),
                         method,
                         error.to_string()
                     );
+                    return Err(ClientError::InternalProviderError(error_msg));
                 }
             }
-            sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
         }
 
-        let client_error = ClientError::InternalProviderError(error_msg);
-
-        Err(client_error)
+        // This should never be reached, but just in case
+        let error_msg = format!(
+            "[{}] ❗️ [method: {}] [Error: No contracts available]",
+            self.get_chain_name(),
+            method
+        );
+        Err(ClientError::InternalProviderError(error_msg))
     }
 
     /// Verifies whether the configured chain ID and the provider's actual chain ID matches.
     pub async fn verify_chain_id(&self) -> Result<(), ClientError> {
-        let chain_id: U256 = self.rpc_call("eth_chainId", ()).await?;
+        let chain_id: U256 = self.rpc_call(RPC_ETH_CHAIN_ID, ()).await?;
         if self.get_chain_id() != chain_id.as_u32() {
             return Err(ClientError::InvalidChainId(
                 self.get_chain_name().to_string(),
@@ -159,11 +160,11 @@ impl<T: JsonRpcClient> EthClient<T> {
 
     /// Retrieves the latest mined block number of the connected chain.
     pub async fn get_latest_block_number(&self) -> Result<U64, ClientError> {
-        self.rpc_call("eth_blockNumber", ()).await
+        self.rpc_call(RPC_ETH_BLOCK_NUMBER, ()).await
     }
 
     pub async fn get_latest_block(&self) -> Result<Block<H256>, ClientError> {
-        self.rpc_call("eth_getBlockByNumber", ("latest", false))
+        self.rpc_call(RPC_ETH_GET_BLOCK_BY_NUMBER, (RPC_PARAM_LATEST, false))
             .await
     }
 
@@ -172,12 +173,13 @@ impl<T: JsonRpcClient> EthClient<T> {
         &self,
         id: BlockId,
     ) -> Result<Option<Block<Transaction>>, ClientError> {
-        self.rpc_call("eth_getBlockByNumber", (id, true)).await
+        self.rpc_call(RPC_ETH_GET_BLOCK_BY_NUMBER, (id, true)).await
     }
 
     /// Retrieves the block information of the given block hash.
     pub async fn get_block(&self, id: BlockId) -> Result<Option<Block<H256>>, ClientError> {
-        self.rpc_call("eth_getBlockByNumber", (id, false)).await
+        self.rpc_call(RPC_ETH_GET_BLOCK_BY_NUMBER, (id, false))
+            .await
     }
 
     /// Retrieves the balance of the given address at the given block.
@@ -186,12 +188,14 @@ impl<T: JsonRpcClient> EthClient<T> {
         address: Address,
         block_id: BlockId,
     ) -> Result<U256, ClientError> {
-        self.rpc_call("eth_getBalance", (address, block_id)).await
+        self.rpc_call(RPC_ETH_GET_BALANCE, (address, block_id))
+            .await
     }
 
     /// Retrieves the transaction of the given transaction hash.
     pub async fn get_transaction(&self, hash: H256) -> Result<Option<Transaction>, ClientError> {
-        self.rpc_call("eth_getTransactionByHash", (hash,)).await
+        self.rpc_call(RPC_ETH_GET_TRANSACTION_BY_HASH, (hash,))
+            .await
     }
 
     /// Retrieves the transaction receipt of the given transaction hash.
@@ -199,22 +203,23 @@ impl<T: JsonRpcClient> EthClient<T> {
         &self,
         hash: H256,
     ) -> Result<Option<TransactionReceipt>, ClientError> {
-        self.rpc_call("eth_getTransactionReceipt", (hash,)).await
+        self.rpc_call(RPC_ETH_GET_TRANSACTION_RECEIPT, (hash,))
+            .await
     }
 
     /// Returns the details of all transactions currently pending for inclusion in the next
     /// block(s).
     pub async fn get_txpool_content(&self) -> Result<TxpoolContent, ClientError> {
-        self.rpc_call("txpool_content", ()).await
+        self.rpc_call(RPC_TXPOOL_CONTENT, ()).await
     }
 
     /// Returns an array of all logs matching the given filter.
     pub async fn get_logs(&self, filter: &Filter) -> Result<Vec<Log>, ClientError> {
-        self.rpc_call("eth_getLogs", (filter,)).await
+        self.rpc_call(RPC_ETH_GET_LOGS, (filter,)).await
     }
 
     /// Returns an object with data about the sync status or false.
     pub async fn is_syncing(&self) -> Result<SyncingStatus, ClientError> {
-        self.rpc_call("eth_syncing", ()).await
+        self.rpc_call(RPC_ETH_SYNCING, ()).await
     }
 }

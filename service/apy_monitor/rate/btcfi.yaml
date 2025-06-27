@@ -4,10 +4,11 @@ script: |
   notify_rate = 3;
   notify_time_interval = 60 * 60 * 3;
 
-  boost_apy = Boost.BoostApy(Boost);
+  key = Boost.ApiKey(BoostKey);
+  boost_apy = Boost.BoostApy(Boost, key);
 
   msg = '*BTCFI Boost APY 알람* 🚀\n <!here>\n> 현재 APY: ' + boost_apy + '\n> APY 확인 필요합니다.';
 
   if boost_apy < notify_rate (
-    Slack.Send(APY, notify_time_interval, msg)
+    Slack.Send(APY, notify_time_interval, msg);
   );

@@ -1,4 +1,4 @@
-name: MCH Relayer Status Check
+name: MCH Validator Status Check
 time_interval: 600
 script: |
   notify_time_interval = 60 * 60 * 3;
@@ -20,5 +20,5 @@ script: |
   msg = '*Relayer Liveness 알람* 🚀\n> Relayer : ' + relayer_name + '\n> 상태 :' + status_name;
 
   if relayer_status != 1 (
-    Slack.Send(CCCP, notify_time_interval, msg)
+    Slack.Send(CCCP, notify_time_interval, msg);
   );

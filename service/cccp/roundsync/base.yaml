@@ -9,10 +9,10 @@ script: |
 
   baseBN = Base.LatestBlock();
   base_round_status = Base.CCCP.LatestRound.Status(baseBN);
-  sync_diff = when bifrost_round_status > base_round_status then bifrost_round_status - base_round_status else base_round_status - bifrost_round_status;
+  sync_diff = bifrost_round_status - base_round_status;
 
   msg = '*CCCP Round Sync 알람* 🚀\n <!here>\n> Sync 차이 : ' + sync_diff + '\n> Bifrost : ' + bifrost_round_status + '\n> Base : ' + base_round_status;
 
   if sync_diff > active_status (
-    Slack.Send(CCCP, notify_time_interval, msg)
+    Slack.Send(CCCP, notify_time_interval, msg);
   );

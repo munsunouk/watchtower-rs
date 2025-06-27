@@ -1,0 +1,16 @@
+name: Chainlink Oracle ETH Address Check
+time_interval: 600
+script: |
+  chain = 'BSC';
+  symbol = 'ETH';
+  notify_address = '0x4b09a53349f9a59015521406ce580fd2e40d4e36';
+  notify_time_interval = 60 * 60 * 3;
+
+  BNBBN = BNB.LatestBlock();
+  current_address = BNB.ChainlinkOracle.ETH.Address(BNBBN);
+
+  msg = '*Chainlink Oracle ETH Address 알람* 🚀\n <!here>\n> 체인 : ' + chain + '\n> 기존 address : ' + notify_address + '\n> 변경된 address : ' + current_address;
+
+  if current_address != notify_address (
+      Slack.Send(Monitor, notify_time_interval, msg);
+  );

@@ -1,0 +1,16 @@
+name: Bifrost Bundler Native Balance Check
+time_interval: 300
+script: |
+  notify_time_interval = 60 * 60 * 3;
+  decimal = 10 ** 18;
+  BifrostBN = Bifrost.LatestBlock();
+
+  BalanceBundler = Bifrost.Balance(BifrostBN, Bundler)  / decimal;
+
+  CompareBalance = 100;
+
+  msg = '*Bifrost Bundler Native Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceBundler + '\n> 기준 잔액 : ' + CompareBalance;
+
+  if CompareBalance > BalanceBundler (
+    Slack.Send(Monitor, notify_time_interval, msg);
+  );

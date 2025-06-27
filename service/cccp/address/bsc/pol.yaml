@@ -1,0 +1,16 @@
+name: Chainlink Oracle POL Address Check
+time_interval: 600
+script: |
+  chain = 'BSC';
+  symbol = 'POL';
+  notify_address = '0xfaa69fc5efd347b9d6fd4709f7618d4e1449ca74';
+  notify_time_interval = 60 * 60 * 3;
+
+  BNBBN = BNB.LatestBlock();
+  current_address = BNB.ChainlinkOracle.POL.Address(BNBBN);
+
+  msg = '*Chainlink Oracle POL Address 알람* 🚀\n <!here>\n> 체인 : ' + chain + '\n> 기존 address : ' + notify_address + '\n> 변경된 address : ' + current_address;
+
+  if current_address != notify_address (
+      Slack.Send(Monitor, notify_time_interval, msg);
+  );

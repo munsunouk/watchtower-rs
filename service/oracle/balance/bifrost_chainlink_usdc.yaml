@@ -1,14 +1,16 @@
 name: Bifrost Chainlink USDC Balance Check
 time_interval: 300
 script: |
+  decimal = 10 ** 18;
+  notify_time_interval = 60 * 60 * 3;
   bifrostBN = Bifrost.LatestBlock();
 
-  BalanceUSDC = Bifrost.Balance(bifrostBN, USDC);
+  BalanceUSDC = Bifrost.Balance(bifrostBN, USDC) / decimal;
 
-  CompareBalance = 10000000000000000000;
+  CompareBalance = 10;
 
   msg = '*Bifrost Chainlink USDC Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceUSDC + '\n> 기준 잔액 : ' + CompareBalance;
 
   if CompareBalance > BalanceUSDC (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

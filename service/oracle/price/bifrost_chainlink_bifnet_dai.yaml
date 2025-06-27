@@ -2,6 +2,7 @@ name: Bifrost Chainlink-Bifnet DAI Price Check
 time_interval: 300
 script: |
   bifrostBN = Bifrost.LatestBlock();
+  notify_time_interval = 60 * 60 * 3;
 
   bifrostChainlinkDAI = Bifrost.ChainlinkOracle.DAI.LatestPrice(bifrostBN);
   bifrostBifnetDAI = Bifrost.BifnetOracle.DAI.LatestPrice(bifrostBN);
@@ -11,5 +12,5 @@ script: |
   msg = '*Bifrost Chainlink-Bifnet DAI Price Check 알람* 🚀\n> 차이 : ' + diff;
 
   if diff > 5 || diff < -5 (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

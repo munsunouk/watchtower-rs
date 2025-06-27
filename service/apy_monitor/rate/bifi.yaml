@@ -12,5 +12,5 @@ script: |
   msg = '*btcUSD Pool APY 알람* 🚀\n> APY가 ' + notify_rate + '% 미만입니다.\n> 현재 APY: ' + total_apy + '%';
 
   if total_apy < notify_rate (
-    Slack.Send(APY, notify_time_interval, msg)
+    Slack.Send(APY, notify_time_interval, msg);
   );

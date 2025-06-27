@@ -7,11 +7,10 @@ script: |
   mempool_height = BRP.ApiHeight(MemPool);
   atn_height = BRP.BTCHeight(ATN);
 
-  height_diff = when mempool_height > atn_height then mempool_height - atn_height else 0;
+  height_diff = mempool_height - atn_height;
 
   msg = '*BRP BTC Block 알람* 🚀\n <!here>\n> 블록 차이: ' + height_diff + '\n> 멤풀(mempool.space) : ' + mempool_height + '\n> ATN노드 : ' + atn_height;
 
   if height_diff > notifiy_number_diff (
     Slack.Send(CORE, notify_time_interval, msg);
-    Slack.Send(BTCFI, notify_time_interval, msg)
   );

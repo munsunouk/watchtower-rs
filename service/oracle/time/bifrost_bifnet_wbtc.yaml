@@ -1,15 +1,16 @@
-name: Bifrost Bifnet WBTC Time Check
+name: Bifrost Bifnet wBTC Time Check
 time_interval: 300
 script: |
+  notify_time_interval = 60 * 60 * 3;
   bifrostBN = Bifrost.LatestBlock();
   currentTimestamp = Bifrost.LatestTimestamp();
 
-  bifrostBifnetWBTC = Bifrost.BifnetOracle.WBTC.LatestTimestamp(bifrostBN);
+  bifrostBifnetwBTC = Bifrost.BifnetOracle.wBTC.LatestTimestamp(bifrostBN);
 
-  diff = currentTimestamp - bifrostBifnetWBTC;
+  diff = currentTimestamp - bifrostBifnetwBTC;
 
-  msg = '*Bifrost Bifnet WBTC Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 비프넷 시간 : ' + bifrostBifnetWBTC;
+  msg = '*Bifrost Bifnet wBTC Time Check 알람* 🚀\n> 차이 : ' + diff + '\n> 현재 시간 : ' + currentTimestamp + '\n> 비프넷 시간 : ' + bifrostBifnetwBTC;
 
   if diff > (3600 * 72) (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

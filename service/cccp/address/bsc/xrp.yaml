@@ -1,0 +1,16 @@
+name: Chainlink Oracle BTC Address Check
+time_interval: 600
+script: |
+  chain = 'BSC';
+  symbol = 'BTC';
+  notify_address = '0x5ecf6303bf228ee55ef50cba4f173b467d87c300';
+  notify_time_interval = 60 * 60 * 3;
+
+  BNBBN = BNB.LatestBlock();
+  current_address = BNB.ChainlinkOracle.BTC.Address(BNBBN);
+
+  msg = '*Chainlink Oracle BTC Address 알람* 🚀\n <!here>\n> 체인 : ' + chain + '\n> 기존 address : ' + notify_address + '\n> 변경된 address : ' + current_address;
+
+  if current_address != notify_address (
+      Slack.Send(Monitor, notify_time_interval, msg);
+  );

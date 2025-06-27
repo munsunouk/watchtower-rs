@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgRow;
 use sqlx::Row;
 
+use crate::utils::constants::{
+    DB_CATEGORY_COLUMN, DB_NAME_COLUMN, DB_SCRIPT_COLUMN, DB_TIME_INTERVAL_COLUMN,
+};
 use crate::utils::error::GeneralError;
 
 /// RuleData
@@ -35,10 +38,10 @@ impl TryFrom<&PgRow> for RuleData {
 
     fn try_from(row: &PgRow) -> Result<Self, Self::Error> {
         Ok(Self {
-            category: row.try_get::<String, _>("category")?,
-            name: row.try_get::<String, _>("name")?,
-            time_interval: row.try_get::<i32, _>("time_interval")?,
-            script: row.try_get::<String, _>("script")?,
+            category: row.try_get::<String, _>(DB_CATEGORY_COLUMN)?,
+            name: row.try_get::<String, _>(DB_NAME_COLUMN)?,
+            time_interval: row.try_get::<i32, _>(DB_TIME_INTERVAL_COLUMN)?,
+            script: row.try_get::<String, _>(DB_SCRIPT_COLUMN)?,
         })
     }
 }

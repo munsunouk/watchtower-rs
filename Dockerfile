@@ -12,18 +12,28 @@ run cargo build --release
 
 from debian:bookworm-slim
 
-# Install OpenSSL runtime dependencies
+# Install OpenSSL runtime dependencies with proper key handling
 run apt-get update && \
-    apt-get install -y --no-install-recommends libssl3 ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates && \
+    apt-get install -y --no-install-recommends libssl3 && \
     rm -rf /var/lib/apt/lists/*
 
 workdir /app
-copy --from=builder /usr/src/watchtower/target/release/watch_tower_worker .
-copy --from=builder /usr/src/watchtower/worker/config.yaml ./worker/
-copy --from=builder /usr/src/watchtower/worker/param.yaml ./worker/
-copy lib/src/cli/abi /app/lib/src/cli/abi
 
-# Create directories for volume mounts
+# Create necessary directories first
+run mkdir -p /app/worker
+run mkdir -p /app/lib/src/cli/abi
 run mkdir -p /app/service
+
+# Copy the built binary
+copy --from=builder /usr/src/watchtower/target/release/watch_tower_worker .
+
+# Copy configuration files
+copy --from=builder /usr/src/watchtower/worker/config.yaml /app/worker/
+copy --from=builder /usr/src/watchtower/worker/param.yaml /app/worker/
+
+# Copy ABI files
+copy --from=builder /usr/src/watchtower/lib/src/cli/abi /app/lib/src/cli/abi
 
 cmd ["./watch_tower_worker"] 

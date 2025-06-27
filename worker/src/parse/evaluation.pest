@@ -1,6 +1,6 @@
 WHITESPACE              = _{ " " | "\t" | "\n" }
 arithmetic_operator     =  { "+" | "-" }
-multiplicative_operator =  { "*" | "/" }
+multiplicative_operator =  { "**" | "*" | "/" }
 logical_operator        =  { "&&" | "||" }
 comparison_operator     =  { ">=" | "<=" | "==" | "!=" | ">" | "<" }
 boolean_literal         =  { "true" | "false" }
@@ -21,12 +21,13 @@ Notification             = { "Slack" }
 Chain                    = { "Arbitrum_Sepolia" | "ETH_Sepolia" | "Base_Sepolia" | "Bifrost_Testnet" | "BNB_Testnet" | "ETH" | "Bifrost" | "Base" | "Kaia" | "BNB_PUB" | "BNB" | "POL" | "Arbitrum" | "Core" | "Oasys" }
 Service                  = { "ChainlinkOracle" | "BifnetOracle" | "Bifagg" | "Everdex" | "BRP" | "CCCP" | "BIFI" | "OracleManager" | "BTCFI" | "Boost" | "Validator" }
 Contract                 = {
-    "WBTC"
+    "wBTC"
   | "BTC"
   | "BTCB"
   | "USDC"
   | "USDT"
   | "ETH"
+  | "cbBTC"
   | "JPYBTCUSD"
   | "BTCBTCUSD"
   | "BNB"
@@ -60,6 +61,7 @@ Contract                 = {
   | "Candidate"
   | "State"
   | "LatestRound"
+  | "Aggregator"
 }
 ContractMethodName       = {
     "LatestPrice"
@@ -76,10 +78,11 @@ ContractMethodName       = {
   | "VaultAddress"
   | "TotalSupply"
   | "Status"
+  | "Address"
 }
 EventName                = { "BridgeAmount" | "OID" }
 ChainFunctionName        = { "LatestBlock" | "LatestTimestamp" | "Balance" }
-RpcFunctionName          = { "VaultBalance" | "ApiHeight" | "BTCHeight" | "Apy" | "DepositApy" | "DepositTVL" | "BoostApy" | "BoostTvl" | "Address" }
+RpcFunctionName          = { "VaultBalance" | "ApiHeight" | "BTCHeight" | "Apy" | "DepositApy" | "DepositTVL" | "BoostApy" | "ApiKey" }
 NotificationFunctionName = { "Send" }
 
 Params = { "(" ~ (Expr ~ ("," ~ Expr)*)? ~ ")" }

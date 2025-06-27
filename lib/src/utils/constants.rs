@@ -72,6 +72,7 @@ pub const OPERATOR_ADD: &str = "+";
 pub const OPERATOR_SUB: &str = "-";
 pub const OPERATOR_MUL: &str = "*";
 pub const OPERATOR_DIV: &str = "/";
+pub const OPERATOR_POW: &str = "**";
 pub const COMPARATOR_EQUAL: &str = "==";
 pub const COMPARATOR_NOT_EQUAL: &str = "!=";
 pub const COMPARATOR_GREATER: &str = ">";
@@ -131,9 +132,71 @@ pub const BYTES_COMPARATOR_TYPE: [&str; 2] = [COMPARATOR_EQUAL, COMPARATOR_NOT_E
 pub const FIXED_BYTES_COMPARATOR_TYPE: [&str; 2] = [COMPARATOR_EQUAL, COMPARATOR_NOT_EQUAL];
 
 // Operator Type Allow by each type
-pub const UINT_ARITHMETIC_TYPE: [&str; 4] =
-    [OPERATOR_ADD, OPERATOR_SUB, OPERATOR_MUL, OPERATOR_DIV];
-pub const INT_ARITHMETIC_TYPE: [&str; 4] = [OPERATOR_ADD, OPERATOR_SUB, OPERATOR_MUL, OPERATOR_DIV];
-pub const FLOAT_ARITHMETIC_TYPE: [&str; 4] =
-    [OPERATOR_ADD, OPERATOR_SUB, OPERATOR_MUL, OPERATOR_DIV];
+pub const UINT_ARITHMETIC_TYPE: [&str; 5] = [
+    OPERATOR_ADD,
+    OPERATOR_SUB,
+    OPERATOR_MUL,
+    OPERATOR_DIV,
+    OPERATOR_POW,
+];
+pub const INT_ARITHMETIC_TYPE: [&str; 5] = [
+    OPERATOR_ADD,
+    OPERATOR_SUB,
+    OPERATOR_MUL,
+    OPERATOR_DIV,
+    OPERATOR_POW,
+];
+pub const FLOAT_ARITHMETIC_TYPE: [&str; 5] = [
+    OPERATOR_ADD,
+    OPERATOR_SUB,
+    OPERATOR_MUL,
+    OPERATOR_DIV,
+    OPERATOR_POW,
+];
 pub const STRING_ARITHMETIC_TYPE: [&str; 1] = [OPERATOR_ADD];
+
+pub const CATEGORY_NAME: &str = "category";
+
+// Database column names for RuleData
+pub const DB_CATEGORY_COLUMN: &str = "category";
+pub const DB_TIME_INTERVAL_COLUMN: &str = "time_interval";
+pub const DB_SCRIPT_COLUMN: &str = "script";
+
+// JSON token types
+pub const JSON_TOKEN_UINT: &str = "Uint";
+pub const JSON_TOKEN_ADDRESS: &str = "Address";
+pub const JSON_TOKEN_BOOL: &str = "Bool";
+pub const JSON_TOKEN_STRING: &str = "String";
+
+// HTTP error types
+pub const HTTP_ERROR_TIMEOUT: &str = "timeout";
+pub const HTTP_ERROR_REDIRECT: &str = "redirect";
+pub const HTTP_ERROR_CONNECTION: &str = "connection";
+pub const HTTP_ERROR_REQUEST: &str = "request";
+pub const HTTP_ERROR_BODY: &str = "body";
+pub const HTTP_ERROR_DECODE: &str = "decode";
+pub const HTTP_ERROR_RESPONSE: &str = "response";
+
+// RPC method names
+pub const RPC_ETH_CHAIN_ID: &str = "eth_chainId";
+pub const RPC_ETH_BLOCK_NUMBER: &str = "eth_blockNumber";
+pub const RPC_ETH_GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
+pub const RPC_ETH_GET_BALANCE: &str = "eth_getBalance";
+pub const RPC_ETH_GET_TRANSACTION_BY_HASH: &str = "eth_getTransactionByHash";
+pub const RPC_ETH_GET_TRANSACTION_RECEIPT: &str = "eth_getTransactionReceipt";
+pub const RPC_TXPOOL_CONTENT: &str = "txpool_content";
+pub const RPC_ETH_GET_LOGS: &str = "eth_getLogs";
+pub const RPC_ETH_SYNCING: &str = "eth_syncing";
+
+// RPC parameters
+pub const RPC_PARAM_LATEST: &str = "latest";
+pub const RPC_PARAM_FALSE: &str = "false";
+pub const RPC_PARAM_TRUE: &str = "true";
+
+// File extensions and paths
+pub const SERVICE_DIR: &str = "service";
+pub const YAML_EXTENSION: &str = "yaml";
+
+// RPC call types
+pub const RPC_CALL_TYPE_BODY: &str = "body";
+pub const RPC_CALL_TYPE_QUERY: &str = "query";

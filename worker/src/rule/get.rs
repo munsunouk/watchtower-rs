@@ -29,6 +29,7 @@ use crate::{
     },
     utils::{
         config::{Configuration, EVMProvider},
+        constants::{BLOCK_TARGET_HASH, BLOCK_TARGET_NUMBER, BLOCK_TARGET_TIMESTAMP},
         error::WorkerError,
         get_block_token, get_event_logs,
         log::TraceLog,
@@ -378,18 +379,20 @@ impl GetContext {
         let block = client.get_latest_block().await?;
 
         match target.as_str() {
-            "timestamp" => {
+            BLOCK_TARGET_TIMESTAMP => {
                 let result: GeneralToken = Token::Uint(block.timestamp).try_into()?;
                 TraceLog::TokenOutput(result.clone()).debug();
                 Ok(result)
             }
-            "number" => {
+            BLOCK_TARGET_NUMBER => {
                 let result: GeneralToken =
                     Token::Uint(U256::from(option_or_err!(block.number).as_u64())).try_into()?;
                 TraceLog::TokenOutput(result.clone()).debug();
                 Ok(result)
             }
-            "hash" => Ok(Token::String(option_or_err!(block.hash).to_string()).try_into()?),
+            BLOCK_TARGET_HASH => {
+                Ok(Token::String(option_or_err!(block.hash).to_string()).try_into()?)
+            }
             _ => Err(WorkerError::InvalidMessage),
         }
     }

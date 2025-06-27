@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use sentry::ClientInitGuard;
 use tokio::sync::Mutex;

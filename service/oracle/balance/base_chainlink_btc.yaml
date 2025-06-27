@@ -1,14 +1,16 @@
 name: Base Chainlink BTC Balance Check
 time_interval: 300
 script: |
+  decimal = 10 ** 18;
+  notify_time_interval = 60 * 60 * 3;
   baseBN = Base.LatestBlock();
 
-  BalanceBTC = Base.Balance(baseBN, BTC);
+  BalanceBTC = Base.Balance(baseBN, BTC) / decimal;
 
-  CompareBalance = 10000000000000000;
+  CompareBalance = 0.001;
 
   msg = '*Base Chainlink BTC Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceBTC + '\n> 기준 잔액 : ' + CompareBalance;
 
   if CompareBalance > BalanceBTC (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );

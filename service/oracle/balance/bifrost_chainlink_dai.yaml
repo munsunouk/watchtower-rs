@@ -1,14 +1,16 @@
 name: Bifrost Chainlink DAI Balance Check
 time_interval: 300
 script: |
+  decimal = 10 ** 18;
+  notify_time_interval = 60 * 60 * 3;
   bifrostBN = Bifrost.LatestBlock();
 
-  BalanceDAI = Bifrost.Balance(bifrostBN, DAI);
+  BalanceDAI = Bifrost.Balance(bifrostBN, DAI) / decimal;
 
-  CompareBalance = 10000000000000000000;
+  CompareBalance = 10;
 
   msg = '*Bifrost Chainlink DAI Balance 알람* 🚀\n> 현재 잔액 : ' + BalanceDAI + '\n> 기준 잔액 : ' + CompareBalance;
 
   if CompareBalance > BalanceDAI (
-    Slack.Send(Monitor, notify_time_interval, msg)
+    Slack.Send(Monitor, notify_time_interval, msg);
   );
