@@ -12,13 +12,11 @@ use watch_tower_lib::{
 };
 
 use crate::{
-    option_or_err,
     parse::evaluation::Evaluator,
     utils::{
         config::{Configuration, ParamConfig},
-        constants::{HEALETH_CHECK_INTERVAL, SQLX_QUERY_WARN, TIME_FORMAT},
+        constants::{SQLX_QUERY_WARN, TIME_FORMAT},
         error::WorkerError,
-        set_schedule,
         setting::{build_sentry, set_config, set_param_config},
     },
     Args,
@@ -27,7 +25,6 @@ use crate::{
 pub struct Runner {
     pub _sentry_guard: ClientInitGuard,
     pub evaluators: Vec<Arc<Mutex<(Evaluator, DateTime<Utc>)>>>,
-    pub latest_health_check: DateTime<Utc>,
 }
 
 impl Runner {
@@ -62,8 +59,6 @@ impl Runner {
 
         let evaluators = Self::build_evaluators(&config, &param_config, rules).await?;
 
-        let latest_health_check = Utc::now();
-
         //Sentry
         let _sentry_guard =
             build_sentry(&config.sentry_config.dsn, &config.sentry_config.environment)?;
@@ -71,7 +66,6 @@ impl Runner {
         Ok(Self {
             _sentry_guard,
             evaluators,
-            latest_health_check,
         })
     }
 
@@ -84,11 +78,10 @@ impl Runner {
 
         // Keep the main thread alive indefinitely
         loop {
-            let (tasks_to_spawn, tasks_to_health_check) = self.set_tasks_to_spawn().await;
+            let tasks_to_spawn = self.set_tasks_to_spawn().await;
 
-            if !tasks_to_spawn.is_empty() || !tasks_to_health_check.is_empty() {
-                self.spawn_evaluator_tasks(tasks_to_spawn, tasks_to_health_check)
-                    .await?;
+            if !tasks_to_spawn.is_empty() {
+                self.spawn_evaluator_tasks(tasks_to_spawn).await?;
             }
 
             time::sleep(time::Duration::from_millis(100)).await;
@@ -169,32 +162,26 @@ impl Runner {
         Ok(())
     }
 
-    pub async fn set_tasks_to_spawn(&self) -> (Vec<usize>, Vec<usize>) {
+    pub async fn set_tasks_to_spawn(&self) -> Vec<usize> {
         let now = chrono::Utc::now();
         let mut tasks_to_spawn = Vec::new();
-        let mut tasks_to_health_check = Vec::new();
 
         let evaluators = self.evaluators.clone();
 
         for (index, evaluator) in evaluators.iter().enumerate() {
             let guard = evaluator.lock().await;
 
-            if now >= self.latest_health_check {
-                tasks_to_health_check.push(index);
-            }
-
             if now >= guard.1 {
                 tasks_to_spawn.push(index);
             }
         }
 
-        (tasks_to_spawn, tasks_to_health_check)
+        tasks_to_spawn
     }
 
     pub async fn spawn_evaluator_tasks(
         &mut self,
         tasks_to_spawn: Vec<usize>,
-        tasks_to_health_check: Vec<usize>,
     ) -> Result<(), WorkerError> {
         let mut evaluators = self.evaluators.clone();
         let mut handles = Vec::new();
@@ -225,31 +212,7 @@ impl Runner {
             evaluators[task_index] = updated_evaluator;
         }
 
-        let health_check_futures: Vec<_> = tasks_to_health_check
-            .into_iter()
-            .map(|task_index| {
-                let evaluator_arc = evaluators[task_index].clone();
-                async move {
-                    // Execute health check
-                    evaluator_arc.lock().await.0.health_check();
-                }
-            })
-            .collect();
-
-        // Join all health check tasks
-        let health_check_results = futures::future::join_all(health_check_futures).await;
-
-        // Update latest_health_check if health checks were performed
-        let latest_health_check = if !health_check_results.is_empty() {
-            option_or_err!(set_schedule(HEALETH_CHECK_INTERVAL)?
-                .upcoming(chrono::Utc)
-                .next())
-        } else {
-            self.latest_health_check
-        };
-
         self.evaluators = evaluators;
-        self.latest_health_check = latest_health_check;
 
         Ok(())
     }
