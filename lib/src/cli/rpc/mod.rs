@@ -34,7 +34,8 @@ impl RpcClient {
                 Err(e) => {
                     // If this is not the last provider, sleep and try the next one
                     if index < self.providers.len() - 1 {
-                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+                        // Reduced sleep time to improve responsiveness
+                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS / 2)).await;
                         continue;
                     } else {
                         // This was the last provider, return the error
@@ -70,7 +71,8 @@ impl RpcClient {
                 Err(e) => {
                     // If this is not the last provider, sleep and try the next one
                     if index < self.providers.len() - 1 {
-                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS)).await;
+                        // Reduced sleep time to improve responsiveness
+                        sleep(Duration::from_millis(DEFAULT_CALL_RETRY_INTERVAL_MS / 2)).await;
                         continue;
                     } else {
                         // This was the last provider, return the error

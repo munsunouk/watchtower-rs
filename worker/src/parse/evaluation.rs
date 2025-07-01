@@ -7,7 +7,6 @@ use serde_json::{json, Value};
 use tokio::runtime::Handle;
 use watch_tower_lib::utils::{parse_string_to_number, parse_to_address};
 
-use tokio::time::sleep;
 use watch_tower_lib::cli::db::data::RuleData;
 use watch_tower_lib::cli::slack::SlackNotifier;
 use watch_tower_lib::utils::types::ChainID;
@@ -23,7 +22,7 @@ use pest::Parser;
 use pest_derive::Parser;
 use std::fs;
 
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 
 use watch_tower_lib::utils::{arithmetic_token, compare_token};
 
@@ -37,14 +36,15 @@ use crate::utils::config::{
 };
 use crate::utils::constants::{
     BLOCK_TARGET_NUMBER, BLOCK_TARGET_TIMESTAMP, CALL_BALANCE, CALL_LATEST_BLOCK,
-    CALL_LATEST_TIMESTAMP, HEALETH_CHECK_INTERVAL, PARAM_BLOCK_NUMBER, VAR_ABI, VAR_ADDRESS,
-    VAR_API_BODY, VAR_API_QUERY, VAR_AVAILABLE_CONTRACT, VAR_BLOCKCHAIN, VAR_CALL_TYPE,
-    VAR_CHAIN_ID, VAR_CONTRACT, VAR_EVENT_INDEX, VAR_FUNCTION_PARAMS, VAR_IDENTIFIER, VAR_KEY,
-    VAR_META_DATA, VAR_METHOD_PARAMS, VAR_METHOD_TYPE, VAR_NAME, VAR_NOTIFICATION,
-    VAR_PARAM_NECESSARY, VAR_SERVICE, VAR_TARGET_INDEX,
+    CALL_LATEST_TIMESTAMP, PARAM_BLOCK_NUMBER, VAR_ABI, VAR_ADDRESS, VAR_API_BODY, VAR_API_QUERY,
+    VAR_AVAILABLE_CONTRACT, VAR_BLOCKCHAIN, VAR_CALL_TYPE, VAR_CHAIN_ID, VAR_CONTRACT,
+    VAR_EVENT_INDEX, VAR_FUNCTION_PARAMS, VAR_IDENTIFIER, VAR_KEY, VAR_META_DATA,
+    VAR_METHOD_PARAMS, VAR_METHOD_TYPE, VAR_NAME, VAR_NOTIFICATION, VAR_PARAM_NECESSARY,
+    VAR_SERVICE, VAR_TARGET_INDEX,
 };
 use crate::utils::error::WorkerError;
 use crate::utils::log::TraceLog;
+use crate::utils::set_schedule;
 use watch_tower_lib::utils::types::GeneralToken;
 
 use hex;
@@ -88,49 +88,71 @@ impl Evaluator {
         Self { context }
     }
 
-    pub async fn run(&mut self) {
-        loop {
-            if let Err(e) = self.wait_until_next_time().await {
-                WorkerError::FailedSpawn(self.context.rule.name.to_owned(), e.to_string()).log();
-            }
+    /// Execute one iteration without waiting for next schedule
+    pub async fn run(&mut self) -> Result<(), WorkerError> {
+        // Execute the process directly without waiting for schedule
+        let process_result = self.process().await;
 
-            tokio::select! {
-                health_check_result = Self::wait_until_next_health_check() => {
-                    if health_check_result.is_ok() {
-                        self.health_check();
-                    }
-                }
-                process_result = self.process() => {
-                    if let Err(e) = process_result {
-                        WorkerError::FailedTask(self.context.rule.name.to_owned(), e.to_string()).log();
-                    } else {
-                        tracing::debug!("Process completed successfully for rule: {}", self.context.rule.name);
-                    }
-                }
-            }
+        if let Err(e) = process_result {
+            WorkerError::FailedTask(self.context.rule.name.to_owned(), e.to_string()).log();
+            return Err(e);
+        } else {
+            tracing::debug!(
+                "Process completed successfully for rule: {}",
+                self.context.rule.name
+            );
         }
+
+        Ok(())
+    }
+
+    /// Get the next execution time for this evaluator
+    pub fn get_next_execution_time(&self) -> Result<chrono::DateTime<chrono::Utc>, WorkerError> {
+        Ok(option_or_err!(self
+            .schedule()?
+            .upcoming(chrono::Utc)
+            .next()))
     }
 
     async fn process(&mut self) -> Result<(), WorkerError> {
         let rule = self.context.rule.to_owned();
         let context = self.context.to_owned();
         let mut result = GeneralToken::None;
+        let task_name = rule.name.clone();
 
+        let start_time = std::time::Instant::now();
+
+        let task_name_for_closure = task_name.clone();
         let context = tokio::task::spawn_blocking(move || {
+            let parse_start = std::time::Instant::now();
             let pairs = RuleEvaluationParser::parse(Rule::Program, &rule.script)?;
+            let parse_time = parse_start.elapsed();
 
             let mut context = context;
+            let eval_start = std::time::Instant::now();
 
             for pair in pairs {
                 result = parse_pair(pair, &mut context)?;
             }
 
+            let eval_time = eval_start.elapsed();
+
             TraceLog::TokenOutput(result).debug();
 
             context.variables.clear();
+
+            tracing::debug!(
+                "🔍 Task '{}' timing - Parse: {}ms, Eval: {}ms",
+                task_name_for_closure,
+                parse_time.as_millis(),
+                eval_time.as_millis()
+            );
+
             Ok::<_, WorkerError>(context)
         })
         .await??;
+
+        let total_time = start_time.elapsed();
 
         self.context = context;
 
@@ -138,46 +160,16 @@ impl Evaluator {
         // You might want to add additional checks here based on your business logic
         TraceLog::Success(rule.category, rule.name).info();
 
+        tracing::debug!(
+            "⏱️ Task '{}' completed in {}ms",
+            task_name,
+            total_time.as_millis()
+        );
+
         Ok(())
     }
 
-    /// Wait until it reaches the next schedule.
-    async fn wait_until_next_time(&self) -> Result<(), WorkerError> {
-        let sleep_duration =
-            option_or_err!(self.schedule()?.upcoming(chrono::Utc).next()) - chrono::Utc::now();
-
-        match sleep_duration.to_std() {
-            Ok(sleep_duration) => {
-                sleep(sleep_duration).await;
-                Ok(())
-            }
-            Err(_) => Err(WorkerError::InvalidTypeConvertError(
-                "Failed to convert duration".to_string(),
-            )),
-        }
-    }
-
-    async fn wait_until_next_health_check() -> Result<(), WorkerError>
-    where
-        Self: Sized,
-    {
-        let health_check_schedule = Self::set_schedule(HEALETH_CHECK_INTERVAL as i32)?;
-
-        let sleep_duration =
-            option_or_err!(health_check_schedule.upcoming(chrono::Utc).next()) - chrono::Utc::now();
-
-        match sleep_duration.to_std() {
-            Ok(sleep_duration) => {
-                sleep(sleep_duration).await;
-                Ok(())
-            }
-            Err(_) => Err(WorkerError::InvalidTypeConvertError(
-                "Failed to convert duration".to_string(),
-            )),
-        }
-    }
-
-    fn health_check(&self) {
+    pub fn health_check(&self) {
         TraceLog::HealthCheckPassed(
             self.context.rule.category.to_owned(),
             self.context.rule.name.to_owned(),
@@ -190,22 +182,7 @@ impl Evaluator {
     /// # Returns
     /// * `Result<Schedule, WorkerError>` - The schedule.
     fn schedule(&self) -> Result<Schedule, WorkerError> {
-        Self::set_schedule(self.context.rule.time_interval)
-    }
-
-    /// # Description
-    /// This function sets a cron schedule based on the check interval.
-    /// # Arguments
-    ///
-    /// * `check_interval` - The interval in seconds.
-    ///
-    /// # Returns
-    ///
-    /// A `Schedule` instance.
-    pub fn set_schedule(check_interval: i32) -> Result<Schedule, WorkerError> {
-        let format_schedule = format!("*/{check_interval} * * * * *");
-
-        Ok(Schedule::from_str(&format_schedule)?)
+        set_schedule(self.context.rule.time_interval)
     }
 }
 

@@ -23,8 +23,7 @@ pub enum WorkerError {
     InternalProviderError(String) = 2012,
     #[error("[Error Type : Worker], [Rule Type : {0:?}], [Error : {1}]")]
     InvalidParamType(DbTable, String) = 2017,
-    #[error("[Error Type : Worker], [Rule Name : {0}], [Issue : Failed to spawn], [Error : {1}]")]
-    FailedSpawn(String, String) = 2018,
+
     #[error("[Error Type : Worker], [Issue : Invalid index depth]")]
     InvalidIndexDepth = 2021,
 
@@ -46,6 +45,10 @@ pub enum WorkerError {
     InvalidTypeABI = 2029,
     #[error("[Error Type : Worker], [Issue : Invalid option], [Error : {0}]")]
     InvalidOption(String) = 2031,
+    #[error("[Error Type : Worker], [Issue : Semaphore acquire failed], [Error : {0}]")]
+    SemaphoreAcquireError(String) = 2032,
+    #[error("[Error Type : Worker], [Issue : Time duration out of range], [Error : {0}]")]
+    TimeDurationOutOfRange(String) = 2033,
 }
 
 impl From<reqwest::Error> for WorkerError {
@@ -191,6 +194,18 @@ impl From<tracing_subscriber::filter::ParseError> for WorkerError {
 impl<T: Debug> From<Option<T>> for WorkerError {
     fn from(option: Option<T>) -> Self {
         WorkerError::InvalidOption(format!("{option:?}"))
+    }
+}
+
+impl From<tokio::sync::AcquireError> for WorkerError {
+    fn from(err: tokio::sync::AcquireError) -> Self {
+        WorkerError::SemaphoreAcquireError(err.to_string())
+    }
+}
+
+impl From<chrono::OutOfRangeError> for WorkerError {
+    fn from(err: chrono::OutOfRangeError) -> Self {
+        WorkerError::TimeDurationOutOfRange(err.to_string())
     }
 }
 

@@ -7,13 +7,14 @@ pub mod log;
 pub mod macros;
 pub mod setting;
 
+use cron::Schedule;
 use ethers::{
     abi::Token,
     providers::Http,
     types::{BlockId, BlockNumber, Filter, Log, U64},
 };
 
-use std::sync::atomic::Ordering::SeqCst;
+use std::{str::FromStr, sync::atomic::Ordering::SeqCst};
 use tokio::runtime::Runtime;
 
 use crate::rule::{ContractCall, ContractEvent};
@@ -76,7 +77,7 @@ pub fn run_with_runtime(args: Args) -> Result<(), WorkerError> {
     let runtime = build_runtime()?;
 
     let result = runtime.block_on(async {
-        let runner = Runner::new(args).await?;
+        let mut runner = Runner::new(args).await?;
         runner.run().await
     });
 
@@ -90,4 +91,34 @@ pub fn run_with_runtime(args: Args) -> Result<(), WorkerError> {
             Err(worker_err)
         }
     }
+}
+
+/// # Description
+/// This function sets a cron schedule based on the check interval.
+/// # Arguments
+///
+/// * `check_interval` - The interval in seconds.
+///
+/// # Returns
+///
+/// A `Schedule` instance.
+pub fn set_schedule(check_interval: i32) -> Result<Schedule, WorkerError> {
+    let format_schedule = if check_interval < 60 {
+        // Less than 1 minute: use seconds
+        format!("*/{} * * * * *", check_interval)
+    } else if check_interval < 3600 {
+        // Less than 1 hour: use minutes
+        let minutes = check_interval / 60;
+        format!("0 */{} * * * *", minutes)
+    } else if check_interval < 86400 {
+        // Less than 1 day: use hours
+        let hours = check_interval / 3600;
+        format!("0 0 */{} * * *", hours)
+    } else {
+        // 1 day or more: use days
+        let days = check_interval / 86400;
+        format!("0 0 0 */{} * *", days)
+    };
+
+    Ok(Schedule::from_str(&format_schedule)?)
 }

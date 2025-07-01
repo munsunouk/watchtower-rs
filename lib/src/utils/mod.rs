@@ -784,4 +784,51 @@ mod test {
 
         println!("{}", result);
     }
+
+    #[tokio::test]
+    pub async fn test_read_service_files() {
+        let lib_dir = std::env::current_dir().unwrap();
+        let project_root = lib_dir.parent().unwrap();
+        println!("Lib directory: {:?}", lib_dir);
+        println!("Project root: {:?}", project_root);
+
+        let service_dir = project_root.join(SERVICE_DIR);
+        println!("Service directory: {:?}", service_dir);
+        println!("Service directory exists: {}", service_dir.exists());
+
+        if let Ok(entries) = fs::read_dir(&service_dir) {
+            let mut file_count = 0;
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().map_or(false, |ext| ext == YAML_EXTENSION) {
+                    file_count += 1;
+                    if file_count <= 5 {
+                        // Only print first 5 files to avoid spam
+                        println!("Found YAML file: {:?}", path);
+                    }
+                }
+            }
+            println!("Total YAML files found: {}", file_count);
+        }
+
+        match read_service_files(&project_root.to_path_buf()).await {
+            Ok(rules) => {
+                println!(
+                    "Successfully loaded {} rules from service files",
+                    rules.len()
+                );
+                for (i, rule) in rules.iter().enumerate() {
+                    println!(
+                        "Rule {}: {} (category: {})",
+                        i + 1,
+                        rule.name,
+                        rule.category
+                    );
+                }
+            }
+            Err(e) => {
+                println!("Error reading service files: {:?}", e);
+            }
+        }
+    }
 }
