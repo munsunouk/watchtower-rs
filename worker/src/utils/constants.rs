@@ -7,6 +7,27 @@ pub const DEFAULT_FN_INPUT_INDEX: usize = 0;
 /// Add Memory Value Order
 pub const ADD_MEMORY_VALUE_ORDER: u64 = 1;
 
+/// Hex prefix length for Ethereum addresses and hex strings
+pub const HEX_PREFIX_LENGTH: usize = 2;
+
+/// Seconds per minute
+pub const SECONDS_PER_MINUTE: i32 = 60;
+
+/// Minutes per hour
+pub const MINUTES_PER_HOUR: i32 = 60;
+
+/// Seconds per hour
+pub const SECONDS_PER_HOUR: i32 = 3600;
+
+/// Seconds per day
+pub const SECONDS_PER_DAY: i32 = 86400;
+
+/// Maximum loop iterations for decoding
+pub const MAX_LOOP_ITERATIONS: usize = 1000;
+
+/// Apy percentage multiplier for formatting
+pub const APY_PERCENTAGE_MULTIPLIER: f64 = 100.0;
+
 /// Local Time Format
 pub const TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 
@@ -80,3 +101,13 @@ pub const CALL_BALANCE: &str = "Balance";
 
 // Task Names
 pub const TASK_SPAWN_BLOCKING: &str = "spawn_blocking";
+
+/// HTTP timeout in seconds
+pub const HTTP_TIMEOUT_SECS: u64 = 30;
+/// HTTP connect timeout in seconds
+pub const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
+/// HTTP pool max idle per host
+pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 0;
+
+/// Worker sleep interval in milliseconds
+pub const WORKER_SLEEP_INTERVAL_MS: u64 = 100;

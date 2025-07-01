@@ -4,9 +4,9 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
-use crate::option_or_err;
 use crate::rule::parse_int_to_uint;
 use crate::utils::error::GeneralError;
+use crate::utils::parse_u256_to_bigint;
 
 /// The type of EVM chain ID's.
 pub type ChainID = u32;
@@ -34,10 +34,7 @@ impl GeneralToken {
             EthToken::Address(addr) => Ok(GeneralToken::Address(addr)),
             EthToken::FixedBytes(bytes) => Ok(GeneralToken::FixedBytes(bytes)),
             EthToken::Bytes(bytes) => Ok(GeneralToken::Bytes(bytes)),
-            EthToken::Int(i) => Ok(GeneralToken::Int(option_or_err!(BigInt::parse_bytes(
-                i.to_string().as_bytes(),
-                10,
-            )))),
+            EthToken::Int(i) => Ok(GeneralToken::Int(parse_u256_to_bigint(&i)?)),
             EthToken::Uint(u) => Ok(GeneralToken::Uint(u)),
             EthToken::Bool(b) => Ok(GeneralToken::Bool(b)),
             EthToken::String(s) => Ok(GeneralToken::String(s)),

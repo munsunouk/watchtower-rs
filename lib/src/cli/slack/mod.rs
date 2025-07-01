@@ -1,4 +1,4 @@
-use crate::{option_or_err, utils::error::ClientError};
+use crate::{option_or_err, rule::parse_u256_to_i64, utils::error::ClientError};
 use chrono::{DateTime, Duration, Utc};
 use ethers::types::U256;
 use rustls::crypto::ring::default_provider;
@@ -28,8 +28,9 @@ impl SlackNotifier {
         self.channel = Some(channel.to_string());
     }
 
-    pub fn set_time_interval(&mut self, time_interval: &U256) {
-        self.time_interval = Some(time_interval.to_string().parse::<i64>().unwrap_or(0));
+    pub fn set_time_interval(&mut self, time_interval: &U256) -> Result<(), ClientError> {
+        self.time_interval = Some(parse_u256_to_i64(time_interval)?);
+        Ok(())
     }
 
     pub async fn send_message(&mut self, text: &str) -> Result<(), ClientError> {

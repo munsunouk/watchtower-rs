@@ -32,7 +32,8 @@ use watch_tower_lib::{
 };
 
 use crate::utils::constants::{
-    JSON_RPC_RESULT, META_DATA_APY, META_DATA_FLOAT, META_DATA_VAULT_ADDRESS,
+    APY_PERCENTAGE_MULTIPLIER, JSON_RPC_RESULT, MAX_LOOP_ITERATIONS, META_DATA_APY,
+    META_DATA_FLOAT, META_DATA_VAULT_ADDRESS,
 };
 use crate::{option_or_err, parse::evaluation::ParseResultType, utils::error::WorkerError};
 
@@ -394,7 +395,7 @@ pub fn decodes_token(
     }
 
     let mut decoded_tokens = Vec::new();
-    let max_tries = 1000; // Limit to prevent infinite loops
+    let max_tries = MAX_LOOP_ITERATIONS; // Limit to prevent infinite loops
 
     // Function to try all combinations recursively
     fn try_combinations(
@@ -544,7 +545,7 @@ pub fn decode_meta_data(
 
         ParseResultType::String(meta_data) if meta_data == META_DATA_APY => {
             if let GeneralToken::String(apy) = token {
-                let mut apy_float = parse_string_to_float(apy)? * 100.0;
+                let mut apy_float = parse_string_to_float(apy)? * APY_PERCENTAGE_MULTIPLIER;
                 apy_float = format_float_to_4_decimal(apy_float);
 
                 Ok(GeneralToken::Float(apy_float))

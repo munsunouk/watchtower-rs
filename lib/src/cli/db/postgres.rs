@@ -1,11 +1,16 @@
-use crate::utils::constants::{DB_SCHEMA_EXISTS, DB_SCHEMA_LOAD, DB_TABLE_NAME, SCHEMA};
+use crate::utils::constants::{
+    DB_EXISTS_QUERY_INDEX, DB_SCHEMA_EXISTS, DB_SCHEMA_LOAD, DB_TABLE_NAME, DEFAULT_ATTEMPTS,
+    DEFAULT_BACKOFF_MS, DEFAULT_MAX_ATTEMPTS, SCHEMA,
+};
 use crate::utils::constants::{
     JSON_TOKEN_ADDRESS, JSON_TOKEN_BOOL, JSON_TOKEN_STRING, JSON_TOKEN_UINT,
 };
 use crate::utils::error::DatabaseError;
-use crate::utils::{read_service_files, DbTable};
+use crate::utils::{
+    parse_address_to_token, parse_hex_or_decimal_to_uint_token, read_service_files, DbTable,
+};
 use ethers::abi::Token;
-use ethers::types::{H160, U256};
+
 use sqlx::{pool::Pool, postgres::PgRow, Executor, PgPool, Postgres, Row};
 
 use crate::cli::db::data::RuleData;
@@ -13,7 +18,7 @@ use crate::cli::db::data::RuleData;
 use chrono::{DateTime, Utc};
 use std::future::Future;
 use std::path::PathBuf;
-use std::str::FromStr;
+
 use tokio::time;
 
 /// Parse JSONB value to [Option<Token>]
@@ -33,21 +38,10 @@ pub fn parse_jsonb_to_tokens(
             if let Some(obj) = value.as_object() {
                 let token = if let Some(hex_str) = obj.get(JSON_TOKEN_UINT).and_then(|v| v.as_str())
                 {
-                    // Try parsing as hex first, then as decimal
-                    if let Ok(num) = U256::from_str_radix(hex_str, 16) {
-                        Some(Token::Uint(num))
-                    } else if let Ok(num) = U256::from_dec_str(hex_str) {
-                        Some(Token::Uint(num))
-                    } else {
-                        None
-                    }
+                    parse_hex_or_decimal_to_uint_token(hex_str)
                 } else if let Some(addr_str) = obj.get(JSON_TOKEN_ADDRESS).and_then(|v| v.as_str())
                 {
-                    if let Ok(addr) = H160::from_str(addr_str) {
-                        Some(Token::Address(addr))
-                    } else {
-                        None
-                    }
+                    parse_address_to_token(addr_str)
                 } else if let Some(bool_val) = obj.get(JSON_TOKEN_BOOL).and_then(|v| v.as_bool()) {
                     Some(Token::Bool(bool_val))
                 } else if let Some(str_val) = obj.get(JSON_TOKEN_STRING).and_then(|v| v.as_str()) {
@@ -84,9 +78,9 @@ impl PostgresClient {
         F: Fn() -> Fut,
         Fut: Future<Output = Result<T, DatabaseError>>,
     {
-        let mut attempts = 0;
-        let max_attempts = 3;
-        let backoff_ms = 1000;
+        let mut attempts = DEFAULT_ATTEMPTS;
+        let max_attempts = DEFAULT_MAX_ATTEMPTS;
+        let backoff_ms = DEFAULT_BACKOFF_MS;
 
         loop {
             match f().await {
@@ -142,7 +136,7 @@ impl PostgresClient {
     pub async fn schema_exists(&self) -> Result<bool, DatabaseError> {
         let result = sqlx::query(DB_SCHEMA_EXISTS).fetch_one(&self.pool).await?;
 
-        Ok(result.get(0))
+        Ok(result.get(DB_EXISTS_QUERY_INDEX))
     }
 
     /// Check if RPC Call Rule Exists
@@ -170,7 +164,7 @@ impl PostgresClient {
             .fetch_one(&self.pool)
             .await?;
 
-        Ok(result.get(0))
+        Ok(result.get(DB_EXISTS_QUERY_INDEX))
     }
 
     /// Add Rule

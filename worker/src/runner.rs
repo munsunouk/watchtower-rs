@@ -15,7 +15,7 @@ use crate::{
     parse::evaluation::Evaluator,
     utils::{
         config::{Configuration, ParamConfig},
-        constants::{SQLX_QUERY_WARN, TIME_FORMAT},
+        constants::{SQLX_QUERY_WARN, TIME_FORMAT, WORKER_SLEEP_INTERVAL_MS},
         error::WorkerError,
         setting::{build_sentry, set_config, set_param_config},
     },
@@ -84,7 +84,7 @@ impl Runner {
                 self.spawn_evaluator_tasks(tasks_to_spawn).await?;
             }
 
-            time::sleep(time::Duration::from_millis(100)).await;
+            time::sleep(time::Duration::from_millis(WORKER_SLEEP_INTERVAL_MS)).await;
         }
     }
 

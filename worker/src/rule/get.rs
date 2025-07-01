@@ -134,7 +134,7 @@ pub struct GetContext {
 
 impl GetContext {
     pub fn new(evm_providers: &[EVMProvider]) -> Result<Self, WorkerError> {
-        let eth_clients = build_eth_clients(evm_providers);
+        let eth_clients = build_eth_clients(evm_providers)?;
         let rpc_client = build_rpc_client()?;
 
         Ok(Self {

@@ -3,11 +3,12 @@ pub mod metadata;
 pub use metadata::ProviderMetadata;
 
 use crate::utils::constants::{
-    RPC_ETH_BLOCK_NUMBER, RPC_ETH_CHAIN_ID, RPC_ETH_GET_BALANCE, RPC_ETH_GET_BLOCK_BY_NUMBER,
-    RPC_ETH_GET_LOGS, RPC_ETH_GET_TRANSACTION_BY_HASH, RPC_ETH_GET_TRANSACTION_RECEIPT,
-    RPC_ETH_SYNCING, RPC_PARAM_LATEST, RPC_TXPOOL_CONTENT,
+    DEFAULT_CALL_RETRY_INTERVAL_MS, ETH_TIMEOUT_DURATION_SECS, RPC_ETH_BLOCK_NUMBER,
+    RPC_ETH_CHAIN_ID, RPC_ETH_GET_BALANCE, RPC_ETH_GET_BLOCK_BY_NUMBER, RPC_ETH_GET_LOGS,
+    RPC_ETH_GET_TRANSACTION_BY_HASH, RPC_ETH_GET_TRANSACTION_RECEIPT, RPC_ETH_SYNCING,
+    RPC_PARAM_LATEST, RPC_TXPOOL_CONTENT,
 };
-use crate::utils::{constants::DEFAULT_CALL_RETRY_INTERVAL_MS, error::ClientError, types::ChainID};
+use crate::utils::{error::ClientError, types::ChainID};
 use ethers::{
     abi::Token,
     contract::Contract,
@@ -61,7 +62,7 @@ impl<T: JsonRpcClient> EthClient<T> {
         P: Debug + Serialize + Send + Sync + Copy,
         R: Serialize + DeserializeOwned + Debug + Send,
     {
-        const TIMEOUT_DURATION: Duration = Duration::from_secs(300);
+        const TIMEOUT_DURATION: Duration = Duration::from_secs(ETH_TIMEOUT_DURATION_SECS);
 
         for (index, provider) in self.providers.iter().enumerate() {
             match timeout(TIMEOUT_DURATION, provider.request(method, params)).await {

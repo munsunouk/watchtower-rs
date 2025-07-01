@@ -10,14 +10,16 @@ use abi::ParamType;
 use constants::{
     ADDRESS_COMPARATOR_TYPE, BOOL_COMPARATOR_TYPE, BYTES_COMPARATOR_TYPE, COMPARATOR_EQUAL,
     COMPARATOR_GREATER, COMPARATOR_GREATER_EQUAL, COMPARATOR_LESS, COMPARATOR_LESS_EQUAL,
-    COMPARATOR_NOT_EQUAL, FIXED_BYTES_COMPARATOR_TYPE, FLOAT_ARITHMETIC_TYPE,
-    FLOAT_COMPARATOR_TYPE, INT_ARITHMETIC_TYPE, INT_COMPARATOR_TYPE, OPERATOR_ADD, OPERATOR_DIV,
-    OPERATOR_MUL, OPERATOR_POW, OPERATOR_SUB, RULE, STRING_ARITHMETIC_TYPE, STRING_COMPARATOR_TYPE,
+    COMPARATOR_NOT_EQUAL, DECIMAL_RADIX, ETH_ADDRESS_LENGTH, FIXED_BYTES_COMPARATOR_TYPE,
+    FLOAT_ARITHMETIC_TYPE, FLOAT_COMPARATOR_TYPE, FLOAT_PRECISION_MULTIPLIER, HEX_PREFIX_LENGTH,
+    HEX_RADIX, INT_ARITHMETIC_TYPE, INT_COMPARATOR_TYPE, OPERATOR_ADD, OPERATOR_DIV, OPERATOR_MUL,
+    OPERATOR_POW, OPERATOR_SUB, RULE, STRING_ARITHMETIC_TYPE, STRING_COMPARATOR_TYPE,
     UINT_ARITHMETIC_TYPE, UINT_COMPARATOR_TYPE,
 };
 use reqwest::Method;
 use serde_json::{from_str, Value};
 use sqlx::types::Json;
+use url;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -169,6 +171,36 @@ pub fn parse_token_to_i64(token: Token) -> Result<i64, GeneralError> {
 
 pub fn parse_string_to_address(input: &str) -> Result<Address, GeneralError> {
     Ok(input.parse::<Address>()?)
+}
+
+pub fn parse_string_to_url(input: &str) -> Result<url::Url, GeneralError> {
+    Ok(url::Url::parse(input)?)
+}
+
+pub fn parse_u256_to_bigint(input: &U256) -> Result<BigInt, GeneralError> {
+    Ok(option_or_err!(BigInt::parse_bytes(
+        input.to_string().as_bytes(),
+        DECIMAL_RADIX
+    )))
+}
+
+pub fn parse_hex_or_decimal_to_uint_token(input: &str) -> Option<Token> {
+    // Try parsing as hex first, then as decimal
+    if let Ok(num) = U256::from_str_radix(input, HEX_RADIX) {
+        Some(Token::Uint(num))
+    } else if let Ok(num) = U256::from_dec_str(input) {
+        Some(Token::Uint(num))
+    } else {
+        None
+    }
+}
+
+pub fn parse_address_to_token(input: &str) -> Option<Token> {
+    if let Ok(addr) = H160::from_str(input) {
+        Some(Token::Address(addr))
+    } else {
+        None
+    }
 }
 
 /// Parses a string into an int.
@@ -454,7 +486,7 @@ pub fn arithmetic_token(
 }
 
 pub fn format_float_to_4_decimal(value: f64) -> f64 {
-    (value * 10000.0).trunc() / 10000.0
+    (value * FLOAT_PRECISION_MULTIPLIER).trunc() / FLOAT_PRECISION_MULTIPLIER
 }
 
 fn parse_float_arithmetic(
@@ -582,7 +614,7 @@ pub fn is_valid_hex_string(hex: &str) -> bool {
     if !hex.starts_with("0x") {
         return false;
     }
-    let hex_content = &hex[2..];
+    let hex_content = &hex[HEX_PREFIX_LENGTH..];
     !hex_content.is_empty() && hex_content.chars().all(|c| c.is_ascii_hexdigit())
 }
 
@@ -591,8 +623,8 @@ pub fn is_valid_ethereum_address(addr: &str) -> bool {
     if !addr.starts_with("0x") {
         return false;
     }
-    let addr_content = &addr[2..];
-    addr_content.len() == 40 && addr_content.chars().all(|c| c.is_ascii_hexdigit())
+    let addr_content = &addr[HEX_PREFIX_LENGTH..];
+    addr_content.len() == ETH_ADDRESS_LENGTH && addr_content.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 pub fn convert_hex_token(str_param: &str) -> Result<Token, GeneralError> {
@@ -608,7 +640,7 @@ pub fn convert_hex_token(str_param: &str) -> Result<Token, GeneralError> {
         }
 
         match trimmed_hex.len() {
-            40 => {
+            ETH_ADDRESS_LENGTH => {
                 // Validate Ethereum address format
                 if is_valid_ethereum_address(str_param) {
                     Ok(Token::Address(Address::from_str(str_param)?))
@@ -663,7 +695,7 @@ pub fn hex_to_eth_amount(hex: &str) -> Result<U256, GeneralError> {
         )));
     }
 
-    let hex_content = &hex[2..];
+    let hex_content = &hex[HEX_PREFIX_LENGTH..];
     if hex_content.is_empty() {
         return Err(GeneralError::InvalidTypeConvertError(
             "Hex string is empty after '0x' prefix".to_string(),
@@ -679,7 +711,7 @@ pub fn hex_to_eth_amount(hex: &str) -> Result<U256, GeneralError> {
     }
 
     // Parse the hex string
-    U256::from_str_radix(hex_content, 16).map_err(|e| {
+    U256::from_str_radix(hex_content, HEX_RADIX).map_err(|e| {
         GeneralError::InvalidTypeConvertError(format!(
             "Failed to parse hex string '{}': {}",
             hex, e

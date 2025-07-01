@@ -17,7 +17,10 @@ use watch_tower_lib::{
 
 use crate::{
     rule::{ContractCall, ContractEvent, RpcCall},
-    utils::config::ParamConfig,
+    utils::{
+        config::ParamConfig,
+        constants::{HTTP_CONNECT_TIMEOUT_SECS, HTTP_POOL_MAX_IDLE_PER_HOST, HTTP_TIMEOUT_SECS},
+    },
 };
 
 use crate::utils::config::{Configuration, EVMProvider};
@@ -32,14 +35,16 @@ use super::error::WorkerError;
 ///
 /// # Returns
 ///
-/// A `HashMap` where the key is a `ChainID` and the value is an `EthClient<Http>` instance.
-pub fn build_eth_clients(providers: &[EVMProvider]) -> HashMap<ChainID, EthClient<Http>> {
+/// A `Result` containing a `HashMap` where the key is a `ChainID` and the value is an `EthClient<Http>` instance.
+pub fn build_eth_clients(
+    providers: &[EVMProvider],
+) -> Result<HashMap<ChainID, EthClient<Http>>, ClientError> {
     let mut clients = HashMap::new();
 
     for provider in providers {
         let EVMProvider { name, provider, id } = provider;
 
-        let metadata = set_metadata(name, provider, id);
+        let metadata = set_metadata(name, provider, id)?;
 
         let arc_providers = set_providers(provider);
 
@@ -47,7 +52,7 @@ pub fn build_eth_clients(providers: &[EVMProvider]) -> HashMap<ChainID, EthClien
         clients.insert(*id, eth_client);
     }
 
-    clients
+    Ok(clients)
 }
 
 /// # Description
@@ -76,8 +81,12 @@ fn build_eth_client<T: JsonRpcClient>(
 ///
 /// # Returns
 ///
-/// A `ProviderMetadata` instance.
-fn set_metadata(chain_name: &str, chain_urls: &[String], chain_id: &ChainID) -> ProviderMetadata {
+/// A `Result` containing the `ProviderMetadata` instance.
+fn set_metadata(
+    chain_name: &str,
+    chain_urls: &[String],
+    chain_id: &ChainID,
+) -> Result<ProviderMetadata, ClientError> {
     ProviderMetadata::new(chain_name, chain_urls, chain_id)
 }
 
@@ -175,9 +184,9 @@ pub fn build_rpc_call(client: &RpcClient, rule: &RpcCallRule) -> RpcCall {
 /// A `Client` instance.
 pub fn build_rpc_client() -> Result<RpcClient, WorkerError> {
     let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .pool_max_idle_per_host(0)
+        .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
+        .connect_timeout(std::time::Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+        .pool_max_idle_per_host(HTTP_POOL_MAX_IDLE_PER_HOST)
         .pool_idle_timeout(None)
         .user_agent("watch-tower-worker")
         .danger_accept_invalid_certs(true)

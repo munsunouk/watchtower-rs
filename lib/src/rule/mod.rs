@@ -8,7 +8,7 @@ pub mod rpc_call;
 
 use std::{collections::HashMap, str::FromStr};
 
-use ethers::{abi::Uint, utils::hex};
+use ethers::{abi::Uint, types::U256, utils::hex};
 use num_bigint::BigInt;
 
 use crate::utils::{constants::FILTER_INDEX_SPLIT_CHAR, error::GeneralError, types::GeneralToken};
@@ -56,6 +56,10 @@ pub fn parse_string_to_index(value: String) -> Result<Vec<usize>, GeneralError> 
 
 pub fn parse_int_to_uint(int: &BigInt) -> Result<Uint, GeneralError> {
     int.to_string().parse::<Uint>().map_err(Into::into)
+}
+
+pub fn parse_u256_to_i64(u256: &U256) -> Result<i64, GeneralError> {
+    u256.to_string().parse::<i64>().map_err(Into::into)
 }
 
 pub fn parse_string_to_target_index(value: String) -> Result<Vec<TargetIndex>, GeneralError> {

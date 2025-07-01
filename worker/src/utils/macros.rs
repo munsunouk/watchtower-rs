@@ -22,7 +22,7 @@ macro_rules! process_notification_params {
                     if let Some(GeneralToken::Uint(time_interval)) = function_param {
                         if $notification == $crate::utils::constants::NOTIFICATION_SLACK {
                             if let Some(client) = &mut $context.slack_client {
-                                client.set_time_interval(time_interval);
+                                client.set_time_interval(time_interval)?;
                             }
                         }
                     }
@@ -219,7 +219,9 @@ macro_rules! process_contract_method_params {
                         for oid in $context.param_config.oid_config.iter() {
                             if oid.name == *oid_name {
                                 // Convert to bytes32
-                                let bytes = hex::decode(&oid.address[2..])?;
+                                let bytes = hex::decode(
+                                    &oid.address[$crate::utils::constants::HEX_PREFIX_LENGTH..],
+                                )?;
                                 $params.push(Some(GeneralToken::FixedBytes(bytes)));
                                 break;
                             }

@@ -4,6 +4,12 @@ pub const MAX_RETRY_CALL: u8 = 3;
 pub const LIMIT_RETRY_CALL: u8 = 0;
 /// The default retry interval of a single json rpc request in milliseconds.
 pub const DEFAULT_CALL_RETRY_INTERVAL_MS: u64 = 3000;
+/// Default attempts for retry operations
+pub const DEFAULT_ATTEMPTS: u8 = 0;
+/// Default maximum attempts for retry operations
+pub const DEFAULT_MAX_ATTEMPTS: u8 = 3;
+/// Default backoff time in milliseconds
+pub const DEFAULT_BACKOFF_MS: u64 = 1000;
 
 /// Chain Split Index
 pub const CHAIN_SPLIT_INDEX: usize = 1;
@@ -200,3 +206,36 @@ pub const YAML_EXTENSION: &str = "yaml";
 // RPC call types
 pub const RPC_CALL_TYPE_BODY: &str = "body";
 pub const RPC_CALL_TYPE_QUERY: &str = "query";
+
+// Timeout and duration constants
+pub const ETH_TIMEOUT_DURATION_SECS: u64 = 300;
+pub const HTTP_TIMEOUT_SECS: u64 = 30;
+pub const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
+pub const HTTP_POOL_MAX_IDLE_PER_HOST: usize = 0;
+
+// Database constants
+pub const DB_EXISTS_QUERY_INDEX: usize = 0;
+pub const DB_CHECK_EXISTS_QUERY: &str = "SELECT EXISTS(SELECT 1 FROM {} WHERE id = $1)";
+
+// String parsing constants
+pub const HEX_PREFIX_LENGTH: usize = 2;
+pub const ETH_ADDRESS_LENGTH: usize = 40;
+pub const HEX_RADIX: u32 = 16;
+pub const DECIMAL_RADIX: u32 = 10;
+
+// Float formatting constants
+pub const FLOAT_PRECISION_MULTIPLIER: f64 = 10000.0;
+
+// Array size constants
+pub const UINT_COMPARATOR_COUNT: usize = 6;
+pub const INT_COMPARATOR_COUNT: usize = 6;
+pub const FLOAT_COMPARATOR_COUNT: usize = 6;
+pub const ADDRESS_COMPARATOR_COUNT: usize = 2;
+pub const BOOL_COMPARATOR_COUNT: usize = 2;
+pub const STRING_COMPARATOR_COUNT: usize = 2;
+pub const BYTES_COMPARATOR_COUNT: usize = 2;
+pub const FIXED_BYTES_COMPARATOR_COUNT: usize = 2;
+pub const UINT_ARITHMETIC_COUNT: usize = 5;
+pub const INT_ARITHMETIC_COUNT: usize = 5;
+pub const FLOAT_ARITHMETIC_COUNT: usize = 5;
+pub const STRING_ARITHMETIC_COUNT: usize = 1;

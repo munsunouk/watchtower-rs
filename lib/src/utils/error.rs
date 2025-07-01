@@ -248,6 +248,12 @@ impl From<FromStrRadixErr> for GeneralError {
     }
 }
 
+impl From<url::ParseError> for GeneralError {
+    fn from(err: url::ParseError) -> Self {
+        GeneralError::InvalidTypeConvertError(format!("URL parse error: {}", err))
+    }
+}
+
 impl From<GeneralError> for DatabaseError {
     fn from(err: GeneralError) -> Self {
         DatabaseError::GenericInitError(format!("general error: {}", err))
@@ -275,6 +281,12 @@ impl From<reqwest::Error> for ClientError {
         } else {
             ClientError::InternalProviderError(format!("internal provider error: {}", error_msg))
         }
+    }
+}
+
+impl From<url::ParseError> for ClientError {
+    fn from(err: url::ParseError) -> Self {
+        ClientError::InvalidProviderURL(format!("URL parse error: {}", err))
     }
 }
 

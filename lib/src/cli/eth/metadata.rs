@@ -1,6 +1,6 @@
 use url::Url;
 
-use crate::utils::{error::ClientError, types::ChainID};
+use crate::utils::{error::ClientError, parse_string_to_url, types::ChainID};
 
 /// The metadata of the EVM provider.
 #[derive(Clone)]
@@ -14,21 +14,14 @@ pub struct ProviderMetadata {
 }
 
 impl ProviderMetadata {
-    pub fn new(name: &str, urls: &[String], id: &ChainID) -> Self {
-        Self {
+    pub fn new(name: &str, urls: &[String], id: &ChainID) -> Result<Self, ClientError> {
+        Ok(Self {
             name: name.to_string(),
             urls: urls
                 .iter()
-                .map(|url| {
-                    Url::parse(url).unwrap_or_else(|_| {
-                        panic!(
-                            "{}",
-                            ClientError::InvalidProviderURL(url.to_string()).to_string()
-                        )
-                    })
-                })
-                .collect(),
+                .map(|url| parse_string_to_url(url))
+                .collect::<Result<Vec<Url>, _>>()?,
             id: *id,
-        }
+        })
     }
 }

@@ -1,4 +1,8 @@
-use crate::{runner::Runner, *};
+use crate::{
+    runner::Runner,
+    utils::constants::{MINUTES_PER_HOUR, SECONDS_PER_DAY, SECONDS_PER_HOUR, SECONDS_PER_MINUTE},
+    *,
+};
 
 pub mod config;
 pub mod constants;
@@ -103,20 +107,20 @@ pub fn run_with_runtime(args: Args) -> Result<(), WorkerError> {
 ///
 /// A `Schedule` instance.
 pub fn set_schedule(check_interval: i32) -> Result<Schedule, WorkerError> {
-    let format_schedule = if check_interval < 60 {
+    let format_schedule = if check_interval < SECONDS_PER_MINUTE {
         // Less than 1 minute: use seconds
         format!("*/{} * * * * *", check_interval)
-    } else if check_interval < 3600 {
+    } else if check_interval < SECONDS_PER_HOUR {
         // Less than 1 hour: use minutes
-        let minutes = check_interval / 60;
+        let minutes = check_interval / MINUTES_PER_HOUR;
         format!("0 */{} * * * *", minutes)
-    } else if check_interval < 86400 {
+    } else if check_interval < SECONDS_PER_DAY {
         // Less than 1 day: use hours
-        let hours = check_interval / 3600;
+        let hours = check_interval / SECONDS_PER_HOUR;
         format!("0 0 */{} * * *", hours)
     } else {
         // 1 day or more: use days
-        let days = check_interval / 86400;
+        let days = check_interval / SECONDS_PER_DAY;
         format!("0 0 0 */{} * *", days)
     };
 
