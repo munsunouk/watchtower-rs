@@ -7,9 +7,6 @@ pub const DEFAULT_FN_INPUT_INDEX: usize = 0;
 /// Add Memory Value Order
 pub const ADD_MEMORY_VALUE_ORDER: u64 = 1;
 
-/// Health Check Time Interval (1 Hour)
-pub const HEALETH_CHECK_INTERVAL: i32 = 3600;
-
 /// Local Time Format
 pub const TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 

@@ -169,14 +169,6 @@ impl Evaluator {
         Ok(())
     }
 
-    pub fn health_check(&self) {
-        TraceLog::HealthCheckPassed(
-            self.context.rule.category.to_owned(),
-            self.context.rule.name.to_owned(),
-        )
-        .info()
-    }
-
     /// # Description
     /// This function returns the schedule for the fetcher.
     /// # Returns

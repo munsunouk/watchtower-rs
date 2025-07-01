@@ -4,8 +4,6 @@ use watch_tower_lib::utils::types::GeneralToken;
 #[derive(Debug, Display, EnumMessage)]
 #[repr(u16)]
 pub enum TraceLog {
-    #[strum(to_string = "[Category : {0:?}], [Rule Name : {1}], [Issue : Health check passed]")]
-    HealthCheckPassed(String, String) = 3001,
     #[strum(to_string = "[Category : {0:?}], [Rule Name : {1}], [Issue : Success]")]
     Success(String, String) = 3002,
     #[strum(to_string = "[Token : {0:?}]")]
